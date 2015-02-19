@@ -36,6 +36,11 @@ impl Interconnect {
             panic!("Unaligned store32 address: {:08x}", addr);
         }
 
+        if let Some(_) = map::CACHE_CONTROL.contains(addr) {
+            println!("Unhandled write to CACHE_CONTROL: {:08x}", val);
+            return;
+        }
+
         if let Some(offset) = map::MEM_CONTROL.contains(addr) {
             match offset {
                 0 => // Expansion 1 base address
@@ -87,4 +92,7 @@ mod map {
     /// Register that has something to do with RAM configuration,
     /// configured by the BIOS
     pub const RAM_SIZE: Range = Range(0x1f801060, 4);
+
+    /// Cache control register
+    pub const CACHE_CONTROL: Range = Range(0xfffe0130, 4);
 }
