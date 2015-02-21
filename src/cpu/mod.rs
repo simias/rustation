@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter, Error};
+use std::fmt::{Debug, Display, Formatter, Error};
 
 use memory::Interconnect;
 
@@ -15,6 +15,8 @@ pub struct Cpu {
     regs: [u32; 32],
     /// Memory interface
     inter: Interconnect,
+    /// Cop0 register 12: Status Register
+    sr: u32,
 }
 
 impl Cpu {
@@ -34,6 +36,7 @@ impl Cpu {
             // Start execution with a NOP while the real first
             // instruction is fetched.
             next_instruction: Instruction(0x0),
+            sr: 0,
         }
     }
 
@@ -63,19 +66,21 @@ impl Cpu {
         self.inter.store32(addr, val);
     }
 
+    /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self, instruction: Instruction) {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
                 0b100101 => self.op_or(instruction),
-                _        => panic!("Unhandled opcode {:08x}", instruction.0),
+                _        => panic!("Unhandled instruction {}", instruction),
             },
             0b000010 => self.op_j(instruction),
             0b001001 => self.op_addiu(instruction),
             0b001101 => self.op_ori(instruction),
             0b001111 => self.op_lui(instruction),
+            0b010000 => self.op_cop0(instruction),
             0b101011 => self.op_sw(instruction),
-            _        => panic!("Unhandled opcode {:08x}", instruction.0),
+            _        => panic!("Unhandled instruction {}", instruction),
         }
     }
 
@@ -152,8 +157,35 @@ impl Cpu {
         self.set_reg(t, v);
     }
 
+    /// Coprocessor 0 opcode
+    fn op_cop0(&mut self, instruction: Instruction) {
+        match instruction.cop_opcode() {
+            0b00100 => self.op_mtc0(instruction),
+            _       => panic!("unhandled cop0 instruction {}", instruction)
+        }
+    }
+
+    fn op_mtc0(&mut self, instruction: Instruction) {
+        let cpu_r = instruction.t();
+        let cop_r = instruction.d().0;
+
+        let v = self.reg(cpu_r);
+
+        match cop_r {
+            12 => self.sr = v,
+            n  => panic!("Unhandled cop0 register: {:08x}", n),
+        }
+    }
+
     /// Store Word
     fn op_sw(&mut self, instruction: Instruction) {
+
+        if self.sr & 0x10000 != 0 {
+            // Cache is isolated, ignore write
+            println!("ignoring store while cache is isolated");
+            return;
+        }
+
         let i = instruction.imm_se();
         let t = instruction.t();
         let s = instruction.s();
@@ -182,6 +214,14 @@ impl Instruction {
 
         op & 0x3f
     }
+
+    /// Return coprocessor opcode in bits [25:21]
+    fn cop_opcode(self) -> u32 {
+        let Instruction(op) = self;
+
+        (op >> 21) & 0x1f
+    }
+
 
     /// Return register index in bits [25:21]
     fn s(self) -> RegisterIndex {
@@ -233,6 +273,14 @@ impl Instruction {
         let Instruction(op) = self;
 
         op & 0x3ffffff
+    }
+}
+
+impl Display for Instruction {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        try!(write!(f, "{:08x}", self.0));
+
+        Ok(())
     }
 }
 

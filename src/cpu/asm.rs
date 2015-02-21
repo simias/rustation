@@ -11,6 +11,7 @@ pub fn decode(instruction: Instruction) -> String {
         0b001001 => op_addiu(instruction),
         0b001101 => op_ori(instruction),
         0b001111 => op_lui(instruction),
+        0b010000 => op_cop0(instruction),
         0b101011 => op_sw(instruction),
         _        => format!("!UNKNOWN!"),
     }
@@ -63,6 +64,20 @@ fn op_lui(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("lui {}, 0x{:x}", reg(t), i)
+}
+
+fn op_cop0(instruction: Instruction) -> String {
+    match instruction.cop_opcode() {
+        0b00100 => op_mtc0(instruction),
+        _       => format!("!UNKNOWN cop0 instruction {}!", instruction)
+    }
+}
+
+fn op_mtc0(instruction: Instruction) -> String{
+    let cpu_r = instruction.t();
+    let cop_r = instruction.d().0;
+
+    format!("mtc0 {}, cop0_{}", reg(cpu_r), cop_r)
 }
 
 fn op_sw(instruction: Instruction) -> String {
