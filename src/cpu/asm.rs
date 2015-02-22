@@ -8,6 +8,8 @@ pub fn decode(instruction: Instruction) -> String {
             _        => format!("!UNKNOWN!"),
         },
         0b000010 => op_j(instruction),
+        0b000101 => op_bne(instruction),
+        0b001000 => op_addi(instruction),
         0b001001 => op_addiu(instruction),
         0b001101 => op_ori(instruction),
         0b001111 => op_lui(instruction),
@@ -41,6 +43,22 @@ fn op_j(instruction: Instruction) -> String {
     let i = instruction.imm_jump();
 
     format!("J (PC & 0xf0000000) | {:x}", i << 2)
+}
+
+fn op_bne(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("BNE {}, {}, {}", reg(s), reg(t), (i << 2) as i32)
+}
+
+fn op_addi(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t();
+    let s = instruction.s();
+
+    format!("addi {}, {}, 0x{:x}", reg(t), reg(s), i)
 }
 
 fn op_addiu(instruction: Instruction) -> String {

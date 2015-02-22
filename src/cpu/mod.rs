@@ -66,6 +66,24 @@ impl Cpu {
         self.inter.store32(addr, val);
     }
 
+    /// Branch to immediate value `offset`.
+    fn branch(&mut self, offset: u32) {
+        // Offset immediates are always shifted two places to the
+        // right since `PC` addresses have to be aligned on 32bits at
+        // all times.
+        let offset = offset << 2;
+
+        let mut pc = self.pc;
+
+        pc = pc.wrapping_add(offset);
+
+        // We need to compensate for the hardcoded
+        // `pc.wrapping_add(4)` in `run_next_instruction`
+        pc = pc.wrapping_sub(4);
+
+        self.pc = pc;
+    }
+
     /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self, instruction: Instruction) {
         match instruction.function() {
@@ -75,6 +93,8 @@ impl Cpu {
                 _        => panic!("Unhandled instruction {}", instruction),
             },
             0b000010 => self.op_j(instruction),
+            0b000101 => self.op_bne(instruction),
+            0b001000 => self.op_addi(instruction),
             0b001001 => self.op_addiu(instruction),
             0b001101 => self.op_ori(instruction),
             0b001111 => self.op_lui(instruction),
@@ -122,6 +142,33 @@ impl Cpu {
         let i = instruction.imm_jump();
 
         self.pc = (self.pc & 0xf0000000) | (i << 2);
+    }
+
+    /// Branch if Not Equal
+    fn op_bne(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        if self.reg(s) != self.reg(t) {
+            self.branch(i);
+        }
+    }
+
+    /// Add Immediate Unsigned and check for overflow
+    fn op_addi(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se() as i32;
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let s = self.reg(s) as i32;
+
+        let v = match s.checked_add(i) {
+            Some(v) => v as u32,
+            None    => panic!("ADDI overflow"),
+        };
+
+        self.set_reg(t, v);
     }
 
     /// Add Immediate Unsigned
@@ -182,7 +229,7 @@ impl Cpu {
 
         if self.sr & 0x10000 != 0 {
             // Cache is isolated, ignore write
-            println!("ignoring store while cache is isolated");
+            println!("Ignoring store while cache is isolated");
             return;
         }
 
