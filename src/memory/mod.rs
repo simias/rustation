@@ -1,17 +1,22 @@
 pub mod bios;
+mod ram;
 
 use self::bios::Bios;
+use self::ram::Ram;
 
 /// Global interconnect
 pub struct Interconnect {
     /// Basic Input/Output memory
     bios: Bios,
+    /// Main RAM
+    ram: Ram,
 }
 
 impl Interconnect {
     pub fn new(bios: Bios) -> Interconnect {
         Interconnect {
             bios: bios,
+            ram:  Ram::new(),
         }
     }
 
@@ -26,6 +31,10 @@ impl Interconnect {
             return self.bios.load32(offset);
         }
 
+        if let Some(offset) = map::RAM.contains(addr) {
+            return self.ram.load32(offset);
+        }
+
         panic!("unhandled fetch32 at address {:08x}", addr);
     }
 
@@ -34,6 +43,10 @@ impl Interconnect {
 
         if addr % 4 != 0 {
             panic!("Unaligned store32 address: {:08x}", addr);
+        }
+
+        if let Some(offset) = map::RAM.contains(addr) {
+            return self.ram.store32(offset, val);
         }
 
         if let Some(_) = map::CACHE_CONTROL.contains(addr) {
@@ -83,6 +96,8 @@ mod map {
             }
         }
     }
+
+    pub const RAM: Range = Range(0xa0000000, 2 * 1024 * 1024);
 
     pub const BIOS: Range = Range(0xbfc00000, 512 * 1024);
 

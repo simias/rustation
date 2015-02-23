@@ -13,10 +13,17 @@ pub struct Cpu {
     next_instruction: Instruction,
     /// General Purpose Registers. The first entry must always contain 0
     regs: [u32; 32],
+    /// 2nd set of registers used to emulate the load delay slot
+    /// accurately. They contain the output of the current
+    /// instruction.
+    out_regs: [u32; 32],
     /// Memory interface
     inter: Interconnect,
     /// Cop0 register 12: Status Register
     sr: u32,
+    /// Load initiated by the current instruction (will take effect
+    /// after the load delay slot)
+    load: (RegisterIndex, u32),
 }
 
 impl Cpu {
@@ -32,11 +39,13 @@ impl Cpu {
             // PC reset value at the beginning of the BIOS
             pc: 0xbfc00000,
             regs: regs,
+            out_regs: regs,
             inter: inter,
             // Start execution with a NOP while the real first
             // instruction is fetched.
             next_instruction: Instruction(0x0),
             sr: 0,
+            load: (RegisterIndex(0), 0),
         }
     }
 
@@ -53,7 +62,20 @@ impl Cpu {
         // instructions are 32bit long.
         self.pc = pc.wrapping_add(4);
 
+        // Execute the pending load (if any, otherwise it will load
+        // `R0` which is a NOP). `set_reg` works only on `out_regs` so
+        // this operation won't be visible by the next instruction.
+        let (reg, val) = self.load;
+        self.set_reg(reg, val);
+
+        // We reset the load to target register 0 for the next
+        // instruction
+        self.load = (RegisterIndex(0), 0);
+
         self.decode_and_execute(instruction);
+
+        // Copy the output registers as input for the next instruction
+        self.regs = self.out_regs;
     }
 
     /// Load 32bit value from the memory
@@ -99,6 +121,7 @@ impl Cpu {
             0b001101 => self.op_ori(instruction),
             0b001111 => self.op_lui(instruction),
             0b010000 => self.op_cop0(instruction),
+            0b100011 => self.op_lw(instruction),
             0b101011 => self.op_sw(instruction),
             _        => panic!("Unhandled instruction {}", instruction),
         }
@@ -109,10 +132,10 @@ impl Cpu {
     }
 
     fn set_reg(&mut self, index: RegisterIndex, val: u32) {
-        self.regs[index.0 as usize] = val;
+        self.out_regs[index.0 as usize] = val;
 
         // Make sure R0 is always 0
-        self.regs[0] = 0;
+        self.out_regs[0] = 0;
     }
 
     /// Shift Left Logical
@@ -212,6 +235,7 @@ impl Cpu {
         }
     }
 
+    /// Move To Coprocessor 0
     fn op_mtc0(&mut self, instruction: Instruction) {
         let cpu_r = instruction.t();
         let cop_r = instruction.d().0;
@@ -219,9 +243,38 @@ impl Cpu {
         let v = self.reg(cpu_r);
 
         match cop_r {
+            3 | 5 | 6 | 7 | 9 | 11  => // Breakpoints registers
+                if v != 0 {
+                    panic!("Unhandled write to cop0r{}: {:08x}", cop_r, v)
+                },
             12 => self.sr = v,
-            n  => panic!("Unhandled cop0 register: {:08x}", n),
+            13 => // Cause register
+                if v != 0 {
+                    panic!("Unhandled write to CAUSE register: {:08x}", v)
+                },
+            _  => panic!("Unhandled cop0 register {}", cop_r),
         }
+    }
+
+    /// Load Word
+    fn op_lw(&mut self, instruction: Instruction) {
+
+        if self.sr & 0x10000 != 0 {
+            // Cache is isolated, ignore write
+            println!("Ignoring load while cache is isolated");
+            return;
+        }
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        let v = self.load32(addr);
+
+        // Put the load in the delay slot
+        self.load = (t, v);
     }
 
     /// Store Word
@@ -331,6 +384,7 @@ impl Display for Instruction {
     }
 }
 
+#[derive(Clone,Copy)]
 struct RegisterIndex(u32);
 
 impl Debug for Cpu {
@@ -351,6 +405,13 @@ impl Debug for Cpu {
                           REGISTER_MNEMONICS[r2], self.regs[r2],
                           REGISTER_MNEMONICS[r3], self.regs[r3],
                           REGISTER_MNEMONICS[r4], self.regs[r4]));
+        }
+
+        let (RegisterIndex(reg), val) = self.load;
+
+        if reg != 0 {
+            try!(writeln!(f, "Pending load: {} <- {:08x}",
+                          REGISTER_MNEMONICS[reg as usize], val));
         }
 
         try!(writeln!(f, "Next instruction: 0x{:08x} {}",
