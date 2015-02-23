@@ -111,7 +111,9 @@ impl Cpu {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
+                0b100001 => self.op_addu(instruction),
                 0b100101 => self.op_or(instruction),
+                0b101011 => self.op_sltu(instruction),
                 _        => panic!("Unhandled instruction {}", instruction),
             },
             0b000010 => self.op_j(instruction),
@@ -149,6 +151,17 @@ impl Cpu {
         self.set_reg(d, v);
     }
 
+    /// Add Unsigned
+    fn op_addu(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let v = self.reg(s).wrapping_add(self.reg(t));
+
+        self.set_reg(d, v);
+    }
+
     /// Bitwise Or
     fn op_or(&mut self, instruction: Instruction) {
         let d = instruction.d();
@@ -158,6 +171,17 @@ impl Cpu {
         let v = self.reg(s) | self.reg(t);
 
         self.set_reg(d, v);
+    }
+
+    /// Set on Less Than Unsigned
+    fn op_sltu(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let v = self.reg(s) < self.reg(t);
+
+        self.set_reg(d, v as u32);
     }
 
     /// Jump

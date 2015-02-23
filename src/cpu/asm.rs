@@ -4,7 +4,9 @@ pub fn decode(instruction: Instruction) -> String {
     match instruction.function() {
         0b000000 => match instruction.subfunction() {
             0b000000 => op_sll(instruction),
+            0b100001 => op_addu(instruction),
             0b100101 => op_or(instruction),
+            0b101011 => op_sltu(instruction),
             _        => format!("!UNKNOWN!"),
         },
         0b000010 => op_j(instruction),
@@ -32,12 +34,28 @@ fn op_sll(instruction: Instruction) -> String {
     format!("sll {}, {} << {}", reg(d), reg(t), i)
 }
 
+fn op_addu(instruction: Instruction) -> String {
+    let d = instruction.d();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("addu {}, {}, {}", reg(d), reg(s), reg(t))
+}
+
 fn op_or(instruction: Instruction) -> String {
     let d = instruction.d();
     let s = instruction.s();
     let t = instruction.t();
 
     format!("or {}, {}, {}", reg(d), reg(s), reg(t))
+}
+
+fn op_sltu(instruction: Instruction) -> String {
+    let d = instruction.d();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("sltu {}, {}, {}", reg(d), reg(s), reg(t))
 }
 
 fn op_j(instruction: Instruction) -> String {
