@@ -106,6 +106,11 @@ impl Cpu {
         self.pc = pc;
     }
 
+    /// Store 16bit value into the memory
+    fn store16(&mut self, addr: u32, val: u16) {
+        self.inter.store16(addr, val);
+    }
+
     /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self, instruction: Instruction) {
         match instruction.function() {
@@ -124,6 +129,7 @@ impl Cpu {
             0b001111 => self.op_lui(instruction),
             0b010000 => self.op_cop0(instruction),
             0b100011 => self.op_lw(instruction),
+            0b101001 => self.op_sh(instruction),
             0b101011 => self.op_sw(instruction),
             _        => panic!("Unhandled instruction {}", instruction),
         }
@@ -299,6 +305,25 @@ impl Cpu {
 
         // Put the load in the delay slot
         self.load = (t, v);
+    }
+
+    /// Store Halfword
+    fn op_sh(&mut self, instruction: Instruction) {
+
+        if self.sr & 0x10000 != 0 {
+            // Cache is isolated, ignore write
+            println!("Ignoring store while cache is isolated");
+            return;
+        }
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+        let v    = self.reg(t);
+
+        self.store16(addr, v as u16);
     }
 
     /// Store Word
