@@ -122,6 +122,7 @@ impl Cpu {
                 _        => panic!("Unhandled instruction {}", instruction),
             },
             0b000010 => self.op_j(instruction),
+            0b000011 => self.op_jal(instruction),
             0b000101 => self.op_bne(instruction),
             0b001000 => self.op_addi(instruction),
             0b001001 => self.op_addiu(instruction),
@@ -195,6 +196,16 @@ impl Cpu {
         let i = instruction.imm_jump();
 
         self.pc = (self.pc & 0xf0000000) | (i << 2);
+    }
+
+    /// Jump And Link
+    fn op_jal(&mut self, instruction: Instruction) {
+        let ra = self.pc;
+
+        // Store return address in R31
+        self.set_reg(RegisterIndex(31), ra);
+
+        self.op_j(instruction);
     }
 
     /// Branch if Not Equal

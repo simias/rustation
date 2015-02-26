@@ -10,6 +10,7 @@ pub fn decode(instruction: Instruction) -> String {
             _        => format!("!UNKNOWN!"),
         },
         0b000010 => op_j(instruction),
+        0b000011 => op_jal(instruction),
         0b000101 => op_bne(instruction),
         0b001000 => op_addi(instruction),
         0b001001 => op_addiu(instruction),
@@ -63,6 +64,12 @@ fn op_j(instruction: Instruction) -> String {
     let i = instruction.imm_jump();
 
     format!("J (PC & 0xf0000000) | {:x}", i << 2)
+}
+
+fn op_jal(instruction: Instruction) -> String {
+    let i = instruction.imm_jump();
+
+    format!("JAL (PC & 0xf0000000) | {:x}", i << 2)
 }
 
 fn op_bne(instruction: Instruction) -> String {
