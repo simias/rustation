@@ -4,6 +4,7 @@ pub fn decode(instruction: Instruction) -> String {
     match instruction.function() {
         0b000000 => match instruction.subfunction() {
             0b000000 => op_sll(instruction),
+            0b001000 => op_jr(instruction),
             0b100001 => op_addu(instruction),
             0b100101 => op_or(instruction),
             0b101011 => op_sltu(instruction),
@@ -14,10 +15,12 @@ pub fn decode(instruction: Instruction) -> String {
         0b000101 => op_bne(instruction),
         0b001000 => op_addi(instruction),
         0b001001 => op_addiu(instruction),
+        0b001100 => op_andi(instruction),
         0b001101 => op_ori(instruction),
         0b001111 => op_lui(instruction),
         0b010000 => op_cop0(instruction),
         0b100011 => op_lw(instruction),
+        0b101000 => op_sb(instruction),
         0b101001 => op_sh(instruction),
         0b101011 => op_sw(instruction),
         _        => format!("!UNKNOWN!"),
@@ -34,6 +37,12 @@ fn op_sll(instruction: Instruction) -> String {
     let d = instruction.d();
 
     format!("sll {}, {} << {}", reg(d), reg(t), i)
+}
+
+fn op_jr(instruction: Instruction) -> String {
+    let s = instruction.s();
+
+    format!("jr {}", reg(s),)
 }
 
 fn op_addu(instruction: Instruction) -> String {
@@ -96,6 +105,14 @@ fn op_addiu(instruction: Instruction) -> String {
     format!("addiu {}, {}, 0x{:x}", reg(t), reg(s), i)
 }
 
+fn op_andi(instruction: Instruction) -> String {
+    let i = instruction.imm();
+    let t = instruction.t();
+    let s = instruction.s();
+
+    format!("andi {}, {}, 0x{:x}", reg(t), reg(s), i)
+}
+
 fn op_ori(instruction: Instruction) -> String {
     let i = instruction.imm();
     let t = instruction.t();
@@ -131,6 +148,14 @@ fn op_lw(instruction: Instruction) -> String {
     let s = instruction.s();
 
     format!("lw {}, [{} + 0x{:x}]", reg(t), reg(s), i)
+}
+
+fn op_sb(instruction: Instruction) -> String {
+    let i = instruction.imm_se() as i16;
+    let t = instruction.t();
+    let s = instruction.s();
+
+    format!("sb {}, [{} + 0x{:x}]", reg(t), reg(s), i)
 }
 
 fn op_sh(instruction: Instruction) -> String {

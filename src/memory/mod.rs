@@ -100,6 +100,18 @@ impl Interconnect {
 
         panic!("unhandled store16 into address {:08x}", addr);
     }
+
+    /// Store byte `val` into `addr`
+    pub fn store8(&mut self, addr: u32, _: u8) {
+        let abs_addr = map::mask_region(addr);
+
+        if let Some(offset) = map::EXPANSION_2.contains(abs_addr) {
+            println!("Unhandled write to expansion 2 register {:x}", offset);
+            return;
+        }
+
+        panic!("unhandled store8 into address {:08x}", addr);
+    }
 }
 
 mod map {
@@ -151,6 +163,9 @@ mod map {
 
     /// SPU registers
     pub const SPU: Range = Range(0x1f801c00, 640);
+
+    /// Expansion region 2
+    pub const EXPANSION_2: Range = Range(0x1f802000, 66);
 
     /// Cache control register. Full address since it's in KSEG2
     pub const CACHE_CONTROL: Range = Range(0xfffe0130, 4);

@@ -111,11 +111,17 @@ impl Cpu {
         self.inter.store16(addr, val);
     }
 
+    /// Store 8bit value into the memory
+    fn store8(&mut self, addr: u32, val: u8) {
+        self.inter.store8(addr, val);
+    }
+
     /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self, instruction: Instruction) {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
+                0b001000 => self.op_jr(instruction),
                 0b100001 => self.op_addu(instruction),
                 0b100101 => self.op_or(instruction),
                 0b101011 => self.op_sltu(instruction),
@@ -126,10 +132,12 @@ impl Cpu {
             0b000101 => self.op_bne(instruction),
             0b001000 => self.op_addi(instruction),
             0b001001 => self.op_addiu(instruction),
+            0b001100 => self.op_andi(instruction),
             0b001101 => self.op_ori(instruction),
             0b001111 => self.op_lui(instruction),
             0b010000 => self.op_cop0(instruction),
             0b100011 => self.op_lw(instruction),
+            0b101000 => self.op_sb(instruction),
             0b101001 => self.op_sh(instruction),
             0b101011 => self.op_sw(instruction),
             _        => panic!("Unhandled instruction {}", instruction),
@@ -156,6 +164,13 @@ impl Cpu {
         let v = self.reg(t) << i;
 
         self.set_reg(d, v);
+    }
+
+    /// Jump Register
+    fn op_jr(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+
+        self.pc = self.reg(s);
     }
 
     /// Add Unsigned
@@ -246,6 +261,17 @@ impl Cpu {
         self.set_reg(t, v);
     }
 
+    /// Bitwise And Immediate
+    fn op_andi(&mut self, instruction: Instruction) {
+        let i = instruction.imm();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let v = self.reg(s) & i;
+
+        self.set_reg(t, v);
+    }
+
     /// Bitwise Or Immediate
     fn op_ori(&mut self, instruction: Instruction) {
         let i = instruction.imm();
@@ -316,6 +342,25 @@ impl Cpu {
 
         // Put the load in the delay slot
         self.load = (t, v);
+    }
+
+    /// Store Byte
+    fn op_sb(&mut self, instruction: Instruction) {
+
+        if self.sr & 0x10000 != 0 {
+            // Cache is isolated, ignore write
+            println!("Ignoring store while cache is isolated");
+            return;
+        }
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+        let v    = self.reg(t);
+
+        self.store8(addr, v as u8);
     }
 
     /// Store Halfword
