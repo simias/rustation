@@ -44,6 +44,10 @@ impl Interconnect {
     pub fn load8(&self, addr: u32) -> u8 {
         let abs_addr = map::mask_region(addr);
 
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            return self.ram.load8(offset);
+        }
+
         if let Some(offset) = map::BIOS.contains(abs_addr) {
             return self.bios.load8(offset);
         }
@@ -118,8 +122,12 @@ impl Interconnect {
     }
 
     /// Store byte `val` into `addr`
-    pub fn store8(&mut self, addr: u32, _: u8) {
+    pub fn store8(&mut self, addr: u32, val: u8) {
         let abs_addr = map::mask_region(addr);
+
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            return self.ram.store8(offset, val);
+        }
 
         if let Some(offset) = map::EXPANSION_2.contains(abs_addr) {
             println!("Unhandled write to expansion 2 register {:x}", offset);

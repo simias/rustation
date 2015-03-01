@@ -31,6 +31,11 @@ impl Ram {
         b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
 
+    /// Fetch the byte at `offset`
+    pub fn load8(&self, offset: u32) -> u8 {
+        self.data[offset as usize]
+    }
+
     /// Store the 32bit little endian word `val` into `offset`
     pub fn store32(&mut self, offset: u32, val: u32) {
         let offset = offset as usize;
@@ -46,4 +51,8 @@ impl Ram {
         self.data[offset + 3] = b3;
     }
 
+    /// Store the byte `val` into `offset`
+    pub fn store8(&mut self, offset: u32, val: u8) {
+        self.data[offset as usize] = val;
+    }
 }
