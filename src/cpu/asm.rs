@@ -12,6 +12,7 @@ pub fn decode(instruction: Instruction) -> String {
         },
         0b000010 => op_j(instruction),
         0b000011 => op_jal(instruction),
+        0b000100 => op_beq(instruction),
         0b000101 => op_bne(instruction),
         0b001000 => op_addi(instruction),
         0b001001 => op_addiu(instruction),
@@ -19,6 +20,7 @@ pub fn decode(instruction: Instruction) -> String {
         0b001101 => op_ori(instruction),
         0b001111 => op_lui(instruction),
         0b010000 => op_cop0(instruction),
+        0b100000 => op_lb(instruction),
         0b100011 => op_lw(instruction),
         0b101000 => op_sb(instruction),
         0b101001 => op_sh(instruction),
@@ -72,13 +74,21 @@ fn op_sltu(instruction: Instruction) -> String {
 fn op_j(instruction: Instruction) -> String {
     let i = instruction.imm_jump();
 
-    format!("J (PC & 0xf0000000) | {:x}", i << 2)
+    format!("j (PC & 0xf0000000) | {:x}", i << 2)
 }
 
 fn op_jal(instruction: Instruction) -> String {
     let i = instruction.imm_jump();
 
-    format!("JAL (PC & 0xf0000000) | {:x}", i << 2)
+    format!("jal (PC & 0xf0000000) | {:x}", i << 2)
+}
+
+fn op_beq(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("beq {}, {}, {}", reg(s), reg(t), (i << 2) as i32)
 }
 
 fn op_bne(instruction: Instruction) -> String {
@@ -86,7 +96,7 @@ fn op_bne(instruction: Instruction) -> String {
     let s = instruction.s();
     let t = instruction.t();
 
-    format!("BNE {}, {}, {}", reg(s), reg(t), (i << 2) as i32)
+    format!("bne {}, {}, {}", reg(s), reg(t), (i << 2) as i32)
 }
 
 fn op_addi(instruction: Instruction) -> String {
@@ -142,8 +152,16 @@ fn op_mtc0(instruction: Instruction) -> String{
     format!("mtc0 {}, cop0r{}", reg(cpu_r), cop_r)
 }
 
+fn op_lb(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t();
+    let s = instruction.s();
+
+    format!("lb {}, [{} + 0x{:x}]", reg(t), reg(s), i)
+}
+
 fn op_lw(instruction: Instruction) -> String {
-    let i = instruction.imm_se() as i16;
+    let i = instruction.imm_se();
     let t = instruction.t();
     let s = instruction.s();
 
@@ -151,7 +169,7 @@ fn op_lw(instruction: Instruction) -> String {
 }
 
 fn op_sb(instruction: Instruction) -> String {
-    let i = instruction.imm_se() as i16;
+    let i = instruction.imm_se();
     let t = instruction.t();
     let s = instruction.s();
 
@@ -159,7 +177,7 @@ fn op_sb(instruction: Instruction) -> String {
 }
 
 fn op_sh(instruction: Instruction) -> String {
-    let i = instruction.imm_se() as i16;
+    let i = instruction.imm_se();
     let t = instruction.t();
     let s = instruction.s();
 
@@ -167,7 +185,7 @@ fn op_sh(instruction: Instruction) -> String {
 }
 
 fn op_sw(instruction: Instruction) -> String {
-    let i = instruction.imm_se() as i16;
+    let i = instruction.imm_se();
     let t = instruction.t();
     let s = instruction.s();
 

@@ -83,6 +83,11 @@ impl Cpu {
         self.inter.load32(addr)
     }
 
+    /// Load 8bit value from the memory
+    fn load8(&self, addr: u32) -> u8 {
+        self.inter.load8(addr)
+    }
+
     /// Store 32bit value into the memory
     fn store32(&mut self, addr: u32, val: u32) {
         self.inter.store32(addr, val);
@@ -129,6 +134,7 @@ impl Cpu {
             },
             0b000010 => self.op_j(instruction),
             0b000011 => self.op_jal(instruction),
+            0b000100 => self.op_beq(instruction),
             0b000101 => self.op_bne(instruction),
             0b001000 => self.op_addi(instruction),
             0b001001 => self.op_addiu(instruction),
@@ -136,6 +142,7 @@ impl Cpu {
             0b001101 => self.op_ori(instruction),
             0b001111 => self.op_lui(instruction),
             0b010000 => self.op_cop0(instruction),
+            0b100000 => self.op_lb(instruction),
             0b100011 => self.op_lw(instruction),
             0b101000 => self.op_sb(instruction),
             0b101001 => self.op_sh(instruction),
@@ -221,6 +228,17 @@ impl Cpu {
         self.set_reg(RegisterIndex(31), ra);
 
         self.op_j(instruction);
+    }
+
+    /// Branch if Equal
+    fn op_beq(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        if self.reg(s) == self.reg(t) {
+            self.branch(i);
+        }
     }
 
     /// Branch if Not Equal
@@ -323,14 +341,24 @@ impl Cpu {
         }
     }
 
+    /// Load Byte (signed)
+    fn op_lb(&mut self, instruction: Instruction) {
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        // Cast as i8 to force sign extension
+        let v = self.load8(addr) as i8;
+
+        // Put the load in the delay slot
+        self.load = (t, v as u32);
+    }
+
     /// Load Word
     fn op_lw(&mut self, instruction: Instruction) {
-
-        if self.sr & 0x10000 != 0 {
-            // Cache is isolated, ignore write
-            println!("Ignoring load while cache is isolated");
-            return;
-        }
 
         let i = instruction.imm_se();
         let t = instruction.t();

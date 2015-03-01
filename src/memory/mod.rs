@@ -40,6 +40,22 @@ impl Interconnect {
         panic!("unhandled load32 at address {:08x}", addr);
     }
 
+    /// Load byte at `addr`
+    pub fn load8(&self, addr: u32) -> u8 {
+        let abs_addr = map::mask_region(addr);
+
+        if let Some(offset) = map::BIOS.contains(abs_addr) {
+            return self.bios.load8(offset);
+        }
+
+        if let Some(_) = map::EXPANSION_1.contains(abs_addr) {
+            // No expansion implemented
+            return !0;
+        }
+
+        panic!("unhandled load8 at address {:08x}", addr);
+    }
+
     /// Store 32bit word `val` into `addr`
     pub fn store32(&mut self, addr: u32, val: u32) {
 
@@ -151,6 +167,9 @@ mod map {
     }
 
     pub const RAM: Range = Range(0x00000000, 2 * 1024 * 1024);
+
+    /// Expansion region 1
+    pub const EXPANSION_1: Range = Range(0x1f000000, 512 * 1024);
 
     pub const BIOS: Range = Range(0x1fc00000, 512 * 1024);
 
