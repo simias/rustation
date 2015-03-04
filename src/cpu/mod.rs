@@ -148,6 +148,7 @@ impl Cpu {
             0b010000 => self.op_cop0(instruction),
             0b100000 => self.op_lb(instruction),
             0b100011 => self.op_lw(instruction),
+            0b100100 => self.op_lbu(instruction),
             0b101000 => self.op_sb(instruction),
             0b101001 => self.op_sh(instruction),
             0b101011 => self.op_sw(instruction),
@@ -444,6 +445,21 @@ impl Cpu {
 
         // Put the load in the delay slot
         self.load = (t, v);
+    }
+
+    /// Load Byte Unsigned
+    fn op_lbu(&mut self, instruction: Instruction) {
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        let v = self.load8(addr);
+
+        // Put the load in the delay slot
+        self.load = (t, v as u32);
     }
 
     /// Store Byte
