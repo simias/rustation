@@ -73,6 +73,11 @@ impl Interconnect {
             return self.ram.store32(offset, val);
         }
 
+        if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
+            println!("IRQ control: {:x} <- {:08x}", offset, val);
+            return;
+        }
+
         if let Some(_) = map::CACHE_CONTROL.contains(abs_addr) {
             println!("Unhandled write to CACHE_CONTROL: {:08x}", val);
             return;
@@ -187,6 +192,9 @@ mod map {
     /// Register that has something to do with RAM configuration,
     /// configured by the BIOS
     pub const RAM_SIZE: Range = Range(0x1f801060, 4);
+
+    /// Interrupt Control registers (status and mask)
+    pub const IRQ_CONTROL: Range = Range(0x1f801070, 8);
 
     /// SPU registers
     pub const SPU: Range = Range(0x1f801c00, 640);
