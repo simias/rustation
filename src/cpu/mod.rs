@@ -127,6 +127,7 @@ impl Cpu {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
                 0b001000 => self.op_jr(instruction),
+                0b001001 => self.op_jalr(instruction),
                 0b100000 => self.op_add(instruction),
                 0b100001 => self.op_addu(instruction),
                 0b100100 => self.op_and(instruction),
@@ -181,6 +182,19 @@ impl Cpu {
     /// Jump Register
     fn op_jr(&mut self, instruction: Instruction) {
         let s = instruction.s();
+
+        self.pc = self.reg(s);
+    }
+
+    /// Jump And Link Register
+    fn op_jalr(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+
+        let ra = self.pc;
+
+        // Store return address in `d`
+        self.set_reg(d, ra);
 
         self.pc = self.reg(s);
     }
