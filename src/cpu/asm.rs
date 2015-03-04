@@ -16,6 +16,7 @@ pub fn decode(instruction: Instruction) -> String {
         0b000011 => op_jal(instruction),
         0b000100 => op_beq(instruction),
         0b000101 => op_bne(instruction),
+        0b000111 => op_bgtz(instruction),
         0b001000 => op_addi(instruction),
         0b001001 => op_addiu(instruction),
         0b001100 => op_andi(instruction),
@@ -115,6 +116,13 @@ fn op_bne(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("bne {}, {}, {}", reg(s), reg(t), (i << 2) as i32)
+}
+
+fn op_bgtz(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let s = instruction.s();
+
+    format!("bgtz {}, {}", reg(s), (i << 2) as i32)
 }
 
 fn op_addi(instruction: Instruction) -> String {
