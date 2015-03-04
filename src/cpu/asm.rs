@@ -5,6 +5,7 @@ pub fn decode(instruction: Instruction) -> String {
         0b000000 => match instruction.subfunction() {
             0b000000 => op_sll(instruction),
             0b001000 => op_jr(instruction),
+            0b100000 => op_add(instruction),
             0b100001 => op_addu(instruction),
             0b100100 => op_and(instruction),
             0b100101 => op_or(instruction),
@@ -46,6 +47,14 @@ fn op_jr(instruction: Instruction) -> String {
     let s = instruction.s();
 
     format!("jr {}", reg(s),)
+}
+
+fn op_add(instruction: Instruction) -> String {
+    let d = instruction.d();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("add {}, {}, {}", reg(d), reg(s), reg(t))
 }
 
 fn op_addu(instruction: Instruction) -> String {

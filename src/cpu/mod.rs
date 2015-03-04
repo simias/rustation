@@ -127,6 +127,7 @@ impl Cpu {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
                 0b001000 => self.op_jr(instruction),
+                0b100000 => self.op_add(instruction),
                 0b100001 => self.op_addu(instruction),
                 0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
@@ -179,6 +180,23 @@ impl Cpu {
         let s = instruction.s();
 
         self.pc = self.reg(s);
+    }
+
+    /// Add and generate an exception on overflow
+    fn op_add(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let s = self.reg(s) as i32;
+        let t = self.reg(t) as i32;
+
+        let v = match s.checked_add(t) {
+            Some(v) => v as u32,
+            None    => panic!("ADD overflow"),
+        };
+
+        self.set_reg(d, v);
     }
 
     /// Add Unsigned
