@@ -128,6 +128,7 @@ impl Cpu {
                 0b000000 => self.op_sll(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b100001 => self.op_addu(instruction),
+                0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
                 0b101011 => self.op_sltu(instruction),
                 _        => panic!("Unhandled instruction {}", instruction),
@@ -187,6 +188,17 @@ impl Cpu {
         let d = instruction.d();
 
         let v = self.reg(s).wrapping_add(self.reg(t));
+
+        self.set_reg(d, v);
+    }
+
+    /// Bitwise And
+    fn op_and(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let v = self.reg(s) & self.reg(t);
 
         self.set_reg(d, v);
     }
@@ -315,9 +327,26 @@ impl Cpu {
     /// Coprocessor 0 opcode
     fn op_cop0(&mut self, instruction: Instruction) {
         match instruction.cop_opcode() {
+            0b00000 => self.op_mfc0(instruction),
             0b00100 => self.op_mtc0(instruction),
             _       => panic!("unhandled cop0 instruction {}", instruction)
         }
+    }
+
+    /// Move From Coprocessor 0
+    fn op_mfc0(&mut self, instruction: Instruction) {
+        let cpu_r = instruction.t();
+        let cop_r = instruction.d().0;
+
+        let v = match cop_r {
+            12 => self.sr,
+            13 => // Cause register
+                panic!("Unhandled read from CAUSE register"),
+            _  =>
+                panic!("Unhandled read from cop0r{}", cop_r),
+        };
+
+        self.load = (cpu_r, v)
     }
 
     /// Move To Coprocessor 0
@@ -330,6 +359,7 @@ impl Cpu {
         match cop_r {
             3 | 5 | 6 | 7 | 9 | 11  => // Breakpoints registers
                 if v != 0 {
+
                     panic!("Unhandled write to cop0r{}: {:08x}", cop_r, v)
                 },
             12 => self.sr = v,

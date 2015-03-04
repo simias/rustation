@@ -6,6 +6,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b000000 => op_sll(instruction),
             0b001000 => op_jr(instruction),
             0b100001 => op_addu(instruction),
+            0b100100 => op_and(instruction),
             0b100101 => op_or(instruction),
             0b101011 => op_sltu(instruction),
             _        => format!("!UNKNOWN!"),
@@ -53,6 +54,14 @@ fn op_addu(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("addu {}, {}, {}", reg(d), reg(s), reg(t))
+}
+
+fn op_and(instruction: Instruction) -> String {
+    let d = instruction.d();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("and {}, {}, {}", reg(d), reg(s), reg(t))
 }
 
 fn op_or(instruction: Instruction) -> String {
@@ -140,9 +149,17 @@ fn op_lui(instruction: Instruction) -> String {
 
 fn op_cop0(instruction: Instruction) -> String {
     match instruction.cop_opcode() {
+        0b00000 => op_mfc0(instruction),
         0b00100 => op_mtc0(instruction),
         _       => format!("!UNKNOWN cop0 instruction {}!", instruction)
     }
+}
+
+fn op_mfc0(instruction: Instruction) -> String{
+    let cpu_r = instruction.t();
+    let cop_r = instruction.d().0;
+
+    format!("mfc0 {}, cop0r{}", reg(cpu_r), cop_r)
 }
 
 fn op_mtc0(instruction: Instruction) -> String{
