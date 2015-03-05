@@ -17,6 +17,12 @@ pub struct Cpu {
     /// accurately. They contain the output of the current
     /// instruction.
     out_regs: [u32; 32],
+    /// HI register for division remainder and multiplication high
+    /// result
+    hi: u32,
+    /// LO register for division quotient and multiplication low
+    /// result
+    lo: u32,
     /// Memory interface
     inter: Interconnect,
     /// Cop0 register 12: Status Register
@@ -40,6 +46,8 @@ impl Cpu {
             pc: 0xbfc00000,
             regs: regs,
             out_regs: regs,
+            hi: 0xdeadbeef,
+            lo: 0xdeadbeef,
             inter: inter,
             // Start execution with a NOP while the real first
             // instruction is fetched.
@@ -129,6 +137,7 @@ impl Cpu {
                 0b000011 => self.op_sra(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
+                0b011010 => self.op_div(instruction),
                 0b100000 => self.op_add(instruction),
                 0b100001 => self.op_addu(instruction),
                 0b100011 => self.op_subu(instruction),
@@ -245,6 +254,33 @@ impl Cpu {
         self.set_reg(d, ra);
 
         self.pc = self.reg(s);
+    }
+
+    /// Division (signed)
+    fn op_div(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let n = self.reg(s) as i32;
+        let d = self.reg(t) as i32;
+
+        if d == 0 {
+            // Division by zero, results are bogus
+            self.hi = n as u32;
+
+            if n >= 0 {
+                self.lo = 0xffffffff;
+            } else {
+                self.lo = 1;
+            }
+        } else if n as u32 == 0x80000000 && d == -1 {
+            // Result is not representable in a 32bit signed integer
+            self.hi = 0;
+            self.lo = 0x80000000;
+        } else {
+            self.hi = (n % d) as u32;
+            self.lo = (n / d) as u32;
+        }
     }
 
     /// Add and generate an exception on overflow
@@ -713,6 +749,8 @@ impl Debug for Cpu {
                           REGISTER_MNEMONICS[r3], self.regs[r3],
                           REGISTER_MNEMONICS[r4], self.regs[r4]));
         }
+
+        try!(writeln!(f, "HI: {:08x}  LO: {:08x}", self.hi, self.lo));
 
         let (RegisterIndex(reg), val) = self.load;
 
