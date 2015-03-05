@@ -13,6 +13,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b101011 => op_sltu(instruction),
             _        => format!("!UNKNOWN!"),
         },
+        0b000001 => op_bxx(instruction),
         0b000010 => op_j(instruction),
         0b000011 => op_jal(instruction),
         0b000100 => op_beq(instruction),
@@ -99,6 +100,23 @@ fn op_sltu(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("sltu {}, {}, {}", reg(d), reg(s), reg(t))
+}
+
+fn op_bxx(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let s = instruction.s();
+
+    let op = match instruction.0 & (1 << 16) != 0 {
+        true  => "bgez",
+        false => "bltz",
+    };
+
+    let al = match instruction.0 & (1 << 20) != 0 {
+        true  => "al",
+        false => "",
+    };
+
+    format!("{}{} {}, {}", op, al, reg(s), (i << 2) as i32)
 }
 
 fn op_j(instruction: Instruction) -> String {

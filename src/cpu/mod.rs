@@ -135,6 +135,7 @@ impl Cpu {
                 0b101011 => self.op_sltu(instruction),
                 _        => panic!("Unhandled instruction {}", instruction),
             },
+            0b000001 => self.op_bxx(instruction),
             0b000010 => self.op_j(instruction),
             0b000011 => self.op_jal(instruction),
             0b000100 => self.op_beq(instruction),
@@ -177,6 +178,39 @@ impl Cpu {
         let v = self.reg(t) << i;
 
         self.set_reg(d, v);
+    }
+
+    /// Various branch instructions: BGEZ, BLTZ, BGEZAL, BLTZAL. Bits
+    /// 16 and 20 are used to figure out which one to use
+    fn op_bxx(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let s = instruction.s();
+
+        let instruction = instruction.0;
+
+        let is_bgez = (instruction >> 16) & 1;
+        let is_link = (instruction >> 20) & 1 != 0;
+
+        let v = self.reg(s) as i32;
+
+        // Test "less than zero"
+        let test = (v < 0) as u32;
+
+        // If the test is "greater than or equal to zero" we need to
+        // negate the comparison above ("a >= 0" <=> "!(a < 0)"). The
+        // xor takes care of that.
+        let test = test ^ is_bgez;
+
+        if test != 0 {
+            if is_link {
+                let ra = self.pc;
+
+                // Store return address in R31
+                self.set_reg(RegisterIndex(31), ra);
+            }
+
+            self.branch(i);
+        }
     }
 
     /// Jump Register
