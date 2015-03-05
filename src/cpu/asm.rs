@@ -7,6 +7,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b000011 => op_sra(instruction),
             0b001000 => op_jr(instruction),
             0b001001 => op_jalr(instruction),
+            0b010010 => op_mflo(instruction),
             0b011010 => op_div(instruction),
             0b100000 => op_add(instruction),
             0b100001 => op_addu(instruction),
@@ -71,6 +72,12 @@ fn op_jalr(instruction: Instruction) -> String {
     let s = instruction.s();
 
     format!("jalr {}, {}", reg(d), reg(s))
+}
+
+fn op_mflo(instruction: Instruction) -> String {
+    let d = instruction.d();
+
+    format!("mflo {}", reg(d))
 }
 
 fn op_div(instruction: Instruction) -> String {
