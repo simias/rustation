@@ -130,6 +130,7 @@ impl Cpu {
                 0b001001 => self.op_jalr(instruction),
                 0b100000 => self.op_add(instruction),
                 0b100001 => self.op_addu(instruction),
+                0b100011 => self.op_subu(instruction),
                 0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
                 0b101011 => self.op_sltu(instruction),
@@ -258,6 +259,17 @@ impl Cpu {
         let d = instruction.d();
 
         let v = self.reg(s).wrapping_add(self.reg(t));
+
+        self.set_reg(d, v);
+    }
+
+    /// Substract Unsigned
+    fn op_subu(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let v = self.reg(s).wrapping_sub(self.reg(t));
 
         self.set_reg(d, v);
     }
