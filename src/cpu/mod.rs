@@ -126,6 +126,7 @@ impl Cpu {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
+                0b000011 => self.op_sra(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
                 0b100000 => self.op_add(instruction),
@@ -180,6 +181,17 @@ impl Cpu {
         let v = self.reg(t) << i;
 
         self.set_reg(d, v);
+    }
+
+    /// Shift Right Arithmetic
+    fn op_sra(&mut self, instruction: Instruction) {
+        let i = instruction.shift();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let v = (self.reg(t) as i32) >> i;
+
+        self.set_reg(d, v as u32);
     }
 
     /// Various branch instructions: BGEZ, BLTZ, BGEZAL, BLTZAL. Bits
