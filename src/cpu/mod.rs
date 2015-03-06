@@ -138,6 +138,7 @@ impl Cpu {
                 0b000011 => self.op_sra(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
+                0b010000 => self.op_mfhi(instruction),
                 0b010010 => self.op_mflo(instruction),
                 0b011010 => self.op_div(instruction),
                 0b011011 => self.op_divu(instruction),
@@ -146,6 +147,7 @@ impl Cpu {
                 0b100011 => self.op_subu(instruction),
                 0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
+                0b101010 => self.op_slt(instruction),
                 0b101011 => self.op_sltu(instruction),
                 _        => panic!("Unhandled instruction {}", instruction),
             },
@@ -271,6 +273,15 @@ impl Cpu {
         self.pc = self.reg(s);
     }
 
+    /// Move From HI
+    fn op_mfhi(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+
+        let hi = self.hi;
+
+        self.set_reg(d, hi);
+    }
+
     /// Move From LO
     fn op_mflo(&mut self, instruction: Instruction) {
         let d = instruction.d();
@@ -384,6 +395,20 @@ impl Cpu {
         let v = self.reg(s) | self.reg(t);
 
         self.set_reg(d, v);
+    }
+
+    /// Set on Less Than (signed)
+    fn op_slt(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let s = self.reg(s) as i32;
+        let t = self.reg(t) as i32;
+
+        let v = s < t;
+
+        self.set_reg(d, v as u32);
     }
 
     /// Set on Less Than Unsigned

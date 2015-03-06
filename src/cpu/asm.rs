@@ -8,6 +8,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b000011 => op_sra(instruction),
             0b001000 => op_jr(instruction),
             0b001001 => op_jalr(instruction),
+            0b010000 => op_mfhi(instruction),
             0b010010 => op_mflo(instruction),
             0b011010 => op_div(instruction),
             0b011011 => op_divu(instruction),
@@ -16,6 +17,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b100011 => op_subu(instruction),
             0b100100 => op_and(instruction),
             0b100101 => op_or(instruction),
+            0b101010 => op_slt(instruction),
             0b101011 => op_sltu(instruction),
             _        => format!("!UNKNOWN!"),
         },
@@ -85,6 +87,12 @@ fn op_jalr(instruction: Instruction) -> String {
     format!("jalr {}, {}", reg(d), reg(s))
 }
 
+fn op_mfhi(instruction: Instruction) -> String {
+    let d = instruction.d();
+
+    format!("mfhi {}", reg(d))
+}
+
 fn op_mflo(instruction: Instruction) -> String {
     let d = instruction.d();
 
@@ -143,6 +151,14 @@ fn op_or(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("or {}, {}, {}", reg(d), reg(s), reg(t))
+}
+
+fn op_slt(instruction: Instruction) -> String {
+    let d = instruction.d();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("slt {}, {}, {}", reg(d), reg(s), reg(t))
 }
 
 fn op_sltu(instruction: Instruction) -> String {
