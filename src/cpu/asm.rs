@@ -28,6 +28,7 @@ pub fn decode(instruction: Instruction) -> String {
         0b001000 => op_addi(instruction),
         0b001001 => op_addiu(instruction),
         0b001010 => op_slti(instruction),
+        0b001011 => op_sltiu(instruction),
         0b001100 => op_andi(instruction),
         0b001101 => op_ori(instruction),
         0b001111 => op_lui(instruction),
@@ -225,6 +226,14 @@ fn op_slti(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("slti {}, {}, {}", reg(t), reg(s), i as i32)
+}
+
+fn op_sltiu(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("sltiu {}, {}, 0x{:x}", reg(t), reg(s), i)
 }
 
 fn op_andi(instruction: Instruction) -> String {

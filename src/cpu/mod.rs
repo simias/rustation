@@ -158,6 +158,7 @@ impl Cpu {
             0b001000 => self.op_addi(instruction),
             0b001001 => self.op_addiu(instruction),
             0b001010 => self.op_slti(instruction),
+            0b001011 => self.op_sltiu(instruction),
             0b001100 => self.op_andi(instruction),
             0b001101 => self.op_ori(instruction),
             0b001111 => self.op_lui(instruction),
@@ -474,6 +475,17 @@ impl Cpu {
         let t = instruction.t();
 
         let v = (self.reg(s) as i32) < i;
+
+        self.set_reg(t, v as u32);
+    }
+
+    /// Set if Less Than Immediate Unsigned
+    fn op_sltiu(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let v = self.reg(s) < i;
 
         self.set_reg(t, v as u32);
     }
