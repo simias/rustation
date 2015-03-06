@@ -4,6 +4,7 @@ pub fn decode(instruction: Instruction) -> String {
     match instruction.function() {
         0b000000 => match instruction.subfunction() {
             0b000000 => op_sll(instruction),
+            0b000010 => op_srl(instruction),
             0b000011 => op_sra(instruction),
             0b001000 => op_jr(instruction),
             0b001001 => op_jalr(instruction),
@@ -51,6 +52,14 @@ fn op_sll(instruction: Instruction) -> String {
     let d = instruction.d();
 
     format!("sll {}, {} << {}", reg(d), reg(t), i)
+}
+
+fn op_srl(instruction: Instruction) -> String {
+    let i = instruction.shift();
+    let t = instruction.t();
+    let d = instruction.d();
+
+    format!("srl {}, {} >> {}", reg(d), reg(t), i)
 }
 
 fn op_sra(instruction: Instruction) -> String {

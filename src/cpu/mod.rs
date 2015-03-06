@@ -134,6 +134,7 @@ impl Cpu {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
+                0b000010 => self.op_srl(instruction),
                 0b000011 => self.op_sra(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
@@ -189,6 +190,17 @@ impl Cpu {
         let d = instruction.d();
 
         let v = self.reg(t) << i;
+
+        self.set_reg(d, v);
+    }
+
+    /// Shift Right Logical
+    fn op_srl(&mut self, instruction: Instruction) {
+        let i = instruction.shift();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let v = self.reg(t) >> i;
 
         self.set_reg(d, v);
     }
