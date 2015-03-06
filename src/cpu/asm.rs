@@ -10,6 +10,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b001001 => op_jalr(instruction),
             0b010010 => op_mflo(instruction),
             0b011010 => op_div(instruction),
+            0b011011 => op_divu(instruction),
             0b100000 => op_add(instruction),
             0b100001 => op_addu(instruction),
             0b100011 => op_subu(instruction),
@@ -95,6 +96,13 @@ fn op_div(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("div {}, {}", reg(s), reg(t))
+}
+
+fn op_divu(instruction: Instruction) -> String {
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("divu {}, {}", reg(s), reg(t))
 }
 
 fn op_add(instruction: Instruction) -> String {

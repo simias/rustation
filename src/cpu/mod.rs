@@ -140,6 +140,7 @@ impl Cpu {
                 0b001001 => self.op_jalr(instruction),
                 0b010010 => self.op_mflo(instruction),
                 0b011010 => self.op_div(instruction),
+                0b011011 => self.op_divu(instruction),
                 0b100000 => self.op_add(instruction),
                 0b100001 => self.op_addu(instruction),
                 0b100011 => self.op_subu(instruction),
@@ -279,7 +280,7 @@ impl Cpu {
         self.set_reg(d, lo);
     }
 
-    /// Division (signed)
+    /// Divide (signed)
     fn op_div(&mut self, instruction: Instruction) {
         let s = instruction.s();
         let t = instruction.t();
@@ -303,6 +304,24 @@ impl Cpu {
         } else {
             self.hi = (n % d) as u32;
             self.lo = (n / d) as u32;
+        }
+    }
+
+    /// Divide Unsigned
+    fn op_divu(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let n = self.reg(s);
+        let d = self.reg(t);
+
+        if d == 0 {
+            // Division by zero, results are bogus
+            self.hi = n;
+            self.lo = 0xffffffff;
+        } else {
+            self.hi = n % d;
+            self.lo = n / d;
         }
     }
 
