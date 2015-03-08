@@ -29,12 +29,17 @@ impl Interconnect {
 
         let abs_addr = map::mask_region(addr);
 
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            return self.ram.load32(offset);
+        }
+
         if let Some(offset) = map::BIOS.contains(abs_addr) {
             return self.bios.load32(offset);
         }
 
-        if let Some(offset) = map::RAM.contains(abs_addr) {
-            return self.ram.load32(offset);
+        if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
+            println!("IRQ control read {:x}", offset);
+            return 0;
         }
 
         panic!("unhandled load32 at address {:08x}", addr);
@@ -123,6 +128,11 @@ impl Interconnect {
             return;
         }
 
+        if let Some(offset) = map::TIMERS.contains(abs_addr) {
+            println!("Unhandled write to timer register {:x}", offset);
+            return;
+        }
+
         panic!("unhandled store16 into address {:08x}", addr);
     }
 
@@ -195,6 +205,8 @@ mod map {
 
     /// Interrupt Control registers (status and mask)
     pub const IRQ_CONTROL: Range = Range(0x1f801070, 8);
+
+    pub const TIMERS: Range = Range(0x1f801100, 0x30);
 
     /// SPU registers
     pub const SPU: Range = Range(0x1f801c00, 640);
