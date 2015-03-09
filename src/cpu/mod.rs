@@ -6,11 +6,13 @@ mod asm;
 
 /// CPU state
 pub struct Cpu {
-    /// The program counter register
+    /// The program counter register: points to the next instruction
     pc: u32,
-    /// Next instruction to be executed, used to simulate the branch
-    /// delay slot
-    next_instruction: Instruction,
+    /// Next value for the PC, used to simulate the branch delay slot
+    next_pc: u32,
+    /// Address of the instruction currently being executed. Used for
+    /// setting the EPC in exceptions.
+    current_pc: u32,
     /// General Purpose Registers. The first entry must always contain 0
     regs: [u32; 32],
     /// 2nd set of registers used to emulate the load delay slot
@@ -27,6 +29,10 @@ pub struct Cpu {
     inter: Interconnect,
     /// Cop0 register 12: Status Register
     sr: u32,
+    /// Cop0 register 13: Cause Register
+    cause: u32,
+    /// Cop0 register 14: EPC
+    epc: u32,
     /// Load initiated by the current instruction (will take effect
     /// after the load delay slot)
     load: (RegisterIndex, u32),
@@ -41,34 +47,39 @@ impl Cpu {
         // ... but R0 is hardwired to 0
         regs[0] = 0;
 
+        // Reset value for the PC, beginning of BIOS memory
+        let pc = 0xbfc00000;
+
         Cpu {
-            // PC reset value at the beginning of the BIOS
-            pc: 0xbfc00000,
-            regs: regs,
-            out_regs: regs,
-            hi: 0xdeadbeef,
-            lo: 0xdeadbeef,
-            inter: inter,
-            // Start execution with a NOP while the real first
-            // instruction is fetched.
-            next_instruction: Instruction(0x0),
-            sr: 0,
-            load: (RegisterIndex(0), 0),
+            pc:         pc,
+            next_pc:    pc.wrapping_add(4),
+            current_pc: 0,
+            regs:       regs,
+            out_regs:   regs,
+            hi:         0xdeadbeef,
+            lo:         0xdeadbeef,
+            inter:      inter,
+            sr:         0,
+            cause:      0,
+            epc:        0,
+            load:       (RegisterIndex(0), 0),
         }
     }
 
     pub fn run_next_instruction(&mut self) {
-        let pc = self.pc;
-
-        // Use previously loaded instruction
-        let instruction = self.next_instruction;
-
         // Fetch instruction at PC
-        self.next_instruction = Instruction(self.load32(pc));
+        let instruction = Instruction(self.load32(self.pc));
 
-        // Increment PC to point to the next instruction. All
-        // instructions are 32bit long.
-        self.pc = pc.wrapping_add(4);
+        // Save the address of the current instruction to save in
+        // `EPC` in case of an exception.
+        self.current_pc = self.pc;
+
+        // Increment PC to point to the next instruction. and
+        // `next_pc` to the one after that. Both values can be
+        // modified by individual instructions (`next_pc` in case of a
+        // jump/branch, `pc` in case of an exception)
+        self.pc         = self.next_pc;
+        self.next_pc    = self.pc.wrapping_add(4);
 
         // Execute the pending load (if any, otherwise it will load
         // `R0` which is a NOP). `set_reg` works only on `out_regs` so
@@ -108,15 +119,7 @@ impl Cpu {
         // all times.
         let offset = offset << 2;
 
-        let mut pc = self.pc;
-
-        pc = pc.wrapping_add(offset);
-
-        // We need to compensate for the hardcoded
-        // `pc.wrapping_add(4)` in `run_next_instruction`
-        pc = pc.wrapping_sub(4);
-
-        self.pc = pc;
+        self.next_pc = self.pc.wrapping_add(offset);
     }
 
     /// Store 16bit value into the memory
@@ -129,6 +132,38 @@ impl Cpu {
         self.inter.store8(addr, val);
     }
 
+    /// Trigger an exception
+    fn exception(&mut self, cause: Exception) {
+        // Exception handler address depends on the `BEV` bit:
+        let handler = match self.sr & (1 << 22) != 0 {
+            true  => 0xbfc00180,
+            false => 0x80000080,
+        };
+
+        // Shift bits [5:0] of `SR` two places to the left. Those bits
+        // are three pairs of Interrupt Enable/User Mode bits behaving
+        // like a stack 3 entries deep. Entering an exception pushes a
+        // pair of zeroes by left shifting the stack which disables
+        // interrupts and puts the CPU in kernel mode. The original
+        // third entry is discarded (it's up to the kernel to handle
+        // more than two recursive exception levels).
+        let mode = self.sr & 0x3f;
+        self.sr &= !0x3f;
+        self.sr |= (mode << 2) & 0x3f;
+
+        // Update `CAUSE` register with the exception code (bits
+        // [6:2])
+        self.cause = (cause as u32) << 2;
+
+        // Save current instruction address in `EPC`
+        self.epc = self.current_pc;
+
+        // Exceptions don't have a branch delay, we jump directly into
+        // the handler
+        self.pc      = handler;
+        self.next_pc = self.pc.wrapping_add(4);
+    }
+
     /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self, instruction: Instruction) {
         match instruction.function() {
@@ -138,6 +173,7 @@ impl Cpu {
                 0b000011 => self.op_sra(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
+                0b001100 => self.op_syscall(instruction),
                 0b010000 => self.op_mfhi(instruction),
                 0b010010 => self.op_mflo(instruction),
                 0b011010 => self.op_div(instruction),
@@ -243,7 +279,7 @@ impl Cpu {
 
         if test != 0 {
             if is_link {
-                let ra = self.pc;
+                let ra = self.next_pc;
 
                 // Store return address in R31
                 self.set_reg(RegisterIndex(31), ra);
@@ -257,7 +293,7 @@ impl Cpu {
     fn op_jr(&mut self, instruction: Instruction) {
         let s = instruction.s();
 
-        self.pc = self.reg(s);
+        self.next_pc = self.reg(s);
     }
 
     /// Jump And Link Register
@@ -265,12 +301,17 @@ impl Cpu {
         let d = instruction.d();
         let s = instruction.s();
 
-        let ra = self.pc;
+        let ra = self.next_pc;
 
         // Store return address in `d`
         self.set_reg(d, ra);
 
-        self.pc = self.reg(s);
+        self.next_pc = self.reg(s);
+    }
+
+    /// System Call
+    fn op_syscall(&mut self, _: Instruction) {
+        self.exception(Exception::SysCall);
     }
 
     /// Move From HI
@@ -426,12 +467,12 @@ impl Cpu {
     fn op_j(&mut self, instruction: Instruction) {
         let i = instruction.imm_jump();
 
-        self.pc = (self.pc & 0xf0000000) | (i << 2);
+        self.next_pc = (self.pc & 0xf0000000) | (i << 2);
     }
 
     /// Jump And Link
     fn op_jal(&mut self, instruction: Instruction) {
-        let ra = self.pc;
+        let ra = self.next_pc;
 
         // Store return address in R31
         self.set_reg(RegisterIndex(31), ra);
@@ -583,8 +624,8 @@ impl Cpu {
 
         let v = match cop_r {
             12 => self.sr,
-            13 => // Cause register
-                panic!("Unhandled read from CAUSE register"),
+            13 => self.cause,
+            14 => self.epc,
             _  =>
                 panic!("Unhandled read from cop0r{}", cop_r),
         };
@@ -602,7 +643,6 @@ impl Cpu {
         match cop_r {
             3 | 5 | 6 | 7 | 9 | 11  => // Breakpoints registers
                 if v != 0 {
-
                     panic!("Unhandled write to cop0r{}: {:08x}", cop_r, v)
                 },
             12 => self.sr = v,
@@ -805,13 +845,20 @@ impl Display for Instruction {
     }
 }
 
+/// Exception types (as stored in the `CAUSE` register)
+#[derive(Clone,Copy)]
+enum Exception {
+    /// System call (caused by the SYSCALL opcode)
+    SysCall = 0x8,
+}
+
 #[derive(Clone,Copy)]
 struct RegisterIndex(u32);
 
 impl Debug for Cpu {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
 
-        let instruction = self.next_instruction;
+        let instruction = self.load32(self.pc);
 
         try!(writeln!(f, "PC: {:08x}", self.pc));
 
@@ -838,7 +885,7 @@ impl Debug for Cpu {
         }
 
         try!(writeln!(f, "Next instruction: 0x{:08x} {}",
-                      instruction.0, asm::decode(instruction)));
+                      instruction, asm::decode(Instruction(instruction))));
 
         Ok(())
     }

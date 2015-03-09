@@ -8,6 +8,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b000011 => op_sra(instruction),
             0b001000 => op_jr(instruction),
             0b001001 => op_jalr(instruction),
+            0b001100 => op_syscall(instruction),
             0b010000 => op_mfhi(instruction),
             0b010010 => op_mflo(instruction),
             0b011010 => op_div(instruction),
@@ -85,6 +86,15 @@ fn op_jalr(instruction: Instruction) -> String {
     let s = instruction.s();
 
     format!("jalr {}, {}", reg(d), reg(s))
+}
+
+fn op_syscall(instruction: Instruction) -> String {
+    // Bits [25:6] are "don't care" and can be used as a parameter for
+    // the syscall (although the playstation BIOS doesn't seem to use
+    // that, instead it takes a parameter in `R4`).
+    let param = (instruction.0 >> 6) & 0xfffff;
+
+    format!("syscall {:x}", param)
 }
 
 fn op_mfhi(instruction: Instruction) -> String {
