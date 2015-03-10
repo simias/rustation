@@ -175,7 +175,9 @@ impl Cpu {
                 0b001001 => self.op_jalr(instruction),
                 0b001100 => self.op_syscall(instruction),
                 0b010000 => self.op_mfhi(instruction),
+                0b010001 => self.op_mthi(instruction),
                 0b010010 => self.op_mflo(instruction),
+                0b010011 => self.op_mtlo(instruction),
                 0b011010 => self.op_div(instruction),
                 0b011011 => self.op_divu(instruction),
                 0b100000 => self.op_add(instruction),
@@ -323,6 +325,13 @@ impl Cpu {
         self.set_reg(d, hi);
     }
 
+    /// Move to HI
+    fn op_mthi(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+
+        self.hi = self.reg(s);
+    }
+
     /// Move From LO
     fn op_mflo(&mut self, instruction: Instruction) {
         let d = instruction.d();
@@ -330,6 +339,13 @@ impl Cpu {
         let lo = self.lo;
 
         self.set_reg(d, lo);
+    }
+
+    /// Move to LO
+    fn op_mtlo(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+
+        self.lo = self.reg(s);
     }
 
     /// Divide (signed)
@@ -782,7 +798,6 @@ impl Instruction {
 
         (op >> 21) & 0x1f
     }
-
 
     /// Return register index in bits [25:21]
     fn s(self) -> RegisterIndex {

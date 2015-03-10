@@ -10,7 +10,9 @@ pub fn decode(instruction: Instruction) -> String {
             0b001001 => op_jalr(instruction),
             0b001100 => op_syscall(instruction),
             0b010000 => op_mfhi(instruction),
+            0b010001 => op_mthi(instruction),
             0b010010 => op_mflo(instruction),
+            0b010011 => op_mtlo(instruction),
             0b011010 => op_div(instruction),
             0b011011 => op_divu(instruction),
             0b100000 => op_add(instruction),
@@ -103,10 +105,22 @@ fn op_mfhi(instruction: Instruction) -> String {
     format!("mfhi {}", reg(d))
 }
 
+fn op_mthi(instruction: Instruction) -> String {
+    let s = instruction.s();
+
+    format!("mthi {}", reg(s))
+}
+
 fn op_mflo(instruction: Instruction) -> String {
     let d = instruction.d();
 
     format!("mflo {}", reg(d))
+}
+
+fn op_mtlo(instruction: Instruction) -> String {
+    let s = instruction.s();
+
+    format!("mtlo {}", reg(s))
 }
 
 fn op_div(instruction: Instruction) -> String {
