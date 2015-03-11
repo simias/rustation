@@ -36,6 +36,11 @@ pub struct Cpu {
     /// Load initiated by the current instruction (will take effect
     /// after the load delay slot)
     load: (RegisterIndex, u32),
+    /// Set by the current instruction if a branch occured and the
+    /// next instruction will be in the delay slot.
+    branch: bool,
+    /// Set if the current instruction executes in the delay slot
+    delay_slot: bool,
 }
 
 impl Cpu {
@@ -63,6 +68,8 @@ impl Cpu {
             cause:      0,
             epc:        0,
             load:       (RegisterIndex(0), 0),
+            branch:     false,
+            delay_slot: false,
         }
     }
 
@@ -90,6 +97,11 @@ impl Cpu {
         // We reset the load to target register 0 for the next
         // instruction
         self.load = (RegisterIndex(0), 0);
+
+        // If the last instruction was a branch then we're in the
+        // delay slot
+        self.delay_slot = self.branch;
+        self.branch     = false;
 
         self.decode_and_execute(instruction);
 
@@ -120,6 +132,8 @@ impl Cpu {
         let offset = offset << 2;
 
         self.next_pc = self.pc.wrapping_add(offset);
+
+        self.branch = true;
     }
 
     /// Store 16bit value into the memory
@@ -157,6 +171,13 @@ impl Cpu {
 
         // Save current instruction address in `EPC`
         self.epc = self.current_pc;
+
+        if self.delay_slot {
+            // When an exception occurs in a delay slot `EPC` points
+            // to the branch instruction and bit 31 of `CAUSE` is set.
+            self.epc = self.epc.wrapping_sub(4);
+            self.cause |= 1 << 31;
+        }
 
         // Exceptions don't have a branch delay, we jump directly into
         // the handler
@@ -296,6 +317,8 @@ impl Cpu {
         let s = instruction.s();
 
         self.next_pc = self.reg(s);
+
+        self.branch = true;
     }
 
     /// Jump And Link Register
@@ -309,6 +332,8 @@ impl Cpu {
         self.set_reg(d, ra);
 
         self.next_pc = self.reg(s);
+
+        self.branch = true;
     }
 
     /// System Call
@@ -484,6 +509,8 @@ impl Cpu {
         let i = instruction.imm_jump();
 
         self.next_pc = (self.pc & 0xf0000000) | (i << 2);
+
+        self.branch = true;
     }
 
     /// Jump And Link
@@ -494,6 +521,8 @@ impl Cpu {
         self.set_reg(RegisterIndex(31), ra);
 
         self.op_j(instruction);
+
+        self.branch = true;
     }
 
     /// Branch if Equal
