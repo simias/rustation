@@ -311,22 +311,31 @@ fn op_cop0(instruction: Instruction) -> String {
     match instruction.cop_opcode() {
         0b00000 => op_mfc0(instruction),
         0b00100 => op_mtc0(instruction),
+        0b10000 => op_rfe(instruction),
         _       => format!("!UNKNOWN cop0 instruction {}!", instruction)
     }
 }
 
-fn op_mfc0(instruction: Instruction) -> String{
+fn op_mfc0(instruction: Instruction) -> String {
     let cpu_r = instruction.t();
     let cop_r = instruction.d().0;
 
     format!("mfc0 {}, cop0r{}", reg(cpu_r), cop_r)
 }
 
-fn op_mtc0(instruction: Instruction) -> String{
+fn op_mtc0(instruction: Instruction) -> String {
     let cpu_r = instruction.t();
     let cop_r = instruction.d().0;
 
     format!("mtc0 {}, cop0r{}", reg(cpu_r), cop_r)
+}
+
+fn op_rfe(instruction: Instruction) -> String {
+    if instruction.0 & 0x3f == 0b010000 {
+        format!("rfe")
+    } else {
+        format!("!INVALID cop0 instruction {}!", instruction)
+    }
 }
 
 fn op_lb(instruction: Instruction) -> String {

@@ -629,6 +629,7 @@ impl Cpu {
         match instruction.cop_opcode() {
             0b00000 => self.op_mfc0(instruction),
             0b00100 => self.op_mtc0(instruction),
+            0b10000 => self.op_rfe(instruction),
             _       => panic!("unhandled cop0 instruction {}", instruction)
         }
     }
@@ -668,6 +669,23 @@ impl Cpu {
                 },
             _  => panic!("Unhandled cop0 register {}", cop_r),
         }
+    }
+
+    /// Return From Exception
+    fn op_rfe(&mut self, instruction: Instruction) {
+        // There are other instructions with the same encoding but all
+        // are virtual memory related and the Playstation doesn't
+        // implement them. Still, let's make sure we're not running
+        // buggy code.
+        if instruction.0 & 0x3f != 0b010000 {
+            panic!("Invalid cop0 instruction: {}", instruction);
+        }
+
+        // Restore the pre-exception mode by shifting the Interrupt
+        // Enable/User Mode stack back to its original position.
+        let mode = self.sr & 0x3f;
+        self.sr &= !0x3f;
+        self.sr |= mode >> 2;
     }
 
     /// Load Byte (signed)
