@@ -74,12 +74,18 @@ impl Cpu {
     }
 
     pub fn run_next_instruction(&mut self) {
-        // Fetch instruction at PC
-        let instruction = Instruction(self.load32(self.pc));
-
         // Save the address of the current instruction to save in
         // `EPC` in case of an exception.
         self.current_pc = self.pc;
+
+        if self.current_pc % 4 != 0 {
+            // PC is not correctly aligned!
+            self.exception(Exception::LoadAddressError);
+            return;
+        }
+
+        // Fetch instruction at PC
+        let instruction = Instruction(self.load32(self.pc));
 
         // Increment PC to point to the next instruction. and
         // `next_pc` to the one after that. Both values can be
