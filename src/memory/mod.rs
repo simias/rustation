@@ -22,11 +22,6 @@ impl Interconnect {
 
     /// Load 32bit word at `addr`
     pub fn load32(&self, addr: u32) -> u32 {
-
-        if addr % 4 != 0 {
-            panic!("Unaligned load32 address: {:08x}", addr);
-        }
-
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
@@ -47,6 +42,7 @@ impl Interconnect {
 
     /// Load byte at `addr`
     pub fn load8(&self, addr: u32) -> u8 {
+
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
@@ -67,10 +63,6 @@ impl Interconnect {
 
     /// Store 32bit word `val` into `addr`
     pub fn store32(&mut self, addr: u32, val: u32) {
-
-        if addr % 4 != 0 {
-            panic!("Unaligned store32 address: {:08x}", addr);
-        }
 
         let abs_addr = map::mask_region(addr);
 
@@ -116,10 +108,6 @@ impl Interconnect {
 
     /// Store 16bit halfword `val` into `addr`
     pub fn store16(&mut self, addr: u32, _: u16) {
-
-        if addr % 2 != 0 {
-            panic!("Unaligned store16 address: {:08x}", addr);
-        }
 
         let abs_addr = map::mask_region(addr);
 

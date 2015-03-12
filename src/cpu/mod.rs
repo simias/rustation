@@ -738,10 +738,15 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
-        let v = self.load32(addr);
+        // Address must be 32bit aligned
+        if addr % 4 == 0 {
+            let v = self.load32(addr);
 
-        // Put the load in the delay slot
-        self.load = (t, v);
+            // Put the load in the delay slot
+            self.load = (t, v);
+        } else {
+            self.exception(Exception::LoadAddressError);
+        }
     }
 
     /// Load Byte Unsigned
@@ -794,7 +799,12 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v    = self.reg(t);
 
-        self.store16(addr, v as u16);
+        // Address must be 16bit aligned
+        if addr % 2 == 0 {
+            self.store16(addr, v as u16);
+        } else {
+            self.exception(Exception::StoreAddressError);
+        }
     }
 
     /// Store Word
@@ -813,7 +823,12 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v    = self.reg(t);
 
-        self.store32(addr, v);
+        // Address must be 32bit aligned
+        if addr % 4 == 0 {
+            self.store32(addr, v);
+        } else {
+            self.exception(Exception::StoreAddressError);
+        }
     }
 }
 
@@ -906,6 +921,10 @@ impl Display for Instruction {
 /// Exception types (as stored in the `CAUSE` register)
 #[derive(Clone,Copy)]
 enum Exception {
+    /// Address error on load
+    LoadAddressError = 0x4,
+    /// Address error on store
+    StoreAddressError = 0x5,
     /// System call (caused by the SYSCALL opcode)
     SysCall = 0x8,
     /// Arithmetic overflow
