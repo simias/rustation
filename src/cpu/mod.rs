@@ -418,7 +418,7 @@ impl Cpu {
         }
     }
 
-    /// Add and generate an exception on overflow
+    /// Add and check for signed overflow
     fn op_add(&mut self, instruction: Instruction) {
         let s = instruction.s();
         let t = instruction.t();
@@ -427,12 +427,10 @@ impl Cpu {
         let s = self.reg(s) as i32;
         let t = self.reg(t) as i32;
 
-        let v = match s.checked_add(t) {
-            Some(v) => v as u32,
-            None    => panic!("ADD overflow"),
-        };
-
-        self.set_reg(d, v);
+        match s.checked_add(t) {
+            Some(v) => self.set_reg(d, v as u32),
+            None    => self.exception(Exception::Overflow),
+        }
     }
 
     /// Add Unsigned
@@ -571,7 +569,7 @@ impl Cpu {
         }
     }
 
-    /// Add Immediate Unsigned and check for overflow
+    /// Add Immediate and check for signed overflow
     fn op_addi(&mut self, instruction: Instruction) {
         let i = instruction.imm_se() as i32;
         let t = instruction.t();
@@ -579,12 +577,10 @@ impl Cpu {
 
         let s = self.reg(s) as i32;
 
-        let v = match s.checked_add(i) {
-            Some(v) => v as u32,
-            None    => panic!("ADDI overflow"),
-        };
-
-        self.set_reg(t, v);
+        match s.checked_add(i) {
+            Some(v) => self.set_reg(t, v as u32),
+            None    => self.exception(Exception::Overflow),
+        }
     }
 
     /// Add Immediate Unsigned
@@ -912,6 +908,8 @@ impl Display for Instruction {
 enum Exception {
     /// System call (caused by the SYSCALL opcode)
     SysCall = 0x8,
+    /// Arithmetic overflow
+    Overflow = 0xc,
 }
 
 #[derive(Clone,Copy)]
