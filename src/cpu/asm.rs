@@ -42,6 +42,7 @@ pub fn decode(instruction: Instruction) -> String {
         0b100000 => op_lb(instruction),
         0b100011 => op_lw(instruction),
         0b100100 => op_lbu(instruction),
+        0b100101 => op_lhu(instruction),
         0b101000 => op_sb(instruction),
         0b101001 => op_sh(instruction),
         0b101011 => op_sw(instruction),
@@ -360,6 +361,14 @@ fn op_lbu(instruction: Instruction) -> String {
     let s = instruction.s();
 
     format!("lbu {}, [{} + 0x{:x}]", reg(t), reg(s), i)
+}
+
+fn op_lhu(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t();
+    let s = instruction.s();
+
+    format!("lhu {}, [{} + 0x{:x}]", reg(t), reg(s), i)
 }
 
 fn op_sb(instruction: Instruction) -> String {

@@ -45,6 +45,19 @@ impl Interconnect {
         panic!("unhandled load32 at address {:08x}", addr);
     }
 
+    /// Load 16bit halfword at `addr`
+    pub fn load16(&self, addr: u32) -> u16 {
+        let abs_addr = map::mask_region(addr);
+
+        if let Some(_) = map::SPU.contains(abs_addr) {
+            println!("Unhandled read from SPU register {:08x}",
+                     abs_addr);
+            return 0;
+        }
+
+        panic!("unhandled load16 at address {:08x}", addr);
+    }
+
     /// Load byte at `addr`
     pub fn load8(&self, addr: u32) -> u8 {
 

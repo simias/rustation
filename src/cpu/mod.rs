@@ -120,6 +120,11 @@ impl Cpu {
         self.inter.load32(addr)
     }
 
+    /// Load 16bit value from the memory
+    fn load16(&self, addr: u32) -> u16 {
+        self.inter.load16(addr)
+    }
+
     /// Load 8bit value from the memory
     fn load8(&self, addr: u32) -> u8 {
         self.inter.load8(addr)
@@ -234,6 +239,7 @@ impl Cpu {
             0b100000 => self.op_lb(instruction),
             0b100011 => self.op_lw(instruction),
             0b100100 => self.op_lbu(instruction),
+            0b100101 => self.op_lhu(instruction),
             0b101000 => self.op_sb(instruction),
             0b101001 => self.op_sh(instruction),
             0b101011 => self.op_sw(instruction),
@@ -768,6 +774,26 @@ impl Cpu {
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
+    }
+
+    /// Load Halfword Unsigned
+    fn op_lhu(&mut self, instruction: Instruction) {
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        // Address must be 16bit aligned
+        if addr % 2 == 0 {
+            let v = self.load16(addr);
+
+            // Put the load in the delay slot
+            self.load = (t, v as u32);
+        } else {
+            self.exception(Exception::LoadAddressError);
+        }
     }
 
     /// Store Byte
