@@ -107,9 +107,13 @@ impl Interconnect {
     }
 
     /// Store 16bit halfword `val` into `addr`
-    pub fn store16(&mut self, addr: u32, _: u16) {
+    pub fn store16(&mut self, addr: u32, val: u16) {
 
         let abs_addr = map::mask_region(addr);
+
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            return self.ram.store16(offset, val);
+        }
 
         if let Some(offset) = map::SPU.contains(abs_addr) {
             println!("Unhandled write to SPU register {:x}", offset);
