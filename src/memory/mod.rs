@@ -37,6 +37,11 @@ impl Interconnect {
             return 0;
         }
 
+        if let Some(_) = map::DMA.contains(abs_addr) {
+            println!("DMA read: {:08x}", abs_addr);
+            return 0;
+        }
+
         panic!("unhandled load32 at address {:08x}", addr);
     }
 
@@ -75,6 +80,11 @@ impl Interconnect {
             return;
         }
 
+        if let Some(_) = map::DMA.contains(abs_addr) {
+            println!("DMA write: {:08x} {:08x}", abs_addr, val);
+            return;
+        }
+
         if let Some(_) = map::CACHE_CONTROL.contains(abs_addr) {
             println!("Unhandled write to CACHE_CONTROL: {:08x}", val);
             return;
@@ -103,7 +113,7 @@ impl Interconnect {
             return;
         }
 
-        panic!("unhandled store32 into address {:08x}", addr);
+        panic!("unhandled store32 into address {:08x}: {:08x}", addr, val);
     }
 
     /// Store 16bit halfword `val` into `addr`
@@ -115,8 +125,9 @@ impl Interconnect {
             return self.ram.store16(offset, val);
         }
 
-        if let Some(offset) = map::SPU.contains(abs_addr) {
-            println!("Unhandled write to SPU register {:x}", offset);
+        if let Some(_) = map::SPU.contains(abs_addr) {
+            println!("Unhandled write to SPU register {:08x}: {:04x}",
+                     abs_addr, val);
             return;
         }
 
@@ -197,6 +208,9 @@ mod map {
 
     /// Interrupt Control registers (status and mask)
     pub const IRQ_CONTROL: Range = Range(0x1f801070, 8);
+
+    /// Direct Memory Access registers
+    pub const DMA: Range = Range(0x1f801080, 0x80);
 
     pub const TIMERS: Range = Range(0x1f801100, 0x30);
 
