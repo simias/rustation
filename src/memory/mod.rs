@@ -49,6 +49,10 @@ impl Interconnect {
     pub fn load16(&self, addr: u32) -> u16 {
         let abs_addr = map::mask_region(addr);
 
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            return self.ram.load16(offset);
+        }
+
         if let Some(_) = map::SPU.contains(abs_addr) {
             println!("Unhandled read from SPU register {:08x}",
                      abs_addr);

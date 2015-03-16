@@ -31,6 +31,16 @@ impl Ram {
         b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
 
+    /// Fetch the 16bit little endian halfword at `offset`
+    pub fn load16(&self, offset: u32) -> u16 {
+        let offset = offset as usize;
+
+        let b0 = self.data[offset + 0] as u16;
+        let b1 = self.data[offset + 1] as u16;
+
+        b0 | (b1 << 8)
+    }
+
     /// Fetch the byte at `offset`
     pub fn load8(&self, offset: u32) -> u8 {
         self.data[offset as usize]
