@@ -238,6 +238,7 @@ impl Cpu {
             0b001111 => self.op_lui(instruction),
             0b010000 => self.op_cop0(instruction),
             0b100000 => self.op_lb(instruction),
+            0b100001 => self.op_lh(instruction),
             0b100011 => self.op_lw(instruction),
             0b100100 => self.op_lbu(instruction),
             0b100101 => self.op_lhu(instruction),
@@ -749,6 +750,22 @@ impl Cpu {
 
         // Cast as i8 to force sign extension
         let v = self.load8(addr) as i8;
+
+        // Put the load in the delay slot
+        self.load = (t, v as u32);
+    }
+
+    /// Load Halfword (signed)
+    fn op_lh(&mut self, instruction: Instruction) {
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        // Cast as i16 to force sign extension
+        let v = self.load16(addr) as i16;
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
