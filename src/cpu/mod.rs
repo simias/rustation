@@ -203,6 +203,7 @@ impl Cpu {
                 0b000000 => self.op_sll(instruction),
                 0b000010 => self.op_srl(instruction),
                 0b000011 => self.op_sra(instruction),
+                0b000100 => self.op_sllv(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
                 0b001100 => self.op_syscall(instruction),
@@ -289,6 +290,18 @@ impl Cpu {
         let v = (self.reg(t) as i32) >> i;
 
         self.set_reg(d, v as u32);
+    }
+
+    /// Shift Left Logical Variable
+    fn op_sllv(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        // Shift amount is truncated to 5 bits
+        let v = self.reg(t) << (self.reg(s) & 0x1f);
+
+        self.set_reg(d, v);
     }
 
     /// Various branch instructions: BGEZ, BLTZ, BGEZAL, BLTZAL. Bits

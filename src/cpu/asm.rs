@@ -6,6 +6,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b000000 => op_sll(instruction),
             0b000010 => op_srl(instruction),
             0b000011 => op_sra(instruction),
+            0b000100 => op_sllv(instruction),
             0b001000 => op_jr(instruction),
             0b001001 => op_jalr(instruction),
             0b001100 => op_syscall(instruction),
@@ -76,6 +77,14 @@ fn op_sra(instruction: Instruction) -> String {
     let d = instruction.d();
 
     format!("sra {}, {} >> {}", reg(d), reg(t), i)
+}
+
+fn op_sllv(instruction: Instruction) -> String {
+    let d = instruction.d();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("sllv {}, {} << {}", reg(d), reg(t), reg(s))
 }
 
 fn op_jr(instruction: Instruction) -> String {
