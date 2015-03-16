@@ -15,7 +15,6 @@ fn main() {
     let mut cpu = Cpu::new(inter);
 
     loop {
-        println!("{:?}", cpu);
         cpu.run_next_instruction();
     }
 }
