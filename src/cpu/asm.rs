@@ -16,6 +16,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b010001 => op_mthi(instruction),
             0b010010 => op_mflo(instruction),
             0b010011 => op_mtlo(instruction),
+            0b011001 => op_multu(instruction),
             0b011010 => op_div(instruction),
             0b011011 => op_divu(instruction),
             0b100000 => op_add(instruction),
@@ -151,6 +152,13 @@ fn op_mtlo(instruction: Instruction) -> String {
     let s = instruction.s();
 
     format!("mtlo {}", reg(s))
+}
+
+fn op_multu(instruction: Instruction) -> String {
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("multu {}, {}", reg(s), reg(t))
 }
 
 fn op_div(instruction: Instruction) -> String {
