@@ -42,6 +42,11 @@ impl Interconnect {
             return 0;
         }
 
+        if let Some(offset) = map::GPU.contains(abs_addr) {
+            println!("GPU read {}", offset);
+            return 0;
+        }
+
         panic!("unhandled load32 at address {:08x}", addr);
     }
 
@@ -99,6 +104,11 @@ impl Interconnect {
 
         if let Some(_) = map::DMA.contains(abs_addr) {
             println!("DMA write: {:08x} {:08x}", abs_addr, val);
+            return;
+        }
+
+        if let Some(offset) = map::GPU.contains(abs_addr) {
+            println!("GPU write {}: {:08x}", offset, val);
             return;
         }
 
@@ -230,6 +240,8 @@ mod map {
     pub const DMA: Range = Range(0x1f801080, 0x80);
 
     pub const TIMERS: Range = Range(0x1f801100, 0x30);
+
+    pub const GPU: Range = Range(0x1f801810, 8);
 
     /// SPU registers
     pub const SPU: Range = Range(0x1f801c00, 640);

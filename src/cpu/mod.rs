@@ -1052,9 +1052,9 @@ struct RegisterIndex(u32);
 impl Debug for Cpu {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
 
-        let instruction = self.load32(self.pc);
+        let instruction = self.load32(self.current_pc);
 
-        try!(writeln!(f, "PC: {:08x}", self.pc));
+        try!(writeln!(f, "PC: {:08x}", self.current_pc));
 
         for i in 0..8 {
             let r1 = i * 4;
