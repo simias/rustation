@@ -24,6 +24,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b100011 => op_subu(instruction),
             0b100100 => op_and(instruction),
             0b100101 => op_or(instruction),
+            0b100110 => op_xor(instruction),
             0b100111 => op_nor(instruction),
             0b101010 => op_slt(instruction),
             0b101011 => op_sltu(instruction),
@@ -213,6 +214,14 @@ fn op_or(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("or {}, {}, {}", reg(d), reg(s), reg(t))
+}
+
+fn op_xor(instruction: Instruction) -> String {
+    let d = instruction.d();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("xor {}, {}, {}", reg(d), reg(s), reg(t))
 }
 
 fn op_nor(instruction: Instruction) -> String {
