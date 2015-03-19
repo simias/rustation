@@ -64,6 +64,11 @@ impl Interconnect {
             return 0;
         }
 
+        if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
+            println!("IRQ control read {:x}", offset);
+            return 0;
+        }
+
         panic!("unhandled load16 at address {:08x}", addr);
     }
 
@@ -97,6 +102,10 @@ impl Interconnect {
             return self.ram.store32(offset, val);
         }
 
+        if let Some(offset) = map::BIOS.contains(abs_addr) {
+            return self.bios.store32(offset, val);
+        }
+
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
             println!("IRQ control: {:x} <- {:08x}", offset, val);
             return;
@@ -109,6 +118,12 @@ impl Interconnect {
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
             println!("GPU write {}: {:08x}", offset, val);
+            return;
+        }
+
+        if let Some(offset) = map::TIMERS.contains(abs_addr) {
+            println!("Unhandled write to timer register {:x}: {:08x}",
+                     offset, val);
             return;
         }
 
@@ -160,6 +175,11 @@ impl Interconnect {
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
             println!("Unhandled write to timer register {:x}", offset);
+            return;
+        }
+
+        if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
+            println!("IRQ control write {:x}, {:04x}", offset, val);
             return;
         }
 
