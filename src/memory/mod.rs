@@ -44,7 +44,12 @@ impl Interconnect {
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
             println!("GPU read {}", offset);
-            return 0;
+            return match offset {
+                // GPUSTAT: set bits 28 to signal that the GPU is
+                // ready for DMA.
+                4 => 0x10000000,
+                _ => 0,
+            }
         }
 
         panic!("unhandled load32 at address {:08x}", addr);
