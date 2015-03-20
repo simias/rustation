@@ -222,6 +222,7 @@ impl Cpu {
                 0b011011 => self.op_divu(instruction),
                 0b100000 => self.op_add(instruction),
                 0b100001 => self.op_addu(instruction),
+                0b100010 => self.op_sub(instruction),
                 0b100011 => self.op_subu(instruction),
                 0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
@@ -534,6 +535,21 @@ impl Cpu {
         let v = self.reg(s).wrapping_add(self.reg(t));
 
         self.set_reg(d, v);
+    }
+
+    /// Substract and check for signed overflow
+    fn op_sub(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let s = self.reg(s) as i32;
+        let t = self.reg(t) as i32;
+
+        match s.checked_sub(t) {
+            Some(v) => self.set_reg(d, v as u32),
+            None    => self.exception(Exception::Overflow),
+        }
     }
 
     /// Substract Unsigned

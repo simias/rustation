@@ -23,6 +23,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b011011 => op_divu(instruction),
             0b100000 => op_add(instruction),
             0b100001 => op_addu(instruction),
+            0b100010 => op_sub(instruction),
             0b100011 => op_subu(instruction),
             0b100100 => op_and(instruction),
             0b100101 => op_or(instruction),
@@ -206,6 +207,14 @@ fn op_addu(instruction: Instruction) -> String {
     let t = instruction.t();
 
     format!("addu {}, {}, {}", reg(d), reg(s), reg(t))
+}
+
+fn op_sub(instruction: Instruction) -> String {
+    let d = instruction.d();
+    let s = instruction.s();
+    let t = instruction.t();
+
+    format!("sub {}, {}, {}", reg(d), reg(s), reg(t))
 }
 
 fn op_subu(instruction: Instruction) -> String {
