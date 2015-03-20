@@ -50,6 +50,7 @@ pub fn decode(instruction: Instruction) -> String {
         0b001111 => op_lui(instruction),
         0b010000 => op_cop0(instruction),
         0b010001 => op_cop1(instruction),
+        0b010010 => op_cop2(instruction),
         0b010011 => op_cop3(instruction),
         0b100000 => op_lb(instruction),
         0b100001 => op_lh(instruction),
@@ -410,6 +411,10 @@ fn op_cop0(instruction: Instruction) -> String {
 
 fn op_cop1(_: Instruction) -> String {
     format!("cop1")
+}
+
+fn op_cop2(_: Instruction) -> String {
+    format!("cop2 (GTE)")
 }
 
 fn op_cop3(_: Instruction) -> String {

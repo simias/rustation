@@ -249,6 +249,7 @@ impl Cpu {
             0b001111 => self.op_lui(instruction),
             0b010000 => self.op_cop0(instruction),
             0b010001 => self.op_cop1(instruction),
+            0b010010 => self.op_cop2(instruction),
             0b010011 => self.op_cop3(instruction),
             0b100000 => self.op_lb(instruction),
             0b100001 => self.op_lh(instruction),
@@ -806,6 +807,11 @@ impl Cpu {
     /// Coprocessor 1 opcode (does not exist on the Playstation)
     fn op_cop1(&mut self, _: Instruction) {
         self.exception(Exception::CoprocessorError);
+    }
+
+    /// Coprocessor 2 opcode (GTE)
+    fn op_cop2(&mut self, instruction: Instruction) {
+        panic!("unhandled GTE instruction: {}", instruction);
     }
 
     /// Coprocessor 3 opcode (does not exist on the Playstation)
