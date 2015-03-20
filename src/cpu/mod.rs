@@ -45,6 +45,7 @@ pub struct Cpu {
 
 impl Cpu {
 
+    /// Create a new CPU instance
     pub fn new(inter: Interconnect) -> Cpu {
         // Not sure what the reset values are...
         let mut regs = [0xdeadbeef; 32];
@@ -73,6 +74,7 @@ impl Cpu {
         }
     }
 
+    /// Run a single CPU instruction and return
     pub fn run_next_instruction(&mut self) {
         // Save the address of the current instruction to save in
         // `EPC` in case of an exception.
@@ -209,6 +211,7 @@ impl Cpu {
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
                 0b001100 => self.op_syscall(instruction),
+                0b001101 => self.op_break(instruction),
                 0b010000 => self.op_mfhi(instruction),
                 0b010001 => self.op_mthi(instruction),
                 0b010010 => self.op_mflo(instruction),
@@ -394,6 +397,11 @@ impl Cpu {
     /// System Call
     fn op_syscall(&mut self, _: Instruction) {
         self.exception(Exception::SysCall);
+    }
+
+    /// Break
+    fn op_break(&mut self, _: Instruction) {
+        self.exception(Exception::Break);
     }
 
     /// Move From HI
@@ -1054,6 +1062,8 @@ enum Exception {
     StoreAddressError = 0x5,
     /// System call (caused by the SYSCALL opcode)
     SysCall = 0x8,
+    /// Breakpoint (caused by the BREAK opcode)
+    Break = 0x9,
     /// Arithmetic overflow
     Overflow = 0xc,
 }

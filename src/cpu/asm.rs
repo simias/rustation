@@ -12,6 +12,7 @@ pub fn decode(instruction: Instruction) -> String {
             0b001000 => op_jr(instruction),
             0b001001 => op_jalr(instruction),
             0b001100 => op_syscall(instruction),
+            0b001101 => op_break(instruction),
             0b010000 => op_mfhi(instruction),
             0b010001 => op_mthi(instruction),
             0b010010 => op_mflo(instruction),
@@ -129,6 +130,13 @@ fn op_syscall(instruction: Instruction) -> String {
     let param = (instruction.0 >> 6) & 0xfffff;
 
     format!("syscall {:x}", param)
+}
+
+fn op_break(instruction: Instruction) -> String {
+    // Same as syscall above
+    let param = (instruction.0 >> 6) & 0xfffff;
+
+    format!("break {:x}", param)
 }
 
 fn op_mfhi(instruction: Instruction) -> String {
