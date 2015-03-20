@@ -49,6 +49,8 @@ pub fn decode(instruction: Instruction) -> String {
         0b001110 => op_xori(instruction),
         0b001111 => op_lui(instruction),
         0b010000 => op_cop0(instruction),
+        0b010001 => op_cop1(instruction),
+        0b010011 => op_cop3(instruction),
         0b100000 => op_lb(instruction),
         0b100001 => op_lh(instruction),
         0b100011 => op_lw(instruction),
@@ -404,6 +406,14 @@ fn op_cop0(instruction: Instruction) -> String {
         0b10000 => op_rfe(instruction),
         _       => format!("!UNKNOWN cop0 instruction {}!", instruction)
     }
+}
+
+fn op_cop1(_: Instruction) -> String {
+    format!("cop1")
+}
+
+fn op_cop3(_: Instruction) -> String {
+    format!("cop3")
 }
 
 fn op_mfc0(instruction: Instruction) -> String {

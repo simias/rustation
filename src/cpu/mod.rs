@@ -248,6 +248,8 @@ impl Cpu {
             0b001110 => self.op_xori(instruction),
             0b001111 => self.op_lui(instruction),
             0b010000 => self.op_cop0(instruction),
+            0b010001 => self.op_cop1(instruction),
+            0b010011 => self.op_cop3(instruction),
             0b100000 => self.op_lb(instruction),
             0b100001 => self.op_lh(instruction),
             0b100011 => self.op_lw(instruction),
@@ -801,6 +803,16 @@ impl Cpu {
         }
     }
 
+    /// Coprocessor 1 opcode (does not exist on the Playstation)
+    fn op_cop1(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+
+    /// Coprocessor 3 opcode (does not exist on the Playstation)
+    fn op_cop3(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+
     /// Move From Coprocessor 0
     fn op_mfc0(&mut self, instruction: Instruction) {
         let cpu_r = instruction.t();
@@ -1107,6 +1119,8 @@ enum Exception {
     SysCall = 0x8,
     /// Breakpoint (caused by the BREAK opcode)
     Break = 0x9,
+    /// Unsupported coprocessor operation
+    CoprocessorError = 0xb,
     /// Arithmetic overflow
     Overflow = 0xc,
 }
