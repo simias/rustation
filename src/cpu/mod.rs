@@ -245,6 +245,7 @@ impl Cpu {
             0b001011 => self.op_sltiu(instruction),
             0b001100 => self.op_andi(instruction),
             0b001101 => self.op_ori(instruction),
+            0b001110 => self.op_xori(instruction),
             0b001111 => self.op_lui(instruction),
             0b010000 => self.op_cop0(instruction),
             0b100000 => self.op_lb(instruction),
@@ -764,6 +765,17 @@ impl Cpu {
         let s = instruction.s();
 
         let v = self.reg(s) | i;
+
+        self.set_reg(t, v);
+    }
+
+    /// Bitwise eXclusive Or Immediate
+    fn op_xori(&mut self, instruction: Instruction) {
+        let i = instruction.imm();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let v = self.reg(s) ^ i;
 
         self.set_reg(t, v);
     }

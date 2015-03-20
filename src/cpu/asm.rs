@@ -46,6 +46,7 @@ pub fn decode(instruction: Instruction) -> String {
         0b001011 => op_sltiu(instruction),
         0b001100 => op_andi(instruction),
         0b001101 => op_ori(instruction),
+        0b001110 => op_xori(instruction),
         0b001111 => op_lui(instruction),
         0b010000 => op_cop0(instruction),
         0b100000 => op_lb(instruction),
@@ -379,6 +380,14 @@ fn op_ori(instruction: Instruction) -> String {
     let s = instruction.s();
 
     format!("ori {}, {}, 0x{:x}", reg(t), reg(s), i)
+}
+
+fn op_xori(instruction: Instruction) -> String {
+    let i = instruction.imm();
+    let t = instruction.t();
+    let s = instruction.s();
+
+    format!("xori {}, {}, 0x{:x}", reg(t), reg(s), i)
 }
 
 fn op_lui(instruction: Instruction) -> String {
