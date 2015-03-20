@@ -216,6 +216,7 @@ impl Cpu {
                 0b010001 => self.op_mthi(instruction),
                 0b010010 => self.op_mflo(instruction),
                 0b010011 => self.op_mtlo(instruction),
+                0b011000 => self.op_mult(instruction),
                 0b011001 => self.op_multu(instruction),
                 0b011010 => self.op_div(instruction),
                 0b011011 => self.op_divu(instruction),
@@ -434,6 +435,20 @@ impl Cpu {
         let s = instruction.s();
 
         self.lo = self.reg(s);
+    }
+
+    /// Multiply (signed)
+    fn op_mult(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let a = (self.reg(s) as i32) as i64;
+        let b = (self.reg(t) as i32) as i64;
+
+        let v = (a * b) as u64;
+
+        self.hi = (v >> 32) as u32;
+        self.lo = v as u32;
     }
 
     /// Multiply Unsigned
