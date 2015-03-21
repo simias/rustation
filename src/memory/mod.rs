@@ -45,9 +45,11 @@ impl Interconnect {
         if let Some(offset) = map::GPU.contains(abs_addr) {
             println!("GPU read {}", offset);
             return match offset {
-                // GPUSTAT: set bits 28 to signal that the GPU is
-                // ready for DMA.
-                4 => 0x10000000,
+                // GPUSTAT: set bit 26, 27 28 to signal that the GPU
+                // is ready for DMA and CPU access. This way the BIOS
+                // won't dead lock waiting for an event that'll never
+                // come.
+                4 => 0x1c000000,
                 _ => 0,
             }
         }

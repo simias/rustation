@@ -216,6 +216,17 @@ impl Cpu {
         self.next_pc = self.pc.wrapping_add(4);
     }
 
+    fn reg(&self, index: RegisterIndex) -> u32 {
+        self.regs[index.0 as usize]
+    }
+
+    fn set_reg(&mut self, index: RegisterIndex, val: u32) {
+        self.out_regs[index.0 as usize] = val;
+
+        // Make sure R0 is always 0
+        self.out_regs[0] = 0;
+    }
+
     /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self, instruction: Instruction) {
         match instruction.function() {
@@ -248,7 +259,7 @@ impl Cpu {
                 0b100111 => self.op_nor(instruction),
                 0b101010 => self.op_slt(instruction),
                 0b101011 => self.op_sltu(instruction),
-                _        => panic!("Unhandled instruction {}", instruction),
+                _        => self.op_illegal(instruction),
             },
             0b000001 => self.op_bxx(instruction),
             0b000010 => self.op_j(instruction),
@@ -289,19 +300,14 @@ impl Cpu {
             0b111001 => self.op_swc1(instruction),
             0b111010 => self.op_swc2(instruction),
             0b111011 => self.op_swc3(instruction),
-            _        => panic!("Unhandled instruction {}", instruction),
+            _        => self.op_illegal(instruction),
         }
     }
 
-    fn reg(&self, index: RegisterIndex) -> u32 {
-        self.regs[index.0 as usize]
-    }
-
-    fn set_reg(&mut self, index: RegisterIndex, val: u32) {
-        self.out_regs[index.0 as usize] = val;
-
-        // Make sure R0 is always 0
-        self.out_regs[0] = 0;
+    /// Illegal instruction
+    fn op_illegal(&mut self, instruction: Instruction) {
+        println!("Illegal instruction {}!", instruction);
+        self.exception(Exception::IllegalInstruction);
     }
 
     /// Shift Left Logical
@@ -1303,6 +1309,8 @@ enum Exception {
     SysCall = 0x8,
     /// Breakpoint (caused by the BREAK opcode)
     Break = 0x9,
+    /// CPU encountered an unknown instruction
+    IllegalInstruction = 0xa,
     /// Unsupported coprocessor operation
     CoprocessorError = 0xb,
     /// Arithmetic overflow
