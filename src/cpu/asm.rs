@@ -64,6 +64,14 @@ pub fn decode(instruction: Instruction) -> String {
         0b101010 => op_swl(instruction),
         0b101011 => op_sw(instruction),
         0b101110 => op_swr(instruction),
+        0b110000 => op_lwc0(instruction),
+        0b110001 => op_lwc1(instruction),
+        0b110010 => op_lwc2(instruction),
+        0b110011 => op_lwc3(instruction),
+        0b111000 => op_swc0(instruction),
+        0b111001 => op_swc1(instruction),
+        0b111010 => op_swc2(instruction),
+        0b111011 => op_swc3(instruction),
         _        => format!("!UNKNOWN!"),
     }
 }
@@ -541,4 +549,68 @@ fn op_swr(instruction: Instruction) -> String {
     let s = instruction.s();
 
     format!("swr {}, [{} + 0x{:x}]", reg(t), reg(s), i)
+}
+
+fn op_lwc0(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t().0;
+    let s = instruction.s();
+
+    format!("lwc0 cop0r{}, [{} + 0x{:x}]", t, reg(s), i)
+}
+
+fn op_lwc1(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t().0;
+    let s = instruction.s();
+
+    format!("lwc1 cop0r{}, [{} + 0x{:x}]", t, reg(s), i)
+}
+
+fn op_lwc2(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t().0;
+    let s = instruction.s();
+
+    format!("lwc2 cop0r{}, [{} + 0x{:x}]", t, reg(s), i)
+}
+
+fn op_lwc3(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t().0;
+    let s = instruction.s();
+
+    format!("lwc3 cop0r{}, [{} + 0x{:x}]", t, reg(s), i)
+}
+
+fn op_swc0(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t().0;
+    let s = instruction.s();
+
+    format!("swc0 cop0r{}, [{} + 0x{:x}]", t, reg(s), i)
+}
+
+fn op_swc1(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t().0;
+    let s = instruction.s();
+
+    format!("swc1 cop0r{}, [{} + 0x{:x}]", t, reg(s), i)
+}
+
+fn op_swc2(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t().0;
+    let s = instruction.s();
+
+    format!("swc2 cop0r{}, [{} + 0x{:x}]", t, reg(s), i)
+}
+
+fn op_swc3(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t().0;
+    let s = instruction.s();
+
+    format!("swc3 cop0r{}, [{} + 0x{:x}]", t, reg(s), i)
 }

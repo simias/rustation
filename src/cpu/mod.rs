@@ -281,6 +281,14 @@ impl Cpu {
             0b101010 => self.op_swl(instruction),
             0b101011 => self.op_sw(instruction),
             0b101110 => self.op_swr(instruction),
+            0b110000 => self.op_lwc0(instruction),
+            0b110001 => self.op_lwc1(instruction),
+            0b110010 => self.op_lwc2(instruction),
+            0b110011 => self.op_lwc3(instruction),
+            0b111000 => self.op_swc0(instruction),
+            0b111001 => self.op_swc1(instruction),
+            0b111010 => self.op_swc2(instruction),
+            0b111011 => self.op_swc3(instruction),
             _        => panic!("Unhandled instruction {}", instruction),
         }
     }
@@ -1149,6 +1157,52 @@ impl Cpu {
         };
 
         self.store32(addr, mem);
+    }
+
+    /// Load Word in Coprocessor 0
+    fn op_lwc0(&mut self, _: Instruction) {
+        // Not supported by this coprocessor
+        self.exception(Exception::CoprocessorError);
+    }
+
+    /// Load Word in Coprocessor 1
+    fn op_lwc1(&mut self, _: Instruction) {
+        // Not supported by this coprocessor
+        self.exception(Exception::CoprocessorError);
+    }
+
+    /// Load Word in Coprocessor 2
+    fn op_lwc2(&mut self, instruction: Instruction) {
+        panic!("unhandled GTE LWC: {}", instruction);
+    }
+
+    /// Load Word in Coprocessor 3
+    fn op_lwc3(&mut self, _: Instruction) {
+        // Not supported by this coprocessor
+        self.exception(Exception::CoprocessorError);
+    }
+
+    /// Store Word in Coprocessor 0
+    fn op_swc0(&mut self, _: Instruction) {
+        // Not supported by this coprocessor
+        self.exception(Exception::CoprocessorError);
+    }
+
+    /// Store Word in Coprocessor 1
+    fn op_swc1(&mut self, _: Instruction) {
+        // Not supported by this coprocessor
+        self.exception(Exception::CoprocessorError);
+    }
+
+    /// Store Word in Coprocessor 2
+    fn op_swc2(&mut self, instruction: Instruction) {
+        panic!("unhandled GTE SWC: {}", instruction);
+    }
+
+    /// Store Word in Coprocessor 3
+    fn op_swc3(&mut self, _: Instruction) {
+        // Not supported by this coprocessor
+        self.exception(Exception::CoprocessorError);
     }
 }
 
