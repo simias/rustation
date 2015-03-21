@@ -134,7 +134,35 @@ impl Cpu {
 
     /// Store 32bit value into the memory
     fn store32(&mut self, addr: u32, val: u32) {
+        if self.sr & 0x10000 != 0 {
+            // Cache is isolated, ignore write
+            println!("Ignoring store while cache is isolated");
+            return;
+        }
+
         self.inter.store32(addr, val);
+    }
+
+    /// Store 16bit value into the memory
+    fn store16(&mut self, addr: u32, val: u16) {
+        if self.sr & 0x10000 != 0 {
+            // Cache is isolated, ignore write
+            println!("Ignoring store while cache is isolated");
+            return;
+        }
+
+        self.inter.store16(addr, val);
+    }
+
+    /// Store 8bit value into the memory
+    fn store8(&mut self, addr: u32, val: u8) {
+        if self.sr & 0x10000 != 0 {
+            // Cache is isolated, ignore write
+            println!("Ignoring store while cache is isolated");
+            return;
+        }
+
+        self.inter.store8(addr, val);
     }
 
     /// Branch to immediate value `offset`.
@@ -147,16 +175,6 @@ impl Cpu {
         self.next_pc = self.pc.wrapping_add(offset);
 
         self.branch = true;
-    }
-
-    /// Store 16bit value into the memory
-    fn store16(&mut self, addr: u32, val: u16) {
-        self.inter.store16(addr, val);
-    }
-
-    /// Store 8bit value into the memory
-    fn store8(&mut self, addr: u32, val: u8) {
-        self.inter.store8(addr, val);
     }
 
     /// Trigger an exception
@@ -260,7 +278,9 @@ impl Cpu {
             0b100110 => self.op_lwr(instruction),
             0b101000 => self.op_sb(instruction),
             0b101001 => self.op_sh(instruction),
+            0b101010 => self.op_swl(instruction),
             0b101011 => self.op_sw(instruction),
+            0b101110 => self.op_swr(instruction),
             _        => panic!("Unhandled instruction {}", instruction),
         }
     }
@@ -1033,12 +1053,6 @@ impl Cpu {
     /// Store Byte
     fn op_sb(&mut self, instruction: Instruction) {
 
-        if self.sr & 0x10000 != 0 {
-            // Cache is isolated, ignore write
-            println!("Ignoring store while cache is isolated");
-            return;
-        }
-
         let i = instruction.imm_se();
         let t = instruction.t();
         let s = instruction.s();
@@ -1051,12 +1065,6 @@ impl Cpu {
 
     /// Store Halfword
     fn op_sh(&mut self, instruction: Instruction) {
-
-        if self.sr & 0x10000 != 0 {
-            // Cache is isolated, ignore write
-            println!("Ignoring store while cache is isolated");
-            return;
-        }
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1073,14 +1081,34 @@ impl Cpu {
         }
     }
 
+    /// Store Word Left (little-endian only implementation)
+    fn op_swl(&mut self, instruction: Instruction) {
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+        let v    = self.reg(t);
+
+        let aligned_addr = addr & !3;
+        // Load the current value for the aligned word at the target
+        // address
+        let cur_mem = self.load32(aligned_addr);
+
+        let mem = match addr & 3 {
+            0 => (cur_mem & 0xffffff00) | (v >> 24),
+            1 => (cur_mem & 0xffff0000) | (v >> 16),
+            2 => (cur_mem & 0xff000000) | (v >> 8),
+            3 => (cur_mem & 0x00000000) | (v >> 0),
+            _ => unreachable!(),
+        };
+
+        self.store32(addr, mem);
+    }
+
     /// Store Word
     fn op_sw(&mut self, instruction: Instruction) {
-
-        if self.sr & 0x10000 != 0 {
-            // Cache is isolated, ignore write
-            println!("Ignoring store while cache is isolated");
-            return;
-        }
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1095,6 +1123,32 @@ impl Cpu {
         } else {
             self.exception(Exception::StoreAddressError);
         }
+    }
+
+    /// Store Word Right (little-endian only implementation)
+    fn op_swr(&mut self, instruction: Instruction) {
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+        let v    = self.reg(t);
+
+        let aligned_addr = addr & !3;
+        // Load the current value for the aligned word at the target
+        // address
+        let cur_mem = self.load32(aligned_addr);
+
+        let mem = match addr & 3 {
+            0 => (cur_mem & 0x00000000) | (v << 0),
+            1 => (cur_mem & 0x000000ff) | (v << 8),
+            2 => (cur_mem & 0x0000ffff) | (v << 16),
+            3 => (cur_mem & 0x00ffffff) | (v << 24),
+            _ => unreachable!(),
+        };
+
+        self.store32(addr, mem);
     }
 }
 

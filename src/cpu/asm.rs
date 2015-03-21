@@ -61,7 +61,9 @@ pub fn decode(instruction: Instruction) -> String {
         0b100110 => op_lwr(instruction),
         0b101000 => op_sb(instruction),
         0b101001 => op_sh(instruction),
+        0b101010 => op_swl(instruction),
         0b101011 => op_sw(instruction),
+        0b101110 => op_swr(instruction),
         _        => format!("!UNKNOWN!"),
     }
 }
@@ -517,10 +519,26 @@ fn op_sh(instruction: Instruction) -> String {
     format!("sh {}, [{} + 0x{:x}]", reg(t), reg(s), i)
 }
 
+fn op_swl(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t();
+    let s = instruction.s();
+
+    format!("swl {}, [{} + 0x{:x}]", reg(t), reg(s), i)
+}
+
 fn op_sw(instruction: Instruction) -> String {
     let i = instruction.imm_se();
     let t = instruction.t();
     let s = instruction.s();
 
     format!("sw {}, [{} + 0x{:x}]", reg(t), reg(s), i)
+}
+
+fn op_swr(instruction: Instruction) -> String {
+    let i = instruction.imm_se();
+    let t = instruction.t();
+    let s = instruction.s();
+
+    format!("swr {}, [{} + 0x{:x}]", reg(t), reg(s), i)
 }
