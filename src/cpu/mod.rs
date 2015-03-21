@@ -253,9 +253,11 @@ impl Cpu {
             0b010011 => self.op_cop3(instruction),
             0b100000 => self.op_lb(instruction),
             0b100001 => self.op_lh(instruction),
+            0b100010 => self.op_lwl(instruction),
             0b100011 => self.op_lw(instruction),
             0b100100 => self.op_lbu(instruction),
             0b100101 => self.op_lhu(instruction),
+            0b100110 => self.op_lwr(instruction),
             0b101000 => self.op_sb(instruction),
             0b101001 => self.op_sh(instruction),
             0b101011 => self.op_sw(instruction),
@@ -905,6 +907,40 @@ impl Cpu {
         self.load = (t, v as u32);
     }
 
+    /// Load Word Left (little-endian only implementation)
+    fn op_lwl(&mut self, instruction: Instruction) {
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        // This instruction bypasses the load delay restriction: this
+        // instruction will merge the new contents with the value
+        // currently being loaded if need be.
+        let cur_v = self.out_regs[t.0 as usize];
+
+        // Next we load the *aligned* word containing the first
+        // addressed byte
+        let aligned_addr = addr & !3;
+        let aligned_word = self.load32(aligned_addr);
+
+        // Depending on the address alignment we fetch the 1, 2, 3 or
+        // 4 *most* significant bytes and put them in the target
+        // register.
+        let v = match addr & 3 {
+            0 => (cur_v & 0x00ffffff) | (aligned_word << 24),
+            1 => (cur_v & 0x0000ffff) | (aligned_word << 16),
+            2 => (cur_v & 0x000000ff) | (aligned_word << 8),
+            3 => (cur_v & 0x00000000) | (aligned_word << 0),
+            _ => unreachable!(),
+        };
+
+        // Put the load in the delay slot
+        self.load = (t, v);
+    }
+
     /// Load Word
     fn op_lw(&mut self, instruction: Instruction) {
 
@@ -958,6 +994,40 @@ impl Cpu {
         } else {
             self.exception(Exception::LoadAddressError);
         }
+    }
+
+    /// Load Word Right (little-endian only implementation)
+    fn op_lwr(&mut self, instruction: Instruction) {
+
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        // This instruction bypasses the load delay restriction: this
+        // instruction will merge the new contents with the value
+        // currently being loaded if need be.
+        let cur_v = self.out_regs[t.0 as usize];
+
+        // Next we load the *aligned* word containing the first
+        // addressed byte
+        let aligned_addr = addr & !3;
+        let aligned_word = self.load32(aligned_addr);
+
+        // Depending on the address alignment we fetch the 1, 2, 3 or
+        // 4 *least* significant bytes and put them in the target
+        // register.
+        let v = match addr & 3 {
+            0 => (cur_v & 0x00000000) | (aligned_word >> 0),
+            1 => (cur_v & 0xff000000) | (aligned_word >> 8),
+            2 => (cur_v & 0xffff0000) | (aligned_word >> 16),
+            3 => (cur_v & 0xffffff00) | (aligned_word >> 24),
+            _ => unreachable!(),
+        };
+
+        // Put the load in the delay slot
+        self.load = (t, v);
     }
 
     /// Store Byte
