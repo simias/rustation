@@ -1,8 +1,10 @@
 pub mod bios;
 mod ram;
+mod dma;
 
 use self::bios::Bios;
 use self::ram::Ram;
+use self::dma::{Dma, Port, Direction, Step, Sync};
 
 /// Global interconnect
 pub struct Interconnect {
@@ -10,6 +12,8 @@ pub struct Interconnect {
     bios: Bios,
     /// Main RAM
     ram: Ram,
+    /// DMA registers
+    dma: Dma,
 }
 
 impl Interconnect {
@@ -17,6 +21,7 @@ impl Interconnect {
         Interconnect {
             bios: bios,
             ram:  Ram::new(),
+            dma:  Dma::new(),
         }
     }
 
@@ -37,9 +42,8 @@ impl Interconnect {
             return 0;
         }
 
-        if let Some(_) = map::DMA.contains(abs_addr) {
-            println!("DMA read: {:08x}", abs_addr);
-            return 0;
+        if let Some(offset) = map::DMA.contains(abs_addr) {
+            return self.dma_reg(offset);
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
@@ -52,6 +56,12 @@ impl Interconnect {
                 4 => 0x1c000000,
                 _ => 0,
             }
+        }
+
+        if let Some(offset) = map::TIMERS.contains(abs_addr) {
+            println!("Unhandled read from timer register {:x}",
+                     offset);
+            return 0;
         }
 
         panic!("unhandled load32 at address {:08x}", addr);
@@ -118,9 +128,8 @@ impl Interconnect {
             return;
         }
 
-        if let Some(_) = map::DMA.contains(abs_addr) {
-            println!("DMA write: {:08x} {:08x}", abs_addr, val);
-            return;
+        if let Some(offset) = map::DMA.contains(abs_addr) {
+            return self.set_dma_reg(offset, val);
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
@@ -206,7 +215,208 @@ impl Interconnect {
             return;
         }
 
-        panic!("unhandled store8 into address {:08x}", addr);
+        panic!("unhandled store8 into address {:08x}: {:02x}", addr, val);
+    }
+
+    /// DMA register read
+    fn dma_reg(&self, offset: u32) -> u32 {
+        let major = (offset & 0x70) >> 4;
+        let minor = offset & 0xf;
+
+        match major {
+            // Per-channel registers
+            0...6 => {
+                let channel = self.dma.channel(Port::from_index(major));
+
+                match minor {
+                    0 => channel.base(),
+                    4 => channel.block_control(),
+                    8 => channel.control(),
+                    _ => panic!("Unhandled DMA read at {:x}", offset)
+                }
+            },
+            // Common DMA registers
+            7 => match minor {
+                0 => self.dma.control(),
+                4 => self.dma.interrupt(),
+                _ => panic!("Unhandled DMA read at {:x}", offset)
+            },
+            _ => panic!("Unhandled DMA read at {:x}", offset)
+        }
+    }
+
+    /// DMA register write
+    fn set_dma_reg(&mut self, offset: u32, val: u32) {
+        let major = (offset & 0x70) >> 4;
+        let minor = offset & 0xf;
+
+        let active_port =
+            match major {
+                // Per-channel registers
+                0...6 => {
+                    let port = Port::from_index(major);
+                    let channel = self.dma.channel_mut(port);
+
+                    match minor {
+                        0 => channel.set_base(val),
+                        4 => channel.set_block_control(val),
+                        8 => channel.set_control(val),
+                        _ => panic!("Unhandled DMA write {:x}: {:08x}",
+                                    offset, val)
+                    }
+
+                    if channel.active() {
+                        Some(port)
+                    } else {
+                        None
+                    }
+                },
+                // Common DMA registers
+                7 => {
+                    match minor {
+                        0 => self.dma.set_control(val),
+                        4 => self.dma.set_interrupt(val),
+                        _ => panic!("Unhandled DMA write {:x}: {:08x}",
+                                    offset, val),
+                    }
+
+                    None
+                }
+                _ => panic!("Unhandled DMA write {:x}: {:08x}",
+                            offset, val),
+            };
+
+        if let Some(port) = active_port {
+            self.do_dma(port);
+        }
+    }
+
+    /// Execute DMA transfer for a port
+    fn do_dma(&mut self, port: Port) {
+        // DMA transfer has been started, for now let's
+        // process everything in one pass (i.e. no
+        // chopping or priority handling)
+
+        match self.dma.channel(port).sync() {
+                Sync::LinkedList => self.do_dma_linked_list(port),
+                _                => self.do_dma_block(port),
+        }
+    }
+
+    /// Emulate DMA transfer for linked list synchronization mode.
+    fn do_dma_linked_list(&mut self, port: Port) {
+        let channel = self.dma.channel_mut(port);
+
+        let mut addr = channel.base() & 0x1ffffc;
+
+        if channel.direction() == Direction::ToRam {
+            panic!("Invalid DMA direction for linked list mode");
+        }
+
+        // I don't know if the DMA even supports linked list mode for
+        // anything besides the GPU
+        if port != Port::Gpu {
+            panic!("Attempted linked list DMA on port {}", port as u8);
+        }
+
+        loop {
+            // In linked list mode, each entry starts with a "header"
+            // word. The high byte contains the number of words in the
+            // "packet" (not counting the header word)
+            let header = self.ram.load32(addr);
+
+            let mut remsz = header >> 24;
+
+            if remsz > 0 {
+                println!("linked list packet size: {}", remsz);
+            }
+
+            while remsz > 0 {
+                addr = (addr + 4) & 0x1ffffc;
+
+                let command = self.ram.load32(addr);
+
+                println!("GPU command {:08x}", command);
+
+                remsz -= 1;
+            }
+
+            // The end-of-table marker is usually 0xffffff but
+            // mednafen only checks for the MSB so maybe that's what
+            // the hardware does? Since this bit is not part of any
+            // valid address it makes some sense. I'll have to test
+            // that at some point...
+            if header & 0x800000 != 0 {
+                println!("End of table");
+                break;
+            }
+
+            addr = header & 0x1ffffc;
+        }
+
+        channel.done();
+    }
+
+    /// Emulate DMA transfer for Manual and Request synchronization
+    /// modes.
+    fn do_dma_block(&mut self, port: Port) {
+        let channel = self.dma.channel_mut(port);
+
+        let increment = match channel.step() {
+            Step::Increment =>  4,
+            Step::Decrement => -4,
+        };
+
+        let mut addr = channel.base();
+
+        // Transfer size in words
+        let mut remsz = match channel.transfer_size() {
+            Some(n) => n,
+            // Shouldn't happen since we shouldn't be reaching this code
+            // in linked list mode
+            None    => panic!("Couldn't figure out DMA block transfer size"),
+        };
+
+        while remsz > 0 {
+            // Not sure what happens if address is
+            // bogus... Mednafen just masks addr this way, maybe
+            // that's how the hardware behaves (i.e. the RAM
+            // address wraps and the two LSB are ignored, seems
+            // reasonable enough
+            let cur_addr = addr & 0x1ffffc;
+
+            match channel.direction() {
+                Direction::FromRam => {
+                    let src_word = self.ram.load32(cur_addr);
+
+                    match port {
+                        Port::Gpu => println!("GPU data {:08x}", src_word),
+                        _ => panic!("Unhandled DMA destination port {}",
+                                    port as u8),
+                    }
+                }
+                Direction::ToRam => {
+                    let src_word = match port {
+                        // Clear ordering table
+                        Port::Otc => match remsz {
+                            // Last entry contains the end
+                            // of table marker
+                            1 => 0xffffff,
+                            // Pointer to the previous entry
+                            _ => addr.wrapping_sub(4) & 0x1fffff,
+                        },
+                        _ => panic!("Unhandled DMA source port {}", port as u8),
+                    };
+
+                    self.ram.store32(cur_addr, src_word);
+                }
+            }
+
+            addr = addr.wrapping_add(increment);
+            remsz -= 1;
+        }
+
+        channel.done();
     }
 }
 
