@@ -1,0 +1,11 @@
+language: rust
+os:
+  - linux
+env:
+  global:
+    - LD_LIBRARY_PATH: /usr/local/lib
+before_script:
+  - rustc -V
+  - cargo -V
+script:
+  - cargo build -v
