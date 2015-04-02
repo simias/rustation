@@ -5,6 +5,7 @@ mod dma;
 use self::bios::Bios;
 use self::ram::Ram;
 use self::dma::{Dma, Port, Direction, Step, Sync};
+use gpu::Gpu;
 
 /// Global interconnect
 pub struct Interconnect {
@@ -14,6 +15,8 @@ pub struct Interconnect {
     ram: Ram,
     /// DMA registers
     dma: Dma,
+    /// Graphics Processor Unit
+    gpu: Gpu,
 }
 
 impl Interconnect {
@@ -22,6 +25,7 @@ impl Interconnect {
             bios: bios,
             ram:  Ram::new(),
             dma:  Dma::new(),
+            gpu:  Gpu::new(),
         }
     }
 
@@ -47,14 +51,9 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            println!("GPU read {}", offset);
-            return match offset {
-                // GPUSTAT: set bit 26, 27 28 to signal that the GPU
-                // is ready for DMA and CPU access. This way the BIOS
-                // won't dead lock waiting for an event that'll never
-                // come.
-                4 => 0x1c000000,
-                _ => 0,
+            match offset {
+                4 => return self.gpu.status(),
+                _ => panic!("Unhandled GPU read {}", offset),
             }
         }
 
@@ -133,8 +132,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            println!("GPU write {}: {:08x}", offset, val);
-            return;
+            panic!("GPU write {}: {:08x}", offset, val);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
