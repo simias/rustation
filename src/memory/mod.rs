@@ -340,7 +340,8 @@ impl Interconnect {
 
                 let command = self.ram.load32(addr);
 
-                panic!("GPU command {:08x}", command);
+                // Send command to the GPU
+                self.gpu.gp0(command);
 
                 remsz -= 1;
             }

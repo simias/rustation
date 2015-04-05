@@ -193,6 +193,8 @@ impl Gpu {
         match opcode {
             0x00 => (), // NOP
             0xe1 => self.gp0_draw_mode(val),
+            0xe3 => self.gp0_drawing_area_top_left(val),
+            0xe4 => self.gp0_drawing_area_bottom_right(val),
             _    => panic!("Unhandled GP0 command {:08x}", val),
         }
     }
@@ -216,6 +218,18 @@ impl Gpu {
         self.texture_disable = ((val >> 11) & 1) != 0;
         self.rectangle_texture_x_flip = ((val >> 12) & 1) != 0;
         self.rectangle_texture_y_flip = ((val >> 13) & 1) != 0;
+    }
+
+    /// GP0(0xE3): Set Drawing Area top left
+    fn gp0_drawing_area_top_left(&mut self, val: u32) {
+        self.drawing_area_top = ((val >> 10) & 0x3ff) as u16;
+        self.drawing_area_left = (val & 0x3ff) as u16;
+    }
+
+    /// GP0(0xE4): Set Drawing Area bottom right
+    fn gp0_drawing_area_bottom_right(&mut self, val: u32) {
+        self.drawing_area_bottom = ((val >> 10) & 0x3ff) as u16;
+        self.drawing_area_right = (val & 0x3ff) as u16;
     }
 
     /// Handle writes to the GP1 command register
