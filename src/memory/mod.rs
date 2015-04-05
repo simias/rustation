@@ -134,7 +134,8 @@ impl Interconnect {
         if let Some(offset) = map::GPU.contains(abs_addr) {
             match offset {
                 0 => self.gpu.gp0(val),
-                _ => panic!("GPU write {}: {:08x}", offset, val),
+                4 => self.gpu.gp1(val),
+                _ => unreachable!(),
             }
             return;
         }
@@ -338,7 +339,7 @@ impl Interconnect {
 
                 let command = self.ram.load32(addr);
 
-                println!("GPU command {:08x}", command);
+                panic!("GPU command {:08x}", command);
 
                 remsz -= 1;
             }
