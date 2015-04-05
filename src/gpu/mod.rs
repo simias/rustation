@@ -224,6 +224,7 @@ impl Gpu {
 
         match opcode {
             0x00 => self.gp1_reset(val),
+            0x04 => self.gp1_dma_direction(val),
             0x08 => self.gp1_display_mode(val),
             _    => panic!("Unhandled GP1 command {:08x}", val),
         }
@@ -276,6 +277,18 @@ impl Gpu {
         // XXX should also invalidate GPU cache if we ever implement it
     }
 
+    /// GP1(0x04): DMA Direction
+    fn gp1_dma_direction(&mut self, val: u32) {
+        self.dma_direction =
+            match val & 3 {
+                0 => DmaDirection::Off,
+                1 => DmaDirection::Fifo,
+                2 => DmaDirection::CpuToGp0,
+                3 => DmaDirection::VRamToCpu,
+                _ => unreachable!(),
+            };
+    }
+
     /// GP1(0x08): Display Mode
     fn gp1_display_mode(&mut self, val: u32) {
         let hr1 = (val & 3) as u8;
@@ -283,20 +296,23 @@ impl Gpu {
 
         self.hres = HorizontalRes::from_fields(hr1, hr2);
 
-        self.vres = match val & 0x4 != 0 {
-            false => VerticalRes::Y240Lines,
-            true  => VerticalRes::Y480Lines,
-        };
+        self.vres =
+            match val & 0x4 != 0 {
+                false => VerticalRes::Y240Lines,
+                true  => VerticalRes::Y480Lines,
+            };
 
-        self.vmode = match val & 0x8 != 0 {
-            false => VMode::Ntsc,
-            true  => VMode::Pal,
-        };
+        self.vmode =
+            match val & 0x8 != 0 {
+                false => VMode::Ntsc,
+                true  => VMode::Pal,
+            };
 
-        self.display_depth = match val & 0x10 != 0 {
-            false => DisplayDepth::D24Bits,
-            true  => DisplayDepth::D15Bits,
-        };
+        self.display_depth =
+            match val & 0x10 != 0 {
+                false => DisplayDepth::D24Bits,
+                true  => DisplayDepth::D15Bits,
+            };
 
         self.interlaced = val & 0x20 != 0;
 
