@@ -52,8 +52,9 @@ impl Interconnect {
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
             match offset {
+                0 => return self.gpu.read(),
                 4 => return self.gpu.status(),
-                _ => panic!("Unhandled GPU read {}", offset),
+                _ => unreachable!(),
             }
         }
 

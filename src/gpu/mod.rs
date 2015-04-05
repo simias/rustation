@@ -180,6 +180,12 @@ impl Gpu {
         r
     }
 
+    /// Retreive value of the "read" register
+    pub fn read(&self) -> u32 {
+        // Not implemented for now...
+        0
+    }
+
     /// Handle writes to the GP0 command register
     pub fn gp0(&mut self, val: u32) {
         let opcode = (val >> 24) & 0xff;
