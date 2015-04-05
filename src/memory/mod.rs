@@ -132,7 +132,11 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            panic!("GPU write {}: {:08x}", offset, val);
+            match offset {
+                0 => self.gpu.gp0(val),
+                _ => panic!("GPU write {}: {:08x}", offset, val),
+            }
+            return;
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {

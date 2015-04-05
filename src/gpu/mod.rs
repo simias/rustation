@@ -3,6 +3,10 @@ pub struct Gpu {
     page_base_x: u8,
     /// Texture page base Y coordinate (1bit, 256 line increment)
     page_base_y: u8,
+    /// Mirror textured rectangles along the x axis
+    rectangle_texture_x_flip: bool,
+    /// Mirror textured rectangles along the y axis
+    rectangle_texture_y_flip: bool,
     /// Semi-transparency. Not entirely sure how to handle that value
     /// yet, it seems to describe how to blend the source and
     /// destination colors.
@@ -48,6 +52,8 @@ impl Gpu {
         Gpu {
             page_base_x: 0,
             page_base_y: 0,
+            rectangle_texture_x_flip: false,
+            rectangle_texture_y_flip: false,
             semi_transparency: 0,
             texture_depth: TextureDepth::T4Bit,
             dithering: false,
@@ -124,6 +130,37 @@ impl Gpu {
         r |= dma_request << 25;
 
         r
+    }
+
+    /// Handle writes to the GP0 command register
+    pub fn gp0(&mut self, val: u32) {
+        let opcode = (val >> 24) & 0xff;
+
+        match opcode {
+            0xe1 => self.gp0_draw_mode(val),
+            _    => panic!("Unhandled GP0 opcode {:02x}", opcode),
+        }
+    }
+
+    /// GP0(0xE1) command
+    fn gp0_draw_mode(&mut self, val: u32) {
+        self.page_base_x = (val & 0xf) as u8;
+        self.page_base_y = ((val >> 4) & 1) as u8;
+        self.semi_transparency = ((val >> 5) & 3) as u8;
+
+        self.texture_depth =
+            match (val >> 7) & 3 {
+                0 => TextureDepth::T4Bit,
+                1 => TextureDepth::T8Bit,
+                2 => TextureDepth::T15Bit,
+                n => panic!("Unhandled texture depth {}", n),
+            };
+
+        self.dithering = ((val >> 9) & 1) != 0;
+        self.draw_to_display = ((val >> 10) & 1) != 0;
+        self.texture_disable = ((val >> 11) & 1) != 0;
+        self.rectangle_texture_x_flip = ((val >> 12) & 1) != 0;
+        self.rectangle_texture_y_flip = ((val >> 13) & 1) != 0;
     }
 }
 
