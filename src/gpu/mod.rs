@@ -197,7 +197,7 @@ impl Gpu {
         }
     }
 
-    /// GP0(0xE1) command
+    /// GP0(0xE1): Draw Mode
     fn gp0_draw_mode(&mut self, val: u32) {
         self.page_base_x = (val & 0xf) as u8;
         self.page_base_y = ((val >> 4) & 1) as u8;
@@ -224,11 +224,12 @@ impl Gpu {
 
         match opcode {
             0x00 => self.gp1_reset(val),
+            0x08 => self.gp1_display_mode(val),
             _    => panic!("Unhandled GP1 command {:08x}", val),
         }
     }
 
-    /// GP1(0x00): soft reset
+    /// GP1(0x00): Soft Reset
     fn gp1_reset(&mut self, _: u32) {
         self.interrupt = false;
 
@@ -273,6 +274,35 @@ impl Gpu {
 
         // XXX should also clear the command FIFO when we implement it
         // XXX should also invalidate GPU cache if we ever implement it
+    }
+
+    /// GP1(0x08): Display Mode
+    fn gp1_display_mode(&mut self, val: u32) {
+        let hr1 = (val & 3) as u8;
+        let hr2 = ((val >> 6) & 1) as u8;
+
+        self.hres = HorizontalRes::from_fields(hr1, hr2);
+
+        self.vres = match val & 0x4 != 0 {
+            false => VerticalRes::Y240Lines,
+            true  => VerticalRes::Y480Lines,
+        };
+
+        self.vmode = match val & 0x8 != 0 {
+            false => VMode::Ntsc,
+            true  => VMode::Pal,
+        };
+
+        self.display_depth = match val & 0x10 != 0 {
+            false => DisplayDepth::D24Bits,
+            true  => DisplayDepth::D15Bits,
+        };
+
+        self.interlaced = val & 0x20 != 0;
+
+        if val & 0x80 != 0 {
+            panic!("Unsupported display mode {:08x}", val);
+        }
     }
 }
 
