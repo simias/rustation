@@ -121,7 +121,7 @@ impl Gpu {
         }
     }
 
-    /// Retreive value of the status register
+    /// Retrieve value of the status register
     pub fn status(&self) -> u32 {
         let mut r = 0u32;
 
@@ -180,7 +180,7 @@ impl Gpu {
         r
     }
 
-    /// Retreive value of the "read" register
+    /// Retrieve value of the "read" register
     pub fn read(&self) -> u32 {
         // Not implemented for now...
         0
@@ -369,7 +369,7 @@ impl HorizontalRes {
         HorizontalRes(hr)
     }
 
-    /// Retreive value of bits [18:16] of the status register
+    /// Retrieve value of bits [18:16] of the status register
     fn into_status(self) -> u32 {
         let HorizontalRes(hr) = self;
 

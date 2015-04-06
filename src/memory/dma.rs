@@ -40,7 +40,7 @@ impl Dma {
         self.force_irq || (self.irq_en && channel_irq != 0)
     }
 
-    /// Retreive the value of the control register
+    /// Retrieve the value of the control register
     pub fn control(&self) -> u32 {
         self.control
     }
@@ -50,7 +50,7 @@ impl Dma {
         self.control = val
     }
 
-    /// Retreive the value of the interrupt register
+    /// Retrieve the value of the interrupt register
     pub fn interrupt(&self) -> u32 {
         let mut r = 0;
 
@@ -143,7 +143,7 @@ impl Channel {
         }
     }
 
-    /// Retreive the channel's base address
+    /// Retrieve the channel's base address
     pub fn base(&self) -> u32 {
         self.base
     }
@@ -154,7 +154,7 @@ impl Channel {
         self.base = val & 0xffffff;
     }
 
-    /// Retreive the value of the control register
+    /// Retrieve the value of the control register
     pub fn control(&self) -> u32 {
         let mut r = 0;
 
@@ -202,7 +202,7 @@ impl Channel {
         self.dummy = ((val >> 29) & 3) as u8;
     }
 
-    /// Retreive value of the Block Control register
+    /// Retrieve value of the Block Control register
     pub fn block_control(&self) -> u32 {
         let bs = self.block_size as u32;
         let bc = self.block_count as u32;
