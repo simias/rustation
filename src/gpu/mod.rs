@@ -267,6 +267,7 @@ impl Gpu {
         match opcode {
             0x00 => self.gp1_reset(val),
             0x04 => self.gp1_dma_direction(val),
+            0x05 => self.gp1_display_vram_start(val),
             0x08 => self.gp1_display_mode(val),
             _    => panic!("Unhandled GP1 command {:08x}", val),
         }
@@ -329,6 +330,12 @@ impl Gpu {
                 3 => DmaDirection::VRamToCpu,
                 _ => unreachable!(),
             };
+    }
+
+    /// GP1(0x05): Display VRAM Start
+    fn gp1_display_vram_start(&mut self, val: u32) {
+        self.display_vram_x_start = (val & 0x3fe) as u16;
+        self.display_vram_y_start = ((val >> 10) & 0x1ff) as u16;
     }
 
     /// GP1(0x08): Display Mode
