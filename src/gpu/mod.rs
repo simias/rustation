@@ -193,6 +193,7 @@ impl Gpu {
         match opcode {
             0x00 => (), // NOP
             0xe1 => self.gp0_draw_mode(val),
+            0xe2 => self.gp0_texture_window(val),
             0xe3 => self.gp0_drawing_area_top_left(val),
             0xe4 => self.gp0_drawing_area_bottom_right(val),
             0xe5 => self.gp0_drawing_offset(val),
@@ -219,6 +220,14 @@ impl Gpu {
         self.texture_disable = ((val >> 11) & 1) != 0;
         self.rectangle_texture_x_flip = ((val >> 12) & 1) != 0;
         self.rectangle_texture_y_flip = ((val >> 13) & 1) != 0;
+    }
+
+    /// GP0(0xE2): Set Texture Window
+    fn gp0_texture_window(&mut self, val: u32) {
+        self.texture_window_x_mask = (val & 0x1f) as u8;
+        self.texture_window_y_mask = ((val >> 5) & 0x1f) as u8;
+        self.texture_window_x_offset = ((val >> 10) & 0x1f) as u8;
+        self.texture_window_y_offset = ((val >> 15) & 0x1f) as u8;
     }
 
     /// GP0(0xE3): Set Drawing Area top left
