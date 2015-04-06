@@ -195,6 +195,7 @@ impl Gpu {
             0xe1 => self.gp0_draw_mode(val),
             0xe3 => self.gp0_drawing_area_top_left(val),
             0xe4 => self.gp0_drawing_area_bottom_right(val),
+            0xe5 => self.gp0_drawing_offset(val),
             _    => panic!("Unhandled GP0 command {:08x}", val),
         }
     }
@@ -230,6 +231,17 @@ impl Gpu {
     fn gp0_drawing_area_bottom_right(&mut self, val: u32) {
         self.drawing_area_bottom = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_right = (val & 0x3ff) as u16;
+    }
+
+    /// GP0(0xE5): Set Drawing Offset
+    fn gp0_drawing_offset(&mut self, val: u32) {
+        let x = (val & 0x7ff) as u16;
+        let y = ((val >> 11) & 0x7ff) as u16;
+
+        // Values are 11bit two's complement signed values, we need to
+        // shift the value to 16bits to force sign extension
+        self.drawing_x_offset = ((x << 5) as i16) >> 5;
+        self.drawing_y_offset = ((y << 5) as i16) >> 5;
     }
 
     /// Handle writes to the GP1 command register
