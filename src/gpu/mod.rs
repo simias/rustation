@@ -77,6 +77,12 @@ pub struct Gpu {
     interrupt: bool,
     /// DMA request direction
     dma_direction: DmaDirection,
+    /// Buffer containing the current GP0 command
+    gp0_command: CommandBuffer,
+    /// Remaining words for the current GP0 command
+    gp0_command_remaining: u32,
+    /// Pointer to the method implementing the current GP) command
+    gp0_command_method: fn(&mut Gpu),
 }
 
 impl Gpu {
@@ -118,6 +124,9 @@ impl Gpu {
             display_line_end: 0x100,
             interrupt: false,
             dma_direction: DmaDirection::Off,
+            gp0_command: CommandBuffer::new(),
+            gp0_command_remaining: 0,
+            gp0_command_method: Gpu::gp0_nop,
         }
     }
 
@@ -188,22 +197,53 @@ impl Gpu {
 
     /// Handle writes to the GP0 command register
     pub fn gp0(&mut self, val: u32) {
-        let opcode = (val >> 24) & 0xff;
+        if self.gp0_command_remaining == 0 {
+            // We start a new GP0 command
+            let opcode = (val >> 24) & 0xff;
 
-        match opcode {
-            0x00 => (), // NOP
-            0xe1 => self.gp0_draw_mode(val),
-            0xe2 => self.gp0_texture_window(val),
-            0xe3 => self.gp0_drawing_area_top_left(val),
-            0xe4 => self.gp0_drawing_area_bottom_right(val),
-            0xe5 => self.gp0_drawing_offset(val),
-            0xe6 => self.gp0_mask_bit_setting(val),
-            _    => panic!("Unhandled GP0 command {:08x}", val),
+            let (len, method) =
+                match opcode {
+                    0x00 =>
+                        (1, Gpu::gp0_nop as fn(&mut Gpu)),
+                    0xe1 =>
+                        (1, Gpu::gp0_draw_mode as fn(&mut Gpu)),
+                    0xe2 =>
+                        (1, Gpu::gp0_texture_window as fn(&mut Gpu)),
+                    0xe3 =>
+                        (1, Gpu::gp0_drawing_area_top_left as fn(&mut Gpu)),
+                    0xe4 =>
+                        (1, Gpu::gp0_drawing_area_bottom_right as fn(&mut Gpu)),
+                    0xe5 =>
+                        (1, Gpu::gp0_drawing_offset as fn(&mut Gpu)),
+                    0xe6 =>
+                        (1, Gpu::gp0_mask_bit_setting as fn(&mut Gpu)),
+                    _    => panic!("Unhandled GP0 command {:08x}", val),
+                };
+
+            self.gp0_command_remaining = len;
+            self.gp0_command_method = method;
+
+            self.gp0_command.clear();
+        }
+
+        self.gp0_command.push_word(val);
+        self.gp0_command_remaining -= 1;
+
+        if self.gp0_command_remaining == 0 {
+            // We have all the parameters, we can run the command
+            (self.gp0_command_method)(self);
         }
     }
 
+    /// GP0(0x00): No Operation
+    fn gp0_nop(&mut self) {
+        // NOP
+    }
+
     /// GP0(0xE1): Draw Mode
-    fn gp0_draw_mode(&mut self, val: u32) {
+    fn gp0_draw_mode(&mut self) {
+        let val = self.gp0_command[0];
+
         self.page_base_x = (val & 0xf) as u8;
         self.page_base_y = ((val >> 4) & 1) as u8;
         self.semi_transparency = ((val >> 5) & 3) as u8;
@@ -224,7 +264,9 @@ impl Gpu {
     }
 
     /// GP0(0xE2): Set Texture Window
-    fn gp0_texture_window(&mut self, val: u32) {
+    fn gp0_texture_window(&mut self) {
+        let val = self.gp0_command[0];
+
         self.texture_window_x_mask = (val & 0x1f) as u8;
         self.texture_window_y_mask = ((val >> 5) & 0x1f) as u8;
         self.texture_window_x_offset = ((val >> 10) & 0x1f) as u8;
@@ -232,19 +274,25 @@ impl Gpu {
     }
 
     /// GP0(0xE3): Set Drawing Area top left
-    fn gp0_drawing_area_top_left(&mut self, val: u32) {
+    fn gp0_drawing_area_top_left(&mut self) {
+        let val = self.gp0_command[0];
+
         self.drawing_area_top = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_left = (val & 0x3ff) as u16;
     }
 
     /// GP0(0xE4): Set Drawing Area bottom right
-    fn gp0_drawing_area_bottom_right(&mut self, val: u32) {
+    fn gp0_drawing_area_bottom_right(&mut self) {
+        let val = self.gp0_command[0];
+
         self.drawing_area_bottom = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_right = (val & 0x3ff) as u16;
     }
 
     /// GP0(0xE5): Set Drawing Offset
-    fn gp0_drawing_offset(&mut self, val: u32) {
+    fn gp0_drawing_offset(&mut self) {
+        let val = self.gp0_command[0];
+
         let x = (val & 0x7ff) as u16;
         let y = ((val >> 11) & 0x7ff) as u16;
 
@@ -253,9 +301,11 @@ impl Gpu {
         self.drawing_x_offset = ((x << 5) as i16) >> 5;
         self.drawing_y_offset = ((y << 5) as i16) >> 5;
     }
-    
+
     /// GP0(0xE6): Set Mask Bit Setting
-    fn gp0_mask_bit_setting(&mut self, val: u32) {
+    fn gp0_mask_bit_setting(&mut self) {
+        let val = self.gp0_command[0];
+
         self.force_set_mask_bit = (val & 1) != 0;
         self.preserve_masked_pixels = (val & 2) != 0;
     }
@@ -460,4 +510,46 @@ enum DmaDirection {
     Fifo = 1,
     CpuToGp0 = 2,
     VRamToCpu = 3,
+}
+
+/// Buffer holding multi-word fixed-length GP0 command parameters
+struct CommandBuffer {
+    /// Command buffer: the longuest possible command is GP0(0x3E)
+    /// which takes 12 parameters
+    buffer: [u32; 12],
+    /// Number of words queued in buffer
+    len:    u8,
+}
+
+impl CommandBuffer {
+    fn new() -> CommandBuffer {
+        CommandBuffer {
+            buffer: [0; 12],
+            len:    0,
+        }
+    }
+
+    /// Clear the command buffer
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    fn push_word(&mut self, word: u32) {
+        self.buffer[self.len as usize] = word;
+
+        self.len += 1;
+    }
+}
+
+impl ::std::ops::Index<usize> for CommandBuffer {
+    type Output = u32;
+
+    fn index<'a>(&'a self, index: usize) -> &'a u32 {
+        if index >= self.len as usize {
+            panic!("Command buffer index out of range: {} ({})",
+                   index, self.len);
+        }
+
+        &self.buffer[index]
+    }
 }
