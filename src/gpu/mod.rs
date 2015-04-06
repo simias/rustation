@@ -197,6 +197,7 @@ impl Gpu {
             0xe3 => self.gp0_drawing_area_top_left(val),
             0xe4 => self.gp0_drawing_area_bottom_right(val),
             0xe5 => self.gp0_drawing_offset(val),
+            0xe6 => self.gp0_mask_bit_setting(val),
             _    => panic!("Unhandled GP0 command {:08x}", val),
         }
     }
@@ -251,6 +252,12 @@ impl Gpu {
         // shift the value to 16bits to force sign extension
         self.drawing_x_offset = ((x << 5) as i16) >> 5;
         self.drawing_y_offset = ((y << 5) as i16) >> 5;
+    }
+    
+    /// GP0(0xE6): Set Mask Bit Setting
+    fn gp0_mask_bit_setting(&mut self, val: u32) {
+        self.force_set_mask_bit = (val & 1) != 0;
+        self.preserve_masked_pixels = (val & 2) != 0;
     }
 
     /// Handle writes to the GP1 command register
