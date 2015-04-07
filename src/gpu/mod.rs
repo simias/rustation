@@ -373,6 +373,7 @@ impl Gpu {
 
         match opcode {
             0x00 => self.gp1_reset(val),
+            0x03 => self.gp1_display_enable(val),
             0x04 => self.gp1_dma_direction(val),
             0x05 => self.gp1_display_vram_start(val),
             0x06 => self.gp1_display_horizontal_range(val),
@@ -427,6 +428,11 @@ impl Gpu {
 
         // XXX should also clear the command FIFO when we implement it
         // XXX should also invalidate GPU cache if we ever implement it
+    }
+
+    /// GP1(0x03): Display Enable
+    fn gp1_display_enable(&mut self, val: u32) {
+        self.display_disabled = val & 1 != 0;
     }
 
     /// GP1(0x04): DMA Direction
