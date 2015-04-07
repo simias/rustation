@@ -205,6 +205,8 @@ impl Gpu {
                 match opcode {
                     0x00 =>
                         (1, Gpu::gp0_nop as fn(&mut Gpu)),
+                    0x28 =>
+                        (5, Gpu::gp0_quad_mono_opaque as fn(&mut Gpu)),
                     0xe1 =>
                         (1, Gpu::gp0_draw_mode as fn(&mut Gpu)),
                     0xe2 =>
@@ -238,6 +240,11 @@ impl Gpu {
     /// GP0(0x00): No Operation
     fn gp0_nop(&mut self) {
         // NOP
+    }
+
+    /// GP0(0x28): Monochrome Opaque Quadrilateral
+    fn gp0_quad_mono_opaque(&mut self) {
+        println!("Draw quad");
     }
 
     /// GP0(0xE1): Draw Mode
