@@ -146,7 +146,9 @@ impl Gpu {
         // Bit 14: not supported
         r |= (self.texture_disable as u32) << 15;
         r |= self.hres.into_status();
-        r |= (self.vres as u32) << 19;
+        // XXX Temporary hack: if we don't emulate bit 31 correctly
+        // setting `vres` to 1 locks the BIOS:
+        // r |= (self.vres as u32) << 19;
         r |= (self.vmode as u32) << 20;
         r |= (self.display_depth as u32) << 21;
         r |= (self.interlaced as u32) << 22;
