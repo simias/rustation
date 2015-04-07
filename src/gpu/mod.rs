@@ -207,6 +207,8 @@ impl Gpu {
                 match opcode {
                     0x00 =>
                         (1, Gpu::gp0_nop as fn(&mut Gpu)),
+                    0x01 =>
+                        (1, Gpu::gp0_clear_cache as fn(&mut Gpu)),
                     0x28 =>
                         (5, Gpu::gp0_quad_mono_opaque as fn(&mut Gpu)),
                     0xe1 =>
@@ -242,6 +244,11 @@ impl Gpu {
     /// GP0(0x00): No Operation
     fn gp0_nop(&mut self) {
         // NOP
+    }
+
+    /// GP0(0x01): Clear Cache
+    fn gp0_clear_cache(&mut self) {
+        // Not implemented
     }
 
     /// GP0(0x28): Monochrome Opaque Quadrilateral
