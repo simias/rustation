@@ -196,6 +196,7 @@ impl Gpu {
 
     /// Retrieve value of the "read" register
     pub fn read(&self) -> u32 {
+        println!("GPUREAD");
         // Not implemented for now...
         0
     }
@@ -216,6 +217,8 @@ impl Gpu {
                         (5, Gpu::gp0_quad_mono_opaque as fn(&mut Gpu)),
                     0xa0 =>
                         (3, Gpu::gp0_image_load as fn(&mut Gpu)),
+                    0xc0 =>
+                        (3, Gpu::gp0_image_store as fn(&mut Gpu)),
                     0xe1 =>
                         (1, Gpu::gp0_draw_mode as fn(&mut Gpu)),
                     0xe2 =>
@@ -295,6 +298,17 @@ impl Gpu {
 
         // Put the GP0 state machine in ImageLoad mode
         self.gp0_mode = Gp0Mode::ImageLoad;
+    }
+
+    /// GP0(0xC0): Image Store
+    fn gp0_image_store(&mut self) {
+        // Parameter 2 contains the image resolution
+        let res = self.gp0_command[2];
+
+        let width  = res & 0xffff;
+        let height = res >> 16;
+
+        println!("Unhandled image store: {}x{}", width, height);
     }
 
     /// GP0(0xE1): Draw Mode
