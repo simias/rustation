@@ -408,6 +408,7 @@ impl Gpu {
 
         match opcode {
             0x00 => self.gp1_reset(val),
+            0x01 => self.gp1_reset_command_buffer(),
             0x02 => self.gp1_acknowledge_irq(),
             0x03 => self.gp1_display_enable(val),
             0x04 => self.gp1_dma_direction(val),
@@ -421,8 +422,6 @@ impl Gpu {
 
     /// GP1(0x00): Soft Reset
     fn gp1_reset(&mut self, _: u32) {
-        self.interrupt = false;
-
         self.page_base_x = 0;
         self.page_base_y = 0;
         self.semi_transparency = 0;
@@ -462,8 +461,18 @@ impl Gpu {
         self.display_line_end = 0x100;
         self.display_depth = DisplayDepth::D15Bits;
 
-        // XXX should also clear the command FIFO when we implement it
+        self.gp1_reset_command_buffer();
+        self.gp1_acknowledge_irq();
+
         // XXX should also invalidate GPU cache if we ever implement it
+    }
+
+    /// GP1(0x01): Reset Command Buffer
+    fn gp1_reset_command_buffer(&mut self) {
+        self.gp0_command.clear();
+        self.gp0_words_remaining = 0;
+        self.gp0_mode = Gp0Mode::Command;
+        // XXX should also clear the command FIFO when we implement it
     }
 
     /// GP1(0x02): Acknowledge Interrupt
