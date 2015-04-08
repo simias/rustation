@@ -215,6 +215,8 @@ impl Gpu {
                         (1, Gpu::gp0_clear_cache as fn(&mut Gpu)),
                     0x28 =>
                         (5, Gpu::gp0_quad_mono_opaque as fn(&mut Gpu)),
+                    0x38 =>
+                        (8, Gpu::gp0_quad_shaded_opaque as fn(&mut Gpu)),
                     0xa0 =>
                         (3, Gpu::gp0_image_load as fn(&mut Gpu)),
                     0xc0 =>
@@ -275,6 +277,11 @@ impl Gpu {
     /// GP0(0x28): Monochrome Opaque Quadrilateral
     fn gp0_quad_mono_opaque(&mut self) {
         println!("Draw quad");
+    }
+
+    /// GP0(0x38): Shaded Opaque Quadrilateral
+    fn gp0_quad_shaded_opaque(&mut self) {
+        println!("Draw quad shaded");
     }
 
     /// GP0(0xA0): Image Load
