@@ -215,6 +215,8 @@ impl Gpu {
                         (1, Gpu::gp0_clear_cache as fn(&mut Gpu)),
                     0x28 =>
                         (5, Gpu::gp0_quad_mono_opaque as fn(&mut Gpu)),
+                    0x2c =>
+                        (9, Gpu::gp0_quad_texture_blend_opaque as fn(&mut Gpu)),
                     0x30 =>
                         (6, Gpu::gp0_triangle_shaded_opaque as fn(&mut Gpu)),
                     0x38 =>
@@ -279,6 +281,11 @@ impl Gpu {
     /// GP0(0x28): Monochrome Opaque Quadrilateral
     fn gp0_quad_mono_opaque(&mut self) {
         println!("Draw quad");
+    }
+
+    /// GP0(0x2C): Textured Opaque Quadrilateral
+    fn gp0_quad_texture_blend_opaque(&mut self) {
+        println!("Draw quad texture blending");
     }
 
     /// GP0(0x30): Shaded Opaque Triangle
