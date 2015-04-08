@@ -408,6 +408,7 @@ impl Gpu {
 
         match opcode {
             0x00 => self.gp1_reset(val),
+            0x02 => self.gp1_acknowledge_irq(),
             0x03 => self.gp1_display_enable(val),
             0x04 => self.gp1_dma_direction(val),
             0x05 => self.gp1_display_vram_start(val),
@@ -463,6 +464,11 @@ impl Gpu {
 
         // XXX should also clear the command FIFO when we implement it
         // XXX should also invalidate GPU cache if we ever implement it
+    }
+
+    /// GP1(0x02): Acknowledge Interrupt
+    fn gp1_acknowledge_irq(&mut self) {
+        self.interrupt = false;
     }
 
     /// GP1(0x03): Display Enable
