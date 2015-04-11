@@ -1,4 +1,10 @@
+use self::opengl::{Renderer, Position, Color};
+
+mod opengl;
+
 pub struct Gpu {
+    /// OpenGL renderer
+    renderer: Renderer,
     /// Texture page base X coordinate (4 bits, 64 byte increment)
     page_base_x: u8,
     /// Texture page base Y coordinate (1bit, 256 line increment)
@@ -90,6 +96,7 @@ pub struct Gpu {
 impl Gpu {
     pub fn new() -> Gpu {
         Gpu {
+            renderer: opengl::Renderer::new(),
             page_base_x: 0,
             page_base_y: 0,
             rectangle_texture_x_flip: false,
@@ -280,22 +287,69 @@ impl Gpu {
 
     /// GP0(0x28): Monochrome Opaque Quadrilateral
     fn gp0_quad_mono_opaque(&mut self) {
-        println!("Draw quad");
+        let positions = [
+            Position::from_gp0(self.gp0_command[1]),
+            Position::from_gp0(self.gp0_command[2]),
+            Position::from_gp0(self.gp0_command[3]),
+            Position::from_gp0(self.gp0_command[4]),
+            ];
+
+        // Only one color repeated 4 times
+        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
+
+        self.renderer.push_quad(positions, colors);
     }
 
     /// GP0(0x2C): Textured Opaque Quadrilateral
     fn gp0_quad_texture_blend_opaque(&mut self) {
-        println!("Draw quad texture blending");
+        let positions = [
+            Position::from_gp0(self.gp0_command[1]),
+            Position::from_gp0(self.gp0_command[3]),
+            Position::from_gp0(self.gp0_command[5]),
+            Position::from_gp0(self.gp0_command[7]),
+            ];
+
+        // XXX We don't support textures for now, use a solid red
+        // color instead
+        let colors = [ Color(0x80, 0x00, 0x00); 4];
+
+        self.renderer.push_quad(positions, colors);
     }
 
     /// GP0(0x30): Shaded Opaque Triangle
     fn gp0_triangle_shaded_opaque(&mut self) {
-        println!("Draw triangle shaded");
+        let positions = [
+            Position::from_gp0(self.gp0_command[1]),
+            Position::from_gp0(self.gp0_command[3]),
+            Position::from_gp0(self.gp0_command[5]),
+            ];
+
+        let colors = [
+            Color::from_gp0(self.gp0_command[0]),
+            Color::from_gp0(self.gp0_command[2]),
+            Color::from_gp0(self.gp0_command[4]),
+            ];
+
+        self.renderer.push_triangle(positions, colors);
     }
 
     /// GP0(0x38): Shaded Opaque Quadrilateral
     fn gp0_quad_shaded_opaque(&mut self) {
-        println!("Draw quad shaded");
+        let positions = [
+            Position::from_gp0(self.gp0_command[1]),
+            Position::from_gp0(self.gp0_command[3]),
+            Position::from_gp0(self.gp0_command[5]),
+            Position::from_gp0(self.gp0_command[7]),
+            ];
+
+        let colors = [
+            Color::from_gp0(self.gp0_command[0]),
+            Color::from_gp0(self.gp0_command[2]),
+            Color::from_gp0(self.gp0_command[4]),
+            Color::from_gp0(self.gp0_command[6]),
+            ];
+
+        self.renderer.push_quad(positions, colors);
     }
 
     /// GP0(0xA0): Image Load
@@ -392,6 +446,10 @@ impl Gpu {
         // shift the value to 16bits to force sign extension
         self.drawing_x_offset = ((x << 5) as i16) >> 5;
         self.drawing_y_offset = ((y << 5) as i16) >> 5;
+
+        // XXX Temporary hack: force display when changing offset
+        // since we don't have proper timings
+        self.renderer.display();
     }
 
     /// GP0(0xE6): Set Mask Bit Setting

@@ -3,3 +3,9 @@
 name = "psx-rs"
 version = "0.0.1"
 authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
+
+[dependencies]
+
+libc = "0.1.6"
+gl   = "0.0.12"
+sdl2 = "0.2.3"

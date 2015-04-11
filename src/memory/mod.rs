@@ -331,10 +331,6 @@ impl Interconnect {
 
             let mut remsz = header >> 24;
 
-            if remsz > 0 {
-                println!("linked list packet size: {}", remsz);
-            }
-
             while remsz > 0 {
                 addr = (addr + 4) & 0x1ffffc;
 
@@ -352,7 +348,6 @@ impl Interconnect {
             // valid address it makes some sense. I'll have to test
             // that at some point...
             if header & 0x800000 != 0 {
-                println!("End of table");
                 break;
             }
 
