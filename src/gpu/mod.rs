@@ -44,10 +44,6 @@ pub struct Gpu {
     drawing_area_right: u16,
     /// Bottom-most line of drawing area
     drawing_area_bottom: u16,
-    /// Horizontal drawing offset applied to all vertex
-    drawing_x_offset: i16,
-    /// Vertical drawing offset applied to all vertex
-    drawing_y_offset: i16,
     /// Currently displayed field. For progressive output this is
     /// always Top.
     field: Field,
@@ -115,8 +111,6 @@ impl Gpu {
             drawing_area_top: 0,
             drawing_area_right: 0,
             drawing_area_bottom: 0,
-            drawing_x_offset: 0,
-            drawing_y_offset: 0,
             field: Field::Top,
             texture_disable: false,
             hres: HorizontalRes::from_fields(0, 0),
@@ -444,8 +438,10 @@ impl Gpu {
 
         // Values are 11bit two's complement signed values, we need to
         // shift the value to 16bits to force sign extension
-        self.drawing_x_offset = ((x << 5) as i16) >> 5;
-        self.drawing_y_offset = ((y << 5) as i16) >> 5;
+        let x = ((x << 5) as i16) >> 5;
+        let y = ((y << 5) as i16) >> 5;
+
+        self.renderer.set_draw_offset(x, y);
 
         // XXX Temporary hack: force display when changing offset
         // since we don't have proper timings
@@ -497,8 +493,6 @@ impl Gpu {
         self.drawing_area_top = 0;
         self.drawing_area_right = 0;
         self.drawing_area_bottom = 0;
-        self.drawing_x_offset = 0;
-        self.drawing_y_offset = 0;
         self.force_set_mask_bit = false;
         self.preserve_masked_pixels = false;
 
@@ -518,6 +512,8 @@ impl Gpu {
         self.display_line_start = 0x10;
         self.display_line_end = 0x100;
         self.display_depth = DisplayDepth::D15Bits;
+
+        self.renderer.set_draw_offset(0, 0);
 
         self.gp1_reset_command_buffer();
         self.gp1_acknowledge_irq();

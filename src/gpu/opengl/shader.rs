@@ -62,7 +62,7 @@ pub fn link_program(shaders: &[GLuint]) -> GLuint {
 }
 
 /// Return the index of attribute `attr` in `program`. Panics if the
-/// index isn't found.
+/// attribute isn't found.
 pub fn find_program_attrib(program: GLuint, attr: &str) -> GLuint {
     let cstr = CString::new(attr).unwrap().as_ptr();
 
@@ -73,4 +73,18 @@ pub fn find_program_attrib(program: GLuint, attr: &str) -> GLuint {
     }
 
     index as GLuint
+}
+
+/// Return the index of uniform `uniform` in `program`. Panics if the
+/// uniform isn't found.
+pub fn find_program_uniform(program: GLuint, uniform: &str) -> GLint {
+    let cstr = CString::new(uniform).unwrap().as_ptr();
+
+    let index = unsafe { gl::GetUniformLocation(program, cstr) };
+
+    if index < 0 {
+        panic!("Uniform \"{}\" not found in program", uniform);
+    }
+
+    index
 }

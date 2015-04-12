@@ -4,12 +4,13 @@ use sdl2;
 use sdl2::video::{GLAttr, OPENGL, WindowPos};
 
 use gl;
-use gl::types::{GLuint, GLubyte, GLshort, GLsizei};
+use gl::types::{GLint, GLuint, GLubyte, GLshort, GLsizei};
 
 use libc::c_void;
 
 use self::error::check_for_errors;
-use self::shader::{compile_shader, link_program, find_program_attrib};
+use self::shader::{compile_shader, link_program};
+use self::shader::{find_program_attrib, find_program_uniform};
 use self::buffer::Buffer;
 
 mod error;
@@ -40,6 +41,8 @@ pub struct Renderer {
     colors: Buffer<Color>,
     /// Current number or vertices in the buffers
     nvertices: u32,
+    /// Index of the "offset" shader uniform
+    uniform_offset: GLint,
 }
 
 impl Renderer {
@@ -138,6 +141,12 @@ impl Renderer {
 
         check_for_errors();
 
+        // Retreive and initialize the draw offset
+        let uniform_offset = find_program_uniform(program, "offset");
+        unsafe {
+            gl::Uniform2i(uniform_offset, 0, 0);
+        }
+
         Renderer {
             sdl_context: sdl_context,
             window: window,
@@ -149,6 +158,7 @@ impl Renderer {
             positions: positions,
             colors: colors,
             nvertices: 0,
+            uniform_offset: uniform_offset,
         }
     }
 
@@ -196,6 +206,17 @@ impl Renderer {
             self.positions.set(self.nvertices, positions[i]);
             self.colors.set(self.nvertices, colors[i]);
             self.nvertices += 1;
+        }
+    }
+
+    /// Set the value of the uniform draw offset
+    pub fn set_draw_offset(&mut self, x: i16, y: i16) {
+        // Force draw for the primitives with the current offset
+        self.draw();
+
+        // Update the uniform value
+        unsafe {
+            gl::Uniform2i(self.uniform_offset, x as GLint, y as GLint);
         }
     }
 
