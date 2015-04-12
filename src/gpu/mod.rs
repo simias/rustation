@@ -1,6 +1,6 @@
 use self::opengl::{Renderer, Position, Color};
 
-mod opengl;
+pub mod opengl;
 
 pub struct Gpu {
     /// OpenGL renderer
@@ -90,9 +90,9 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    pub fn new() -> Gpu {
+    pub fn new(renderer: opengl::Renderer) -> Gpu {
         Gpu {
-            renderer: opengl::Renderer::new(),
+            renderer: renderer,
             page_base_x: 0,
             page_base_y: 0,
             rectangle_texture_x_flip: false,

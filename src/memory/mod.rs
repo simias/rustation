@@ -20,12 +20,12 @@ pub struct Interconnect {
 }
 
 impl Interconnect {
-    pub fn new(bios: Bios) -> Interconnect {
+    pub fn new(bios: Bios, gpu: Gpu) -> Interconnect {
         Interconnect {
             bios: bios,
             ram:  Ram::new(),
             dma:  Dma::new(),
-            gpu:  Gpu::new(),
+            gpu:  gpu,
         }
     }
 

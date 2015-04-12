@@ -18,9 +18,6 @@ mod shader;
 mod buffer;
 
 pub struct Renderer {
-    /// SDL2 context
-    #[allow(dead_code)]
-    sdl_context: sdl2::sdl::Sdl,
     /// SDL2 Window
     #[allow(dead_code)]
     window: sdl2::video::Window,
@@ -47,9 +44,7 @@ pub struct Renderer {
 
 impl Renderer {
 
-    pub fn new() -> Renderer {
-        let sdl_context = sdl2::init(::sdl2::INIT_VIDEO).unwrap();
-
+    pub fn new(sdl_context: &sdl2::Sdl) -> Renderer {
         sdl2::video::gl_set_attribute(GLAttr::GLContextMajorVersion, 3);
         sdl2::video::gl_set_attribute(GLAttr::GLContextMinorVersion, 3);
 
@@ -148,7 +143,6 @@ impl Renderer {
         }
 
         Renderer {
-            sdl_context: sdl_context,
             window: window,
             gl_context: gl_context,
             vertex_shader: vertex_shader,
