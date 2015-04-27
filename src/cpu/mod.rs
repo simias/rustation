@@ -227,6 +227,38 @@ impl Cpu {
         self.out_regs[0] = 0;
     }
 
+    /// Get the value of all general purpose registers
+    pub fn regs(&self) -> &[u32] {
+        &self.regs
+    }
+
+    pub fn sr(&self) -> u32 {
+        self.sr
+    }
+
+    pub fn lo(&self) -> u32 {
+        self.lo
+    }
+
+    pub fn hi(&self) -> u32 {
+        self.hi
+    }
+
+    pub fn pc(&self) -> u32 {
+        self.pc
+    }
+
+    pub fn cause(&self) -> u32 {
+        self.cause
+    }
+
+    pub fn bad(&self) -> u32 {
+        // XXX we don't emulate the "BAD" cop0 register yet. It's
+        // almost useless in the PSX anyway since there's no MMU.
+        0
+    }
+
+
     /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self, instruction: Instruction) {
         match instruction.function() {

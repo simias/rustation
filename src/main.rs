@@ -5,6 +5,7 @@ extern crate libc;
 mod cpu;
 mod memory;
 mod gpu;
+mod debugger;
 
 use std::path::Path;
 
@@ -13,6 +14,7 @@ use gpu::opengl::Renderer;
 use cpu::Cpu;
 use memory::Interconnect;
 use memory::bios::Bios;
+use debugger::Debugger;
 
 use sdl2::event::Event;
 use sdl2::keycode::KeyCode;
@@ -29,6 +31,8 @@ fn main() {
     let inter = Interconnect::new(bios, gpu);
     let mut cpu = Cpu::new(inter);
 
+    let mut debugger = Debugger::new();
+
     let mut event_pump = sdl_context.event_pump();
 
     loop {
@@ -40,6 +44,8 @@ fn main() {
         for e in event_pump.poll_iter() {
             match e {
                 Event::KeyDown { keycode: KeyCode::Escape, .. } => return,
+                Event::KeyDown { keycode: KeyCode::Pause, .. } =>
+                    debugger.debug(&mut cpu),
                 Event::Quit {..} => return,
                 _ => (),
             }
