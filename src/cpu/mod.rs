@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter, Error};
 
-use memory::Interconnect;
+use memory::{Interconnect, Addressable};
 
 mod asm;
 
@@ -87,7 +87,7 @@ impl Cpu {
         }
 
         // Fetch instruction at PC
-        let instruction = Instruction(self.load32(self.pc));
+        let instruction = Instruction(self.load(self.pc));
 
         // Increment PC to point to the next instruction. and
         // `next_pc` to the one after that. Both values can be
@@ -117,52 +117,20 @@ impl Cpu {
         self.regs = self.out_regs;
     }
 
-    /// Load 32bit value from the memory
-    fn load32(&self, addr: u32) -> u32 {
-        self.inter.load32(addr)
+    /// Memory read
+    fn load<T: Addressable>(&self, addr: u32) -> T {
+        self.inter.load(addr)
     }
 
-    /// Load 16bit value from the memory
-    fn load16(&self, addr: u32) -> u16 {
-        self.inter.load16(addr)
-    }
-
-    /// Load 8bit value from the memory
-    fn load8(&self, addr: u32) -> u8 {
-        self.inter.load8(addr)
-    }
-
-    /// Store 32bit value into the memory
-    fn store32(&mut self, addr: u32, val: u32) {
+    /// Memory write
+    fn store<T: Addressable>(&mut self, addr: u32, val: T) {
         if self.sr & 0x10000 != 0 {
             // Cache is isolated, ignore write
             println!("Ignoring store while cache is isolated");
             return;
         }
 
-        self.inter.store32(addr, val);
-    }
-
-    /// Store 16bit value into the memory
-    fn store16(&mut self, addr: u32, val: u16) {
-        if self.sr & 0x10000 != 0 {
-            // Cache is isolated, ignore write
-            println!("Ignoring store while cache is isolated");
-            return;
-        }
-
-        self.inter.store16(addr, val);
-    }
-
-    /// Store 8bit value into the memory
-    fn store8(&mut self, addr: u32, val: u8) {
-        if self.sr & 0x10000 != 0 {
-            // Cache is isolated, ignore write
-            println!("Ignoring store while cache is isolated");
-            return;
-        }
-
-        self.inter.store8(addr, val);
+        self.inter.store(addr, val);
     }
 
     /// Branch to immediate value `offset`.
@@ -951,7 +919,7 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         // Cast as i8 to force sign extension
-        let v = self.load8(addr) as i8;
+        let v = self.load::<u8>(addr) as i8;
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
@@ -967,7 +935,7 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         // Cast as i16 to force sign extension
-        let v = self.load16(addr) as i16;
+        let v = self.load::<u16>(addr) as i16;
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
@@ -990,7 +958,7 @@ impl Cpu {
         // Next we load the *aligned* word containing the first
         // addressed byte
         let aligned_addr = addr & !3;
-        let aligned_word = self.load32(aligned_addr);
+        let aligned_word = self.load::<u32>(aligned_addr);
 
         // Depending on the address alignment we fetch the 1, 2, 3 or
         // 4 *most* significant bytes and put them in the target
@@ -1018,7 +986,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            let v = self.load32(addr);
+            let v = self.load(addr);
 
             // Put the load in the delay slot
             self.load = (t, v);
@@ -1036,7 +1004,7 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
-        let v = self.load8(addr);
+        let v = self.load::<u8>(addr);
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
@@ -1053,7 +1021,7 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            let v = self.load16(addr);
+            let v = self.load::<u16>(addr);
 
             // Put the load in the delay slot
             self.load = (t, v as u32);
@@ -1079,7 +1047,7 @@ impl Cpu {
         // Next we load the *aligned* word containing the first
         // addressed byte
         let aligned_addr = addr & !3;
-        let aligned_word = self.load32(aligned_addr);
+        let aligned_word = self.load::<u32>(aligned_addr);
 
         // Depending on the address alignment we fetch the 1, 2, 3 or
         // 4 *least* significant bytes and put them in the target
@@ -1106,7 +1074,7 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v    = self.reg(t);
 
-        self.store8(addr, v as u8);
+        self.store(addr, v as u8);
     }
 
     /// Store Halfword
@@ -1121,7 +1089,7 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            self.store16(addr, v as u16);
+            self.store(addr, v as u16);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1140,7 +1108,7 @@ impl Cpu {
         let aligned_addr = addr & !3;
         // Load the current value for the aligned word at the target
         // address
-        let cur_mem = self.load32(aligned_addr);
+        let cur_mem = self.load::<u32>(aligned_addr);
 
         let mem = match addr & 3 {
             0 => (cur_mem & 0xffffff00) | (v >> 24),
@@ -1150,7 +1118,7 @@ impl Cpu {
             _ => unreachable!(),
         };
 
-        self.store32(addr, mem);
+        self.store(addr, mem);
     }
 
     /// Store Word
@@ -1165,7 +1133,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            self.store32(addr, v);
+            self.store(addr, v);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1184,7 +1152,7 @@ impl Cpu {
         let aligned_addr = addr & !3;
         // Load the current value for the aligned word at the target
         // address
-        let cur_mem = self.load32(aligned_addr);
+        let cur_mem = self.load::<u32>(aligned_addr);
 
         let mem = match addr & 3 {
             0 => (cur_mem & 0x00000000) | (v << 0),
@@ -1194,7 +1162,7 @@ impl Cpu {
             _ => unreachable!(),
         };
 
-        self.store32(addr, mem);
+        self.store(addr, mem);
     }
 
     /// Load Word in Coprocessor 0
@@ -1355,7 +1323,7 @@ struct RegisterIndex(u32);
 impl Debug for Cpu {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
 
-        let instruction = self.load32(self.current_pc);
+        let instruction = self.load(self.current_pc);
 
         try!(writeln!(f, "PC: {:08x}", self.current_pc));
 

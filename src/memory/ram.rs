@@ -1,4 +1,5 @@
 use std::iter;
+use super::Addressable;
 
 /// RAM
 pub struct Ram {
@@ -19,61 +20,27 @@ impl Ram {
         Ram { data: data }
     }
 
-    /// Fetch the 32bit little endian word at `offset`
-    pub fn load32(&self, offset: u32) -> u32 {
+    /// Fetch the little endian value at `offset`
+    pub fn load<T: Addressable>(&self, offset: u32) -> T {
         let offset = offset as usize;
 
-        let b0 = self.data[offset + 0] as u32;
-        let b1 = self.data[offset + 1] as u32;
-        let b2 = self.data[offset + 2] as u32;
-        let b3 = self.data[offset + 3] as u32;
+        let mut v = 0;
 
-        b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-    }
+        for i in 0..T::width() as usize {
+            v |= (self.data[offset + i] as u32) << (i * 8)
+        }
 
-    /// Fetch the 16bit little endian halfword at `offset`
-    pub fn load16(&self, offset: u32) -> u16 {
-        let offset = offset as usize;
-
-        let b0 = self.data[offset + 0] as u16;
-        let b1 = self.data[offset + 1] as u16;
-
-        b0 | (b1 << 8)
-    }
-
-    /// Fetch the byte at `offset`
-    pub fn load8(&self, offset: u32) -> u8 {
-        self.data[offset as usize]
+        Addressable::from_u32(v)
     }
 
     /// Store the 32bit little endian word `val` into `offset`
-    pub fn store32(&mut self, offset: u32, val: u32) {
+    pub fn store<T: Addressable>(&mut self, offset: u32, val: T) {
         let offset = offset as usize;
 
-        let b0 = val as u8;
-        let b1 = (val >> 8) as u8;
-        let b2 = (val >> 16) as u8;
-        let b3 = (val >> 24) as u8;
+        let val = val.as_u32();
 
-        self.data[offset + 0] = b0;
-        self.data[offset + 1] = b1;
-        self.data[offset + 2] = b2;
-        self.data[offset + 3] = b3;
-    }
-
-    /// Store the 16bit little endian halfword `val` into `offset`
-    pub fn store16(&mut self, offset: u32, val: u16) {
-        let offset = offset as usize;
-
-        let b0 = val as u8;
-        let b1 = (val >> 8) as u8;
-
-        self.data[offset + 0] = b0;
-        self.data[offset + 1] = b1;
-    }
-
-    /// Store the byte `val` into `offset`
-    pub fn store8(&mut self, offset: u32, val: u8) {
-        self.data[offset as usize] = val;
+        for i in 0..T::width() as usize {
+            self.data[offset + i] = (val >> (i * 8)) as u8;
+        }
     }
 }

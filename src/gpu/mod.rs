@@ -1,4 +1,5 @@
 use self::opengl::{Renderer, Position, Color};
+use memory::{Addressable, AccessWidth};
 
 pub mod opengl;
 
@@ -134,8 +135,39 @@ impl Gpu {
         }
     }
 
+    pub fn load<T: Addressable>(&self, offset: u32) -> T {
+
+        if T::width() != AccessWidth::Word {
+            panic!("Unhandled {:?} GPU load", T::width());
+        }
+
+        let r =
+            match offset {
+                0 => self.read(),
+                4 => self.status(),
+                _ => unreachable!(),
+            };
+
+        Addressable::from_u32(r)
+    }
+
+    pub fn store<T: Addressable>(&mut self, offset: u32, val: T) {
+
+        if T::width() != AccessWidth::Word {
+            panic!("Unhandled {:?} GPU load", T::width());
+        }
+
+        let val = val.as_u32();
+
+        match offset {
+            0 => self.gp0(val),
+            4 => self.gp1(val),
+            _ => unreachable!(),
+        }
+    }
+
     /// Retrieve value of the status register
-    pub fn status(&self) -> u32 {
+    fn status(&self) -> u32 {
         let mut r = 0u32;
 
         r |= (self.page_base_x as u32) << 0;
@@ -196,7 +228,7 @@ impl Gpu {
     }
 
     /// Retrieve value of the "read" register
-    pub fn read(&self) -> u32 {
+    fn read(&self) -> u32 {
         println!("GPUREAD");
         // Not implemented for now...
         0
