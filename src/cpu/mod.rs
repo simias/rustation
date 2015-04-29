@@ -118,12 +118,12 @@ impl Cpu {
     }
 
     /// Memory read
-    fn load<T: Addressable>(&self, addr: u32) -> T {
+    pub fn load<T: Addressable>(&self, addr: u32) -> T {
         self.inter.load(addr)
     }
 
     /// Memory write
-    fn store<T: Addressable>(&mut self, addr: u32, val: T) {
+    pub fn store<T: Addressable>(&mut self, addr: u32, val: T) {
         if self.sr & 0x10000 != 0 {
             // Cache is isolated, ignore write
             println!("Ignoring store while cache is isolated");
