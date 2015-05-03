@@ -172,6 +172,8 @@ impl GdbRemote {
                 b'g' => self.read_registers(cpu),
                 b'c' => self.resume(debugger, cpu, args),
                 b's' => self.step(debugger, cpu, args),
+                b'Z' => self.add_breakpoint(debugger, args),
+                b'z' => self.del_breakpoint(debugger, args),
                 // Send empty response for unsupported packets
                 _ => self.send_empty_reply(),
             };
@@ -198,24 +200,28 @@ impl GdbRemote {
         self.send_reply(Reply::new())
     }
 
-    fn send_error(&mut self) -> GdbResult {
+    fn send_string(&mut self, string: &[u8]) -> GdbResult {
         let mut reply = Reply::new();
 
-        // GDB remote doesn't specify what the error codes should
-        // be. Should be bother coming up with our own convention?
-        reply.push(b"E00");
+        reply.push(string);
 
         self.send_reply(reply)
     }
 
-    pub fn send_status(&mut self) -> GdbResult {
-        let mut reply = Reply::new();
+    fn send_error(&mut self) -> GdbResult {
+        // GDB remote doesn't specify what the error codes should
+        // be. Should be bother coming up with our own convention?
+        self.send_string(b"E00")
+    }
 
+    pub fn send_status(&mut self) -> GdbResult {
         // Maybe we should return different values depending on the
         // cause of the "break"?
-        reply.push(b"S00");
+        self.send_string(b"S00")
+    }
 
-        self.send_reply(reply)
+    pub fn send_ok(&mut self) -> GdbResult {
+        self.send_string(b"OK")
     }
 
     fn read_registers(&mut self, cpu: &mut Cpu) -> GdbResult {
@@ -338,6 +344,7 @@ impl GdbRemote {
               debugger: &mut Debugger,
               cpu: &mut Cpu,
               args: &[u8]) -> GdbResult {
+
         if args.len() > 0 {
             // If an address is provided we restart from there
             let addr = try!(parse_hex(args));
@@ -362,12 +369,82 @@ impl GdbRemote {
 
         self.resume(debugger, cpu, args)
     }
+
+    // Add a breakpoint or watchpoint
+    fn add_breakpoint(&mut self,
+                      debugger: &mut Debugger,
+                      args: &[u8]) -> GdbResult {
+
+        // Check if the request contains a command list
+        if args.iter().any(|&b| b == b';') {
+            // Not sure if I should signal an error or send an empty
+            // reply here to signal that command lists are not
+            // supported. I think GDB will think that we don't support
+            // this breakpoint type *at all* if we return an empty
+            // reply. I don't know how it handles errors however.
+            return self.send_error();
+        };
+
+        let (btype, addr, kind) = try!(parse_breakpoint(args));
+
+        // Only kind "4" makes sense for us: 32bits standard MIPS mode
+        // breakpoint. The MIPS-specific kinds are defined here:
+        // https://sourceware.org/gdb/onlinedocs/gdb/MIPS-Breakpoint-Kinds.html
+        if kind != b'4' {
+            // Same question as above, should I signal an error?
+            return self.send_error();
+        }
+
+        match btype {
+            b'0' => debugger.add_breakpoint(addr),
+            // Unsupported breakpoint type
+            _ => return self.send_empty_reply(),
+        }
+
+        self.send_ok()
+    }
+
+    // Delete a breakpoint or watchpoint
+    fn del_breakpoint(&mut self,
+                      debugger: &mut Debugger,
+                      args: &[u8]) -> GdbResult {
+
+        let (btype, addr, kind) = try!(parse_breakpoint(args));
+
+        // Only 32bits standard MIPS mode breakpoint supported
+        if kind != b'4' {
+            return self.send_error();
+        }
+
+        match btype {
+            b'0' => debugger.del_breakpoint(addr),
+            // Unsupported breakpoint type
+            _ => return self.send_empty_reply(),
+        }
+
+        self.send_ok()
+    }
+
 }
 
 enum PacketResult {
     Ok(Vec<u8>),
     BadChecksum(Vec<u8>),
     EndOfStream,
+}
+
+/// Get the value of an integer encoded in single lowercase
+/// hexadecimal ASCII digit. Return None if the character is not valid
+/// hexadecimal
+fn ascii_hex(b: u8) -> Option<u8> {
+    if b >= b'0' && b <= b'9' {
+        Some(b - b'0')
+    } else if b >= b'a' && b <= b'f' {
+        Some(10 + (b - b'a'))
+    } else {
+        // Invalid
+        None
+    }
 }
 
 /// Parse an hexadecimal string and return the value as an
@@ -392,38 +469,56 @@ fn parse_hex(hex: &[u8]) -> Result<u32, ()> {
 /// Parse a string in the format `addr,len` (both as hexadecimal
 /// strings) and return the values as a tuple. Returns `None` if
 /// the format is bogus.
-fn parse_addr_len(string: &[u8]) -> Result<(u32, u32), ()> {
+fn parse_addr_len(args: &[u8]) -> Result<(u32, u32), ()> {
 
-    // Look for the comma separator
-    let addr_end =
-        match string.iter().position(|&b| b == b',') {
-            Some(p) => p,
-            // Bad format
-            None => return Err(()),
-        };
+    // split around the comma
+    let args: Vec<_> = args.split(|&b| b == b',').collect();
 
-    if addr_end == 0 || addr_end == string.len() - 1 {
-        // No address or length
+    if args.len() != 2 {
+        // Invalid number of arguments
+        return Err(());
+    }
+
+    let addr = args[0];
+    let len = args[1];
+
+    if addr.len() == 0 || len.len() == 0 {
+        // Missing parameter
         return Err(());
     }
 
     // Parse address
-    let addr = try!(parse_hex(&string[0..addr_end]));
-    let len = try!(parse_hex(&string[addr_end + 1..]));
+    let addr = try!(parse_hex(addr));
+    let len = try!(parse_hex(len));
 
     Ok((addr, len))
 }
 
-/// Get the value of an integer encoded in single lowercase
-/// hexadecimal ASCII digit. Return None if the character is not valid
-/// hexadecimal
-fn ascii_hex(b: u8) -> Option<u8> {
-    if b >= b'0' && b <= b'9' {
-        Some(b - b'0')
-    } else if b >= b'a' && b <= b'f' {
-        Some(10 + (b - b'a'))
-    } else {
-        // Invalid
-        None
+/// Parse breakpoint arguments: the format is
+/// `type,addr,kind`. Returns the three parameters in a tuple or an
+/// error if a format error has been encountered.
+fn parse_breakpoint(args: &[u8]) -> Result<(u8, u32, u8), ()> {
+    // split around the comma
+    let args: Vec<_> = args.split(|&b| b == b',').collect();
+
+    if args.len() != 3 {
+        // Invalid number of arguments
+        return Err(());
     }
+
+    let btype = args[0];
+    let addr = args[1];
+    let kind = args[2];
+
+    if btype.len() != 1 || kind.len() != 1 {
+        // Type and kind should only be one character each
+        return Err(());
+    }
+
+    let btype = btype[0];
+    let kind = kind[0];
+
+    let addr = try!(parse_hex(addr));
+
+    Ok((btype, addr, kind))
 }

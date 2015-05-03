@@ -454,6 +454,9 @@ impl Cpu {
 
     /// Break
     fn op_break(&mut self, _: Instruction) {
+        // Should I do something special with the debugger here? Might
+        // be convenient if somebody wants to debug with the BREAK
+        // instruction in custom code.
         self.exception(Exception::Break);
     }
 

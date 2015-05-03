@@ -15,6 +15,8 @@ pub struct Debugger {
     resume: bool,
     /// If a single step is requested this flag is set
     step: bool,
+    /// Array containing all active breakpoint addresses
+    breakpoints: Vec<u32>,
 }
 
 impl Debugger {
@@ -35,6 +37,7 @@ impl Debugger {
             client: None,
             resume: true,
             step: false,
+            breakpoints: Vec::new(),
         }
     }
 
@@ -71,21 +74,36 @@ impl Debugger {
         self.client = Some(client);
     }
 
-    pub fn resume(&mut self) {
+    fn resume(&mut self) {
         self.resume = true;
     }
 
-    pub fn set_step(&mut self) {
+    fn set_step(&mut self) {
         self.step = true;
+    }
+
+    /// Add a breakpoint that will trigger when the instruction at
+    /// `addr` is about to be executed.
+    fn add_breakpoint(&mut self, addr: u32) {
+        // Make sure we're not adding the same address twice
+        if !self.breakpoints.contains(&addr) {
+            self.breakpoints.push(addr);
+        }
+    }
+
+    /// Delete breakpoint at `addr`. Does nothing if there was no
+    /// breakpoint set for this address.
+    fn del_breakpoint(&mut self, addr: u32) {
+        self.breakpoints.retain(|&a| a != addr);
     }
 
     /// Called by the CPU when it's about to execute a new
     /// instruction. This function is called before *all* CPU
     /// instructions so it needs to be as fast as possible.
     pub fn pc_change(&mut self, cpu: &mut Cpu) {
-        if self.step {
-            // Stepping was requested, we clear the flag and enter
-            // debugging mode
+        // Check if stepping was requested or if we encountered a
+        // breakpoint
+        if self.step || self.breakpoints.contains(&cpu.pc()) {
             self.step = false;
             self.debug(cpu);
         }
