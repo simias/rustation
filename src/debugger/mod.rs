@@ -6,8 +6,13 @@ use self::gdb::GdbRemote;
 mod gdb;
 
 pub struct Debugger {
+    /// Listener waiting for remote connections
     listener: TcpListener,
+    /// Holds the current client connection
     client: Option<GdbRemote>,
+    /// Internal state: set to true when the remote requests that the
+    /// execution should resume
+    resume: bool,
 }
 
 impl Debugger {
@@ -26,31 +31,44 @@ impl Debugger {
         Debugger {
             listener: listener,
             client: None,
+            resume: true,
         }
     }
 
     pub fn debug(&mut self, cpu: &mut Cpu) {
+        let mut client =
+            match self.client.take() {
+                Some(mut c) => {
+                    // Notify the remote that we're halted and waiting
+                    // for instructions. I ignore errors here for
+                    // simplicity, if the connection hung up for some
+                    // reason we'll figure it out soon enough.
+                    let _ = c.send_status();
+                    c
+                }
+                None => GdbRemote::new(&self.listener),
+            };
+
         // We loop as long as the remote debugger doesn't tell us to
         // continue
-        loop {
-            let mut client =
-                match self.client.take() {
-                    // XXX send update
-                    Some(c) => c,
-                    None => GdbRemote::new(&self.listener),
-                };
+        self.resume = false;
 
-            match client.serve(self, cpu) {
-                // We're done, we can store the client and resume
-                // normal execution
-                Ok(_) => {
-                    self.client = Some(client);
-                    return;
-                }
+        while !self.resume {
+            // Inner debugger loop: handle client requests until it
+            // requests that the execution resumes or an error is
+            // encountered
+            if let Err(_) = client.serve(self, cpu) {
                 // We encountered an error with the remote client: we
-                // loop
-                Err(_) => println!("Lost remote debugger connection"),
+                // wait for a new connection
+                client = GdbRemote::new(&self.listener);
             }
         }
+
+        // Before we resume execution we store the current client
+        self.client = Some(client);
+    }
+
+    pub fn resume(&mut self) {
+        self.resume = true;
     }
 }

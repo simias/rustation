@@ -87,7 +87,7 @@ impl Cpu {
         }
 
         // Fetch instruction at PC
-        let instruction = Instruction(self.load(self.pc));
+        let instruction = Instruction(self.load(self.current_pc));
 
         // Increment PC to point to the next instruction. and
         // `next_pc` to the one after that. Both values can be
@@ -226,6 +226,13 @@ impl Cpu {
         0
     }
 
+    /// Force PC address. Meant to be used from the debugger. Use at
+    /// your own risk.
+    pub fn force_pc(&mut self, pc: u32) {
+        self.pc = pc;
+        self.next_pc = self.pc.wrapping_add(4);
+        self.delay_slot = false;
+    }
 
     /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self, instruction: Instruction) {

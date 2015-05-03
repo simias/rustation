@@ -1,13 +1,16 @@
- use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
 
 use debugger::Debugger;
 use cpu::Cpu;
+use self::reply::Reply;
+
+mod reply;
+
+type GdbResult = Result<(), ()>;
 
 pub struct GdbRemote {
     remote: TcpStream,
-    /// Checksum for the current response
-    csum: u8,
 }
 
 impl GdbRemote {
@@ -25,37 +28,34 @@ impl GdbRemote {
 
         GdbRemote {
             remote: remote,
-            csum: 0,
         }
     }
 
+    // Serve a single remote request
     pub fn serve(&mut self,
                  debugger: &mut Debugger,
-                 cpu: &mut Cpu) -> Result<(), ()> {
+                 cpu: &mut Cpu) -> GdbResult {
 
-        loop {
-            match self.next_packet() {
-                PacketResult::Ok(packet) => {
-                    try!(self.ack());
-                    try!(self.handle_packet(debugger, cpu, &packet));
-                }
-                PacketResult::BadChecksum(_) => {
-                    // Request retransmission
-                    try!(self.nack());
-                }
-                PacketResult::EndOfStream => {
-                    // Session over
-                    break;
-                }
+        match self.next_packet() {
+            PacketResult::Ok(packet) => {
+                try!(self.ack());
+                self.handle_packet(debugger, cpu, &packet)
+            }
+            PacketResult::BadChecksum(_) => {
+                // Request retransmission
+                self.nack()
+            }
+            PacketResult::EndOfStream => {
+                // Session over
+                Err(())
             }
         }
-
-        Ok(())
     }
 
     /// Attempt to return a single GDB packet.
     fn next_packet(&mut self) -> PacketResult {
 
+        // Parser state machine
         enum State {
             WaitForStart,
             InPacket,
@@ -138,7 +138,7 @@ impl GdbRemote {
     }
 
     /// Acknowledge packet reception
-    fn ack(&mut self) -> Result<(), ()> {
+    fn ack(&mut self) -> GdbResult {
         if let Err(e) = self.remote.write(b"+") {
             println!("Couldn't send ACK to GDB remote: {}", e);
             Err(())
@@ -148,7 +148,7 @@ impl GdbRemote {
     }
 
     /// Request packet retransmission
-    fn nack(&mut self) -> Result<(), ()> {
+    fn nack(&mut self) -> GdbResult {
         if let Err(e) = self.remote.write(b"-") {
             println!("Couldn't send NACK to GDB remote: {}", e);
             Err(())
@@ -158,37 +158,31 @@ impl GdbRemote {
     }
 
     fn handle_packet(&mut self,
-                     _: &mut Debugger,
+                     debugger: &mut Debugger,
                      cpu: &mut Cpu,
-                     packet: &[u8]) -> Result<(), ()> {
+                     packet: &[u8]) -> GdbResult {
 
-        // Start response packet
-        try!(self.write(b"$"));
-        // Clear Checksum
-        self.csum = 0;
+        let command = packet[0];
+        let args = &packet[1..];
 
         let res =
-            match packet[0] {
-                b'?' => self.reply(b"S00"),
-                b'm' => self.read_memory(cpu, &packet[1..]),
+            match command {
+                b'?' => self.send_status(),
+                b'm' => self.read_memory(cpu, args),
                 b'g' => self.read_registers(cpu),
+                b'c' => self.resume(debugger, cpu, args),
                 // Send empty response for unsupported packets
-                _ => Ok(()),
+                _ => self.send_empty_reply(),
             };
 
+        // Check for errors
         try!(res);
-
-        // Each packet ends with '$' followed by the checksum as two
-        // hexadecimal digits.
-        try!(self.write(b"#"));
-        let csum = self.csum;
-        try!(self.reply_u8(csum));
 
         Ok(())
     }
 
-    fn write(&mut self, data: &[u8]) -> Result<(), ()> {
-        match self.remote.write(data) {
+    fn send_reply(&mut self, reply: Reply) -> GdbResult {
+        match self.remote.write(&reply.into_packet()) {
             // XXX Should we check the number of bytes written? What
             // do we do if it's less than we expected, retransmit?
             Ok(_) => Ok(()),
@@ -199,61 +193,37 @@ impl GdbRemote {
         }
     }
 
-    /// Send data to the remote GDB instance and update the
-    /// checksum.
-    fn reply(&mut self, response: &[u8]) -> Result<(), ()> {
-
-        // Validate the response and update the checksum
-        self.csum =
-            response.iter().fold(self.csum, |csum, &b| {
-                if b == b'#' || b == b'$' {
-                    panic!("Invalid character {} in GDB response",
-                           b as char);
-                }
-
-                // The checksum is a simple sum of all bytes
-                csum.wrapping_add(b)
-            });
-
-        try!(self.write(response));
-
-        Ok(())
+    fn send_empty_reply(&mut self) -> GdbResult {
+        self.send_reply(Reply::new())
     }
 
-    /// Send an u32 as 4 little endian bytes
-    fn reply_u32(&mut self, v: u32) -> Result<(), ()> {
-        for i in 0..4 {
-            try!(self.reply_u8((v >> (i * 8)) as u8));
-        }
+    fn send_error(&mut self) -> GdbResult {
+        let mut reply = Reply::new();
 
-        Ok(())
+        // GDB remote doesn't specify what the error codes should
+        // be. Should be bother coming up with our own convention?
+        reply.push(b"E00");
+
+        self.send_reply(reply)
     }
 
-    /// Send an u16 as 2 little endian bytes
-    fn reply_u16(&mut self, v: u16) -> Result<(), ()> {
-        for i in 0..2 {
-            try!(self.reply_u8((v >> (i * 8)) as u8));
-        }
+    pub fn send_status(&mut self) -> GdbResult {
+        let mut reply = Reply::new();
 
-        Ok(())
+        // Maybe we should return different values depending on the
+        // cause of the "break"?
+        reply.push(b"S00");
+
+        self.send_reply(reply)
     }
 
-    /// Convert an u8 into an hexadecimal string and send it to the
-    /// remote
-    fn reply_u8(&mut self, v: u8) -> Result<(), ()> {
-        let to_hex = b"0123456789abcdef";
+    fn read_registers(&mut self, cpu: &mut Cpu) -> GdbResult {
 
-        self.reply(&[
-            to_hex[(v >> 4) as usize],
-            to_hex[(v & 0xf) as usize],
-            ])
-    }
-
-    fn read_registers(&mut self, cpu: &mut Cpu) -> Result<(), ()> {
+        let mut reply = Reply::new();
 
         // Send general purpose registers
         for &r in cpu.regs() {
-            try!(self.reply_u32(r));
+            reply.push_u32(r);
         }
 
         // Send control registers
@@ -263,7 +233,7 @@ impl GdbRemote {
                      cpu.bad(),
                      cpu.cause(),
                      cpu.pc() ] {
-            try!(self.reply_u32(r));
+            reply.push_u32(r);
         }
 
         // GDB expects 73 registers for the MIPS architecture: the 38
@@ -277,27 +247,24 @@ impl GdbRemote {
         // problems we might just return 0 (or some sane default
         // value) instead.
         for _ in 38..73 {
-            try!(self.reply(b"xxxxxxxx"));
+            reply.push(b"xxxxxxxx");
         }
 
-        Ok(())
+        self.send_reply(reply)
     }
 
     /// Read a region of memory. The packet format should be
     /// `ADDR,LEN`, both in hexadecimal
-    fn read_memory(&mut self, cpu: &mut Cpu, packet: &[u8]) -> Result<(), ()> {
+    fn read_memory(&mut self, cpu: &mut Cpu, args: &[u8]) -> GdbResult {
 
-        let (addr, len) =
-            match parse_addr_len(packet) {
-                Some(r) => r,
-                // Bad format
-                None => return self.reply(b"E00"),
-            };
+        let mut reply = Reply::new();
+
+        let (addr, len) = try!(parse_addr_len(args));
 
         if len == 0 {
             // Should we reply with an empty string here? Probably
             // doesn't matter
-            return self.reply(b"E00");
+            return self.send_error();
         }
 
         // We can now fetch the data. First we handle the case where
@@ -315,17 +282,17 @@ impl GdbRemote {
                     let count = ::std::cmp::min(len, 4 - align);
 
                     for i in 0..count {
-                        try!(self.reply_u8(cpu.load(addr + i)));
+                        reply.push_u8(cpu.load(addr + i));
                     }
                     count
                 }
                 2 => {
                     if len == 1 {
                         // Only one byte to read
-                        try!(self.reply_u8(cpu.load(addr)));
+                        reply.push_u8(cpu.load(addr));
                         1
                     } else {
-                        try!(self.reply_u16(cpu.load(addr)));
+                        reply.push_u16(cpu.load(addr));
                         2
                     }
                 }
@@ -343,7 +310,7 @@ impl GdbRemote {
         let nwords = len / 4;
 
         for i in 0..nwords {
-            try!(self.reply_u32(cpu.load(addr + i * 4)));
+            reply.push_u32(cpu.load(addr + i * 4));
         }
 
         // See if we have anything remaining
@@ -353,14 +320,32 @@ impl GdbRemote {
         match rem {
             1|3 => {
                 for i in 0..rem {
-                    try!(self.reply_u8(cpu.load(addr + i)));
+                    reply.push_u8(cpu.load(addr + i));
                 }
             }
             2 => {
-                try!(self.reply_u16(cpu.load(addr)));
+                reply.push_u16(cpu.load(addr));
             }
             _ => ()
         }
+
+        self.send_reply(reply)
+    }
+
+    /// Continue execution
+    fn resume(&mut self,
+              debugger: &mut Debugger,
+              cpu: &mut Cpu,
+              args: &[u8]) -> GdbResult {
+        if args.len() > 0 {
+            // If an address is provided we restart from there
+            let addr = try!(parse_hex(args));
+
+            cpu.force_pc(addr);
+        }
+
+        // Tell the debugger we want to resume execution.
+        debugger.resume();
 
         Ok(())
     }
@@ -372,51 +357,48 @@ enum PacketResult {
     EndOfStream,
 }
 
+/// Parse an hexadecimal string and return the value as an
+/// integer. Return `None` if the string is invalid.
+fn parse_hex(hex: &[u8]) -> Result<u32, ()> {
+    let mut v = 0u32;
+
+    for &b in hex {
+        v <<= 4;
+
+        v |=
+            match ascii_hex(b) {
+                Some(h) => h as u32,
+                // Bad hex
+                None => return Err(()),
+            };
+    }
+
+    Ok(v)
+}
+
 /// Parse a string in the format `addr,len` (both as hexadecimal
 /// strings) and return the values as a tuple. Returns `None` if
 /// the format is bogus.
-fn parse_addr_len(string: &[u8]) -> Option<(u32, u32)> {
+fn parse_addr_len(string: &[u8]) -> Result<(u32, u32), ()> {
 
     // Look for the comma separator
     let addr_end =
         match string.iter().position(|&b| b == b',') {
             Some(p) => p,
             // Bad format
-            None => return None,
+            None => return Err(()),
         };
 
     if addr_end == 0 || addr_end == string.len() - 1 {
         // No address or length
-        return None;
+        return Err(());
     }
-
-    let mut addr = 0;
 
     // Parse address
-    for &b in &string[0..addr_end] {
-        addr = addr << 4;
-        addr |=
-            match ascii_hex(b) {
-                Some(v) => v as u32,
-                // Bad hex
-                None => return None,
-            };
-    }
+    let addr = try!(parse_hex(&string[0..addr_end]));
+    let len = try!(parse_hex(&string[addr_end + 1..]));
 
-    let mut len = 0;
-
-    // Parse length
-    for &b in &string[addr_end + 1..] {
-        len = len << 4;
-        len |=
-            match ascii_hex(b) {
-                Some(v) => v as u32,
-                // Bad hex
-                None => return None,
-            };
-    }
-
-    Some((addr, len))
+    Ok((addr, len))
 }
 
 /// Get the value of an integer encoded in single lowercase
