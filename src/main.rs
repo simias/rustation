@@ -37,7 +37,7 @@ fn main() {
 
     loop {
         for _ in 0..1_000_000 {
-            cpu.run_next_instruction();
+            cpu.run_next_instruction(&mut debugger);
         }
 
         // See if we should quit

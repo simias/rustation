@@ -13,6 +13,8 @@ pub struct Debugger {
     /// Internal state: set to true when the remote requests that the
     /// execution should resume
     resume: bool,
+    /// If a single step is requested this flag is set
+    step: bool,
 }
 
 impl Debugger {
@@ -32,6 +34,7 @@ impl Debugger {
             listener: listener,
             client: None,
             resume: true,
+            step: false,
         }
     }
 
@@ -70,5 +73,21 @@ impl Debugger {
 
     pub fn resume(&mut self) {
         self.resume = true;
+    }
+
+    pub fn set_step(&mut self) {
+        self.step = true;
+    }
+
+    /// Called by the CPU when it's about to execute a new
+    /// instruction. This function is called before *all* CPU
+    /// instructions so it needs to be as fast as possible.
+    pub fn pc_change(&mut self, cpu: &mut Cpu) {
+        if self.step {
+            // Stepping was requested, we clear the flag and enter
+            // debugging mode
+            self.step = false;
+            self.debug(cpu);
+        }
     }
 }

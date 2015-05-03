@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter, Error};
 
 use memory::{Interconnect, Addressable};
+use debugger::Debugger;
 
 mod asm;
 
@@ -75,10 +76,13 @@ impl Cpu {
     }
 
     /// Run a single CPU instruction and return
-    pub fn run_next_instruction(&mut self) {
+    pub fn run_next_instruction(&mut self, debugger: &mut Debugger) {
         // Save the address of the current instruction to save in
         // `EPC` in case of an exception.
         self.current_pc = self.pc;
+
+        // Debugger entrypoint: used for code breakpoints and stepping
+        debugger.pc_change(self);
 
         if self.current_pc % 4 != 0 {
             // PC is not correctly aligned!

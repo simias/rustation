@@ -171,6 +171,7 @@ impl GdbRemote {
                 b'm' => self.read_memory(cpu, args),
                 b'g' => self.read_registers(cpu),
                 b'c' => self.resume(debugger, cpu, args),
+                b's' => self.step(debugger, cpu, args),
                 // Send empty response for unsupported packets
                 _ => self.send_empty_reply(),
             };
@@ -348,6 +349,18 @@ impl GdbRemote {
         debugger.resume();
 
         Ok(())
+    }
+
+    // Step works exactly like continue except that we're only
+    // supposed to execute a single instruction.
+    fn step(&mut self,
+            debugger: &mut Debugger,
+            cpu: &mut Cpu,
+            args: &[u8]) -> GdbResult {
+
+        debugger.set_step();
+
+        self.resume(debugger, cpu, args)
     }
 }
 
