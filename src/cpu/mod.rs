@@ -1,9 +1,7 @@
-use std::fmt::{Debug, Display, Formatter, Error};
+use std::fmt::{Display, Formatter, Error};
 
 use memory::{Interconnect, Addressable};
 use debugger::Debugger;
-
-mod asm;
 
 /// CPU state
 pub struct Cpu {
@@ -91,7 +89,8 @@ impl Cpu {
         }
 
         // Fetch instruction at PC
-        let instruction = Instruction(self.load(self.current_pc));
+        let pc = self.current_pc;
+        let instruction = Instruction(self.load(pc, debugger));
 
         // Increment PC to point to the next instruction. and
         // `next_pc` to the one after that. Both values can be
@@ -115,14 +114,24 @@ impl Cpu {
         self.delay_slot = self.branch;
         self.branch     = false;
 
-        self.decode_and_execute(instruction);
+        self.decode_and_execute(instruction, debugger);
 
         // Copy the output registers as input for the next instruction
         self.regs = self.out_regs;
     }
 
     /// Memory read
-    pub fn load<T: Addressable>(&self, addr: u32) -> T {
+    fn load<T: Addressable>(&mut self,
+                            addr: u32,
+                            debugger: &mut Debugger) -> T {
+        debugger.memory_read(self, addr);
+
+        self.inter.load(addr)
+    }
+
+    /// Memory read with as little side-effect as possible. Used for
+    /// debugging.
+    pub fn examine<T: Addressable>(&mut self, addr: u32) -> T {
         self.inter.load(addr)
     }
 
@@ -239,7 +248,9 @@ impl Cpu {
     }
 
     /// Decode `instruction`'s opcode and run the function
-    fn decode_and_execute(&mut self, instruction: Instruction) {
+    fn decode_and_execute(&mut self,
+                          instruction: Instruction,
+                          debugger: &mut Debugger) {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
@@ -291,18 +302,18 @@ impl Cpu {
             0b010001 => self.op_cop1(instruction),
             0b010010 => self.op_cop2(instruction),
             0b010011 => self.op_cop3(instruction),
-            0b100000 => self.op_lb(instruction),
-            0b100001 => self.op_lh(instruction),
-            0b100010 => self.op_lwl(instruction),
-            0b100011 => self.op_lw(instruction),
-            0b100100 => self.op_lbu(instruction),
-            0b100101 => self.op_lhu(instruction),
-            0b100110 => self.op_lwr(instruction),
+            0b100000 => self.op_lb(instruction, debugger),
+            0b100001 => self.op_lh(instruction, debugger),
+            0b100010 => self.op_lwl(instruction, debugger),
+            0b100011 => self.op_lw(instruction, debugger),
+            0b100100 => self.op_lbu(instruction, debugger),
+            0b100101 => self.op_lhu(instruction, debugger),
+            0b100110 => self.op_lwr(instruction, debugger),
             0b101000 => self.op_sb(instruction),
             0b101001 => self.op_sh(instruction),
-            0b101010 => self.op_swl(instruction),
+            0b101010 => self.op_swl(instruction, debugger),
             0b101011 => self.op_sw(instruction),
-            0b101110 => self.op_swr(instruction),
+            0b101110 => self.op_swr(instruction, debugger),
             0b110000 => self.op_lwc0(instruction),
             0b110001 => self.op_lwc1(instruction),
             0b110010 => self.op_lwc2(instruction),
@@ -924,7 +935,9 @@ impl Cpu {
     }
 
     /// Load Byte (signed)
-    fn op_lb(&mut self, instruction: Instruction) {
+    fn op_lb(&mut self,
+             instruction: Instruction,
+             debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -933,14 +946,16 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         // Cast as i8 to force sign extension
-        let v = self.load::<u8>(addr) as i8;
+        let v = self.load::<u8>(addr, debugger) as i8;
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
     }
 
     /// Load Halfword (signed)
-    fn op_lh(&mut self, instruction: Instruction) {
+    fn op_lh(&mut self,
+             instruction: Instruction,
+             debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -949,14 +964,16 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         // Cast as i16 to force sign extension
-        let v = self.load::<u16>(addr) as i16;
+        let v = self.load::<u16>(addr, debugger) as i16;
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
     }
 
     /// Load Word Left (little-endian only implementation)
-    fn op_lwl(&mut self, instruction: Instruction) {
+    fn op_lwl(&mut self,
+              instruction: Instruction,
+              debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -972,7 +989,7 @@ impl Cpu {
         // Next we load the *aligned* word containing the first
         // addressed byte
         let aligned_addr = addr & !3;
-        let aligned_word = self.load::<u32>(aligned_addr);
+        let aligned_word = self.load::<u32>(aligned_addr, debugger);
 
         // Depending on the address alignment we fetch the 1, 2, 3 or
         // 4 *most* significant bytes and put them in the target
@@ -990,7 +1007,9 @@ impl Cpu {
     }
 
     /// Load Word
-    fn op_lw(&mut self, instruction: Instruction) {
+    fn op_lw(&mut self,
+             instruction: Instruction,
+             debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1000,7 +1019,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            let v = self.load(addr);
+            let v = self.load(addr, debugger);
 
             // Put the load in the delay slot
             self.load = (t, v);
@@ -1010,7 +1029,9 @@ impl Cpu {
     }
 
     /// Load Byte Unsigned
-    fn op_lbu(&mut self, instruction: Instruction) {
+    fn op_lbu(&mut self,
+              instruction: Instruction,
+              debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1018,14 +1039,16 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
-        let v = self.load::<u8>(addr);
+        let v = self.load::<u8>(addr, debugger);
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
     }
 
     /// Load Halfword Unsigned
-    fn op_lhu(&mut self, instruction: Instruction) {
+    fn op_lhu(&mut self,
+              instruction: Instruction,
+              debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1035,7 +1058,7 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            let v = self.load::<u16>(addr);
+            let v = self.load::<u16>(addr, debugger);
 
             // Put the load in the delay slot
             self.load = (t, v as u32);
@@ -1045,7 +1068,9 @@ impl Cpu {
     }
 
     /// Load Word Right (little-endian only implementation)
-    fn op_lwr(&mut self, instruction: Instruction) {
+    fn op_lwr(&mut self,
+              instruction: Instruction,
+              debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1061,7 +1086,7 @@ impl Cpu {
         // Next we load the *aligned* word containing the first
         // addressed byte
         let aligned_addr = addr & !3;
-        let aligned_word = self.load::<u32>(aligned_addr);
+        let aligned_word = self.load::<u32>(aligned_addr, debugger);
 
         // Depending on the address alignment we fetch the 1, 2, 3 or
         // 4 *least* significant bytes and put them in the target
@@ -1110,7 +1135,9 @@ impl Cpu {
     }
 
     /// Store Word Left (little-endian only implementation)
-    fn op_swl(&mut self, instruction: Instruction) {
+    fn op_swl(&mut self,
+              instruction: Instruction,
+              debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1122,7 +1149,7 @@ impl Cpu {
         let aligned_addr = addr & !3;
         // Load the current value for the aligned word at the target
         // address
-        let cur_mem = self.load::<u32>(aligned_addr);
+        let cur_mem = self.load::<u32>(aligned_addr, debugger);
 
         let mem = match addr & 3 {
             0 => (cur_mem & 0xffffff00) | (v >> 24),
@@ -1154,7 +1181,9 @@ impl Cpu {
     }
 
     /// Store Word Right (little-endian only implementation)
-    fn op_swr(&mut self, instruction: Instruction) {
+    fn op_swr(&mut self,
+              instruction: Instruction,
+              debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1166,7 +1195,7 @@ impl Cpu {
         let aligned_addr = addr & !3;
         // Load the current value for the aligned word at the target
         // address
-        let cur_mem = self.load::<u32>(aligned_addr);
+        let cur_mem = self.load::<u32>(aligned_addr, debugger);
 
         let mem = match addr & 3 {
             0 => (cur_mem & 0x00000000) | (v << 0),
@@ -1333,56 +1362,3 @@ enum Exception {
 
 #[derive(Clone,Copy)]
 struct RegisterIndex(u32);
-
-impl Debug for Cpu {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-
-        let instruction = self.load(self.current_pc);
-
-        try!(writeln!(f, "PC: {:08x}", self.current_pc));
-
-        for i in 0..8 {
-            let r1 = i * 4;
-            let r2 = r1 + 1;
-            let r3 = r2 + 1;
-            let r4 = r3 + 1;
-
-            try!(writeln!(f, "{}: {:08x}  {}: {:08x}  {}: {:08x}  {}: {:08x}",
-                          REGISTER_MNEMONICS[r1], self.regs[r1],
-                          REGISTER_MNEMONICS[r2], self.regs[r2],
-                          REGISTER_MNEMONICS[r3], self.regs[r3],
-                          REGISTER_MNEMONICS[r4], self.regs[r4]));
-        }
-
-        try!(writeln!(f, "HI: {:08x}  LO: {:08x}", self.hi, self.lo));
-
-        let (RegisterIndex(reg), val) = self.load;
-
-        if reg != 0 {
-            try!(writeln!(f, "Pending load: {} <- {:08x}",
-                          REGISTER_MNEMONICS[reg as usize], val));
-        }
-
-        try!(writeln!(f, "Next instruction: 0x{:08x} {}",
-                      instruction, asm::decode(Instruction(instruction))));
-
-        Ok(())
-    }
-}
-
-const REGISTER_MNEMONICS: [&'static str; 32] = [
-    "R00",
-    "R01",
-    "R02", "R03",
-    "R04", "R05", "R06", "R07",
-    "R08", "R09", "R10", "R11",
-    "R12", "R13", "R14", "R15",
-    "R16", "R17", "R18", "R19",
-    "R20", "R21", "R22", "R23",
-    "R24", "R25",
-    "R26", "R27",
-    "R28",
-    "R29",
-    "R30",
-    "R31",
-    ];

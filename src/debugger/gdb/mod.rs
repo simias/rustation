@@ -289,17 +289,17 @@ impl GdbRemote {
                     let count = ::std::cmp::min(len, 4 - align);
 
                     for i in 0..count {
-                        reply.push_u8(cpu.load(addr + i));
+                        reply.push_u8(cpu.examine(addr + i));
                     }
                     count
                 }
                 2 => {
                     if len == 1 {
                         // Only one byte to read
-                        reply.push_u8(cpu.load(addr));
+                        reply.push_u8(cpu.examine(addr));
                         1
                     } else {
-                        reply.push_u16(cpu.load(addr));
+                        reply.push_u16(cpu.examine(addr));
                         2
                     }
                 }
@@ -317,7 +317,7 @@ impl GdbRemote {
         let nwords = len / 4;
 
         for i in 0..nwords {
-            reply.push_u32(cpu.load(addr + i * 4));
+            reply.push_u32(cpu.examine(addr + i * 4));
         }
 
         // See if we have anything remaining
@@ -327,11 +327,11 @@ impl GdbRemote {
         match rem {
             1|3 => {
                 for i in 0..rem {
-                    reply.push_u8(cpu.load(addr + i));
+                    reply.push_u8(cpu.examine(addr + i));
                 }
             }
             2 => {
-                reply.push_u16(cpu.load(addr));
+                reply.push_u16(cpu.examine(addr));
             }
             _ => ()
         }
@@ -397,6 +397,7 @@ impl GdbRemote {
 
         match btype {
             b'0' => debugger.add_breakpoint(addr),
+            b'3' => debugger.add_read_watchpoint(addr),
             // Unsupported breakpoint type
             _ => return self.send_empty_reply(),
         }
@@ -418,6 +419,7 @@ impl GdbRemote {
 
         match btype {
             b'0' => debugger.del_breakpoint(addr),
+            b'3' => debugger.del_read_watchpoint(addr),
             // Unsupported breakpoint type
             _ => return self.send_empty_reply(),
         }

@@ -15,8 +15,10 @@ pub struct Debugger {
     resume: bool,
     /// If a single step is requested this flag is set
     step: bool,
-    /// Array containing all active breakpoint addresses
+    /// Vector containing all active breakpoint addresses
     breakpoints: Vec<u32>,
+    /// Vector containing all active read watchpoints
+    read_watchpoints: Vec<u32>,
 }
 
 impl Debugger {
@@ -38,10 +40,16 @@ impl Debugger {
             resume: true,
             step: false,
             breakpoints: Vec::new(),
+            read_watchpoints: Vec::new(),
         }
     }
 
     pub fn debug(&mut self, cpu: &mut Cpu) {
+        // If stepping was requested we can reset the flag here, this
+        // way we won't "double step" if we're entering debug mode for
+        // an other reason (data watchpoint for instance)
+        self.step = false;
+
         let mut client =
             match self.client.take() {
                 Some(mut c) => {
@@ -104,7 +112,32 @@ impl Debugger {
         // Check if stepping was requested or if we encountered a
         // breakpoint
         if self.step || self.breakpoints.contains(&cpu.pc()) {
-            self.step = false;
+            self.debug(cpu);
+        }
+    }
+
+    /// Add a breakpoint that will trigger when the CPU attempts to
+    /// read from `addr`
+    fn add_read_watchpoint(&mut self, addr: u32) {
+        // Make sure we're not adding the same address twice
+        if !self.read_watchpoints.contains(&addr) {
+            self.read_watchpoints.push(addr);
+        }
+    }
+
+    /// Delete read watchpoint at `addr`. Does nothing if there was no
+    /// breakpoint set for this address.
+    fn del_read_watchpoint(&mut self, addr: u32) {
+        self.read_watchpoints.retain(|&a| a != addr);
+    }
+
+    /// Called by the CPU when it's about to load a value from memory.
+    pub fn memory_read(&mut self, cpu: &mut Cpu, addr: u32) {
+        // XXX: how should we handle unalagned watchpoints? For
+        // instance if we have a watchpoint on address 1 and the CPU
+        // executes a `load32 at` address 0, should we break? Also,
+        // should we mask the region?
+        if self.read_watchpoints.contains(&addr) {
             self.debug(cpu);
         }
     }
