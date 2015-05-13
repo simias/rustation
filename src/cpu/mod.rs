@@ -90,7 +90,7 @@ impl Cpu {
 
         // Fetch instruction at PC
         let pc = self.current_pc;
-        let instruction = Instruction(self.load(pc, debugger));
+        let instruction = Instruction(self.inter.load(pc));
 
         // Increment PC to point to the next instruction. and
         // `next_pc` to the one after that. Both values can be
