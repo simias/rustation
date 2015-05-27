@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Error};
 
-use memory::{Interconnect, Addressable};
+use memory::{Interconnect, Addressable, AccessWidth};
 use debugger::Debugger;
 
 /// CPU state
@@ -24,10 +24,12 @@ pub struct Cpu {
     /// LO register for division quotient and multiplication low
     /// result
     lo: u32,
+    /// Instruction Cache (256 4-word cachelines)
+    icache: [ICacheLine; 0x100],
     /// Memory interface
     inter: Interconnect,
     /// Cop0 register 12: Status Register
-    sr: u32,
+    sr: StatusRegister,
     /// Cop0 register 13: Cause Register
     cause: u32,
     /// Cop0 register 14: EPC
@@ -63,8 +65,9 @@ impl Cpu {
             out_regs:   regs,
             hi:         0xdeadbeef,
             lo:         0xdeadbeef,
+            icache:     [ICacheLine::new(); 0x100],
             inter:      inter,
-            sr:         0,
+            sr:         StatusRegister(0),
             cause:      0,
             epc:        0,
             load:       (RegisterIndex(0), 0),
@@ -89,8 +92,7 @@ impl Cpu {
         }
 
         // Fetch instruction at PC
-        let pc = self.current_pc;
-        let instruction = Instruction(self.inter.load(pc));
+        let instruction = self.fetch_instruction();
 
         // Increment PC to point to the next instruction. and
         // `next_pc` to the one after that. Both values can be
@@ -120,6 +122,52 @@ impl Cpu {
         self.regs = self.out_regs;
     }
 
+    /// Fetch the instruction at `current_pc` through the instruction
+    /// cache
+    fn fetch_instruction(&mut self) -> Instruction {
+        let pc = self.current_pc;
+        let cc = self.inter.cache_control();
+
+        // KSEG1 region is never cached
+        let kseg1 = (pc & 0xe0000000) == 0xa0000000;
+
+        if !kseg1 && cc.icache_enabled() {
+            // Cache tag: bits [31:12]
+            let tag  = pc & 0xfffff000;
+            // Cache line "bucket": bits [11:4]
+            let line = (pc >> 4) & 0xff;
+            // Index in the cache line: bits [3:2]
+            let index = (pc >> 2) & 3;
+
+            // Fetch the cacheline for this address
+            let line = &mut self.icache[line as usize];
+
+            // Check the tag and validity
+            if line.tag() != tag || line.valid_index() > index {
+                // Cache miss. Fetch the cacheline starting at the
+                // current index. If the index is not 0 then some
+                // words are going to remain invalid in the cacheline.
+                let mut cpc = pc;
+
+                for i in index..4 {
+                    let instruction = Instruction(self.inter.load(cpc));
+
+                    line.set_instruction(i, instruction);
+                    cpc += 4;
+                }
+
+                // Set the tag and valid bits
+                line.set_tag_valid(pc);
+            }
+
+            // Cache line is now guaranteed to be valid
+            line.instruction(index)
+        } else {
+            // Cache disabled, fetch directly from memory
+            Instruction(self.inter.load(pc))
+        }
+    }
+
     /// Memory read
     fn load<T: Addressable>(&mut self,
                             addr: u32,
@@ -136,14 +184,49 @@ impl Cpu {
     }
 
     /// Memory write
-    pub fn store<T: Addressable>(&mut self, addr: u32, val: T) {
-        if self.sr & 0x10000 != 0 {
-            // Cache is isolated, ignore write
-            println!("Ignoring store while cache is isolated");
-            return;
+    fn store<T: Addressable>(&mut self, addr: u32, val: T) {
+        if self.sr.cache_isolated() {
+            self.cache_maintenance(addr, val);
+        } else {
+            self.inter.store(addr, val);
+        }
+    }
+
+    /// Handle writes when the cache is isolated
+    pub fn cache_maintenance<T: Addressable>(&mut self, addr: u32, val: T) {
+        // Implementing full cache emulation requires handling many
+        // corner cases. For now I'm just going to add support for
+        // cache invalidation which is the only use case for cache
+        // isolation as far as I know.
+
+        let cc = self.inter.cache_control();
+
+        if !cc.icache_enabled() {
+            panic!("Cache maintenance while instruction cache is disabled");
         }
 
-        self.inter.store(addr, val);
+        if T::width() != AccessWidth::Word || val.as_u32() != 0 {
+            panic!("Unsupported write while cache is isolated: {:08x}",
+                   val.as_u32());
+        }
+
+        let line = (addr >> 4) & 0xff;
+
+        // Fetch the cacheline for this address
+        let line = &mut self.icache[line as usize];
+
+        if cc.tag_test_mode() {
+            // In tag test mode the write invalidates the entire
+            // targeted cacheline
+            line.invalidate();
+        } else {
+            // Otherwise the write ends up directly in the cache.
+            let index = (addr >> 2) & 3;
+
+            let instruction = Instruction(val.as_u32());
+
+            line.set_instruction(index, instruction);
+        }
     }
 
     /// Branch to immediate value `offset`.
@@ -160,22 +243,8 @@ impl Cpu {
 
     /// Trigger an exception
     fn exception(&mut self, cause: Exception) {
-        // Exception handler address depends on the `BEV` bit:
-        let handler = match self.sr & (1 << 22) != 0 {
-            true  => 0xbfc00180,
-            false => 0x80000080,
-        };
-
-        // Shift bits [5:0] of `SR` two places to the left. Those bits
-        // are three pairs of Interrupt Enable/User Mode bits behaving
-        // like a stack 3 entries deep. Entering an exception pushes a
-        // pair of zeroes by left shifting the stack which disables
-        // interrupts and puts the CPU in kernel mode. The original
-        // third entry is discarded (it's up to the kernel to handle
-        // more than two recursive exception levels).
-        let mode = self.sr & 0x3f;
-        self.sr &= !0x3f;
-        self.sr |= (mode << 2) & 0x3f;
+        // Update the status register
+        self.sr.enter_exception();
 
         // Update `CAUSE` register with the exception code (bits
         // [6:2])
@@ -193,7 +262,7 @@ impl Cpu {
 
         // Exceptions don't have a branch delay, we jump directly into
         // the handler
-        self.pc      = handler;
+        self.pc      = self.sr.exception_handler();
         self.next_pc = self.pc.wrapping_add(4);
     }
 
@@ -214,7 +283,7 @@ impl Cpu {
     }
 
     pub fn sr(&self) -> u32 {
-        self.sr
+        self.sr.as_u32()
     }
 
     pub fn lo(&self) -> u32 {
@@ -886,7 +955,7 @@ impl Cpu {
         let cop_r = instruction.d().0;
 
         let v = match cop_r {
-            12 => self.sr,
+            12 => self.sr.as_u32(),
             13 => self.cause,
             14 => self.epc,
             _  =>
@@ -908,7 +977,7 @@ impl Cpu {
                 if v != 0 {
                     panic!("Unhandled write to cop0r{}: {:08x}", cop_r, v)
                 },
-            12 => self.sr = v,
+            12 => self.sr = StatusRegister(v),
             13 => // Cause register
                 if v != 0 {
                     panic!("Unhandled write to CAUSE register: {:08x}", v)
@@ -927,11 +996,7 @@ impl Cpu {
             panic!("Invalid cop0 instruction: {}", instruction);
         }
 
-        // Restore the pre-exception mode by shifting the Interrupt
-        // Enable/User Mode stack back to its original position.
-        let mode = self.sr & 0x3f;
-        self.sr &= !0x3f;
-        self.sr |= mode >> 2;
+        self.sr.return_from_exception();
     }
 
     /// Load Byte (signed)
@@ -1362,3 +1427,114 @@ enum Exception {
 
 #[derive(Clone,Copy)]
 struct RegisterIndex(u32);
+
+#[derive(Clone,Copy)]
+struct StatusRegister(u32);
+
+impl StatusRegister {
+
+    fn as_u32(self) -> u32 {
+        self.0
+    }
+
+    fn cache_isolated(self) -> bool {
+        self.0 & 0x10000 != 0
+    }
+
+    /// Return the exception handler address depending on the value of
+    /// the BEV bit
+    fn exception_handler(self) -> u32 {
+        match self.0 & (1 << 22) != 0 {
+            true  => 0xbfc00180,
+            false => 0x80000080,
+        }
+    }
+
+    /// Shift bits [5:0] of `SR` two places to the left. Those bits
+    /// are three pairs of Interrupt Enable/User Mode bits behaving
+    /// like a stack 3 entries deep. Entering an exception pushes a
+    /// pair of zeroes by left shifting the stack which disables
+    /// interrupts and puts the CPU in kernel mode. The original third
+    /// entry is discarded (it's up to the kernel to handle more than
+    /// two recursive exception levels).
+    fn enter_exception(&mut self) {
+        let mut sr = self.0;
+
+        let mode = sr & 0x3f;
+        sr &= !0x3f;
+        sr |= (mode << 2) & 0x3f;
+
+        *self = StatusRegister(sr);
+    }
+
+    /// The opposite of `enter_exception`: shift mode the other way
+    /// around, discarding the current state.
+    fn return_from_exception(&mut self) {
+        let mut sr = self.0;
+
+        let mode = sr & 0x3f;
+        sr &= !0x3f;
+        sr |= mode >> 2;
+
+        *self = StatusRegister(sr);
+    }
+}
+
+/// Instruction cache line
+#[derive(Clone, Copy)]
+struct ICacheLine {
+    /// Tag: high 22bits of the address associated with this cacheline
+    /// Valid bits: 3 bit index of the first valid word in line.
+    tag_valid: u32,
+    /// Four words per line
+    line: [Instruction; 4],
+}
+
+impl ICacheLine {
+    fn new() -> ICacheLine {
+        // The cache starts in a random state. In order to catch
+        // missbehaving software we fill them with "trap" values
+        ICacheLine {
+            // Tag is 0, all line valid
+            tag_valid: 0x0,
+            // BREAK opcode
+            line: [Instruction(0x00bad0d); 4],
+        }
+    }
+
+    /// Return the cacheline's tag
+    fn tag(&self) -> u32 {
+        self.tag_valid & 0xfffff000
+    }
+
+    /// Return the cacheline's first valid word
+    fn valid_index(&self) -> u32 {
+        // We store the valid bits in bits [4:2], this way we can just
+        // mask the PC value in `set_tag_valid` without having to
+        // shuffle the bits around
+        (self.tag_valid >> 2) & 0x7
+    }
+
+    /// Set the cacheline's tag and valid bits. `pc` is the first
+    /// valid PC in the cacheline.
+    fn set_tag_valid(&mut self, pc: u32) {
+        self.tag_valid =  pc & 0xfffff00c;
+    }
+
+    /// Invalidate the entire cacheline by pushing the index out of
+    /// range. Doesn't change the tag or contents of the line.
+    fn invalidate(&mut self) {
+        // Setting bit 4 means that the value returned by valid_index
+        // will be in the range [4, 7] which is outside the valid
+        // cacheline index range [0, 3].
+        self.tag_valid |= 0x10;
+    }
+
+    fn instruction(&self, index: u32) -> Instruction {
+        self.line[index as usize]
+    }
+
+    fn set_instruction(&mut self, index: u32, instruction: Instruction) {
+        self.line[index as usize] = instruction;
+    }
+}

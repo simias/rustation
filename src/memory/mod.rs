@@ -17,16 +17,23 @@ pub struct Interconnect {
     dma: Dma,
     /// Graphics Processor Unit
     gpu: Gpu,
+    /// Cache Control register
+    cache_control: CacheControl,
 }
 
 impl Interconnect {
     pub fn new(bios: Bios, gpu: Gpu) -> Interconnect {
         Interconnect {
             bios: bios,
-            ram:  Ram::new(),
-            dma:  Dma::new(),
-            gpu:  gpu,
+            ram: Ram::new(),
+            dma: Dma::new(),
+            gpu: gpu,
+            cache_control: CacheControl(0),
         }
+    }
+
+    pub fn cache_control(&self) -> CacheControl {
+        self.cache_control
     }
 
     /// Interconnect: load value at `addr`
@@ -109,7 +116,12 @@ impl Interconnect {
         }
 
         if let Some(_) = map::CACHE_CONTROL.contains(abs_addr) {
-            println!("Unhandled write to CACHE_CONTROL: {:08x}", val.as_u32());
+            if T::width() != AccessWidth::Word {
+                panic!("Unhandled cache control access");
+            }
+
+            self.cache_control = CacheControl(val.as_u32());
+
             return;
         }
 
@@ -360,6 +372,21 @@ impl Interconnect {
     }
 }
 
+#[derive(Clone,Copy)]
+pub struct CacheControl(u32);
+
+impl CacheControl {
+
+    /// Return true if the instruction cache is enabled
+    pub fn icache_enabled(self) -> bool {
+        self.0 & 0x800 != 0
+    }
+
+    pub fn tag_test_mode(self) -> bool {
+        self.0 & 4 != 0
+    }
+}
+
 /// Types of access supported by the Playstation architecture
 #[derive(PartialEq,Eq,Debug)]
 pub enum AccessWidth {
@@ -368,7 +395,7 @@ pub enum AccessWidth {
     Word = 4,
 }
 
-/// Trait representing the attributes of a primitive addressable
+/// rait representing the attributes of a primitive addressable
 /// memory location.
 pub trait Addressable {
     /// Retreive the width of the access
@@ -378,7 +405,7 @@ pub trait Addressable {
     fn from_u32(u32) -> Self;
     /// Retreive the value of the Addressable as an u32. If the
     /// Addressable is 8 or 16bits wide the MSBs are padded with 0s.
-    fn as_u32(self) -> u32;
+    fn as_u32(&self) -> u32;
 }
 
 impl Addressable for u8 {
@@ -390,8 +417,8 @@ impl Addressable for u8 {
         v as u8
     }
 
-    fn as_u32(self) -> u32 {
-        self as u32
+    fn as_u32(&self) -> u32 {
+        *self as u32
     }
 }
 
@@ -404,8 +431,8 @@ impl Addressable for u16 {
         v as u16
     }
 
-    fn as_u32(self) -> u32 {
-        self as u32
+    fn as_u32(&self) -> u32 {
+        *self as u32
     }
 }
 
@@ -418,8 +445,8 @@ impl Addressable for u32 {
         v
     }
 
-    fn as_u32(self) -> u32 {
-        self
+    fn as_u32(&self) -> u32 {
+        *self
     }
 }
 
