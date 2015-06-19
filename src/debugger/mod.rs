@@ -19,6 +19,8 @@ pub struct Debugger {
     breakpoints: Vec<u32>,
     /// Vector containing all active read watchpoints
     read_watchpoints: Vec<u32>,
+    /// Vector containing all active write watchpoints
+    write_watchpoints: Vec<u32>,
 }
 
 impl Debugger {
@@ -41,6 +43,7 @@ impl Debugger {
             step: false,
             breakpoints: Vec::new(),
             read_watchpoints: Vec::new(),
+            write_watchpoints: Vec::new(),
         }
     }
 
@@ -133,11 +136,36 @@ impl Debugger {
 
     /// Called by the CPU when it's about to load a value from memory.
     pub fn memory_read(&mut self, cpu: &mut Cpu, addr: u32) {
-        // XXX: how should we handle unalagned watchpoints? For
+        // XXX: how should we handle unaligned watchpoints? For
         // instance if we have a watchpoint on address 1 and the CPU
         // executes a `load32 at` address 0, should we break? Also,
         // should we mask the region?
         if self.read_watchpoints.contains(&addr) {
+            println!("Read watchpoint triggered at 0x{:08x}", addr);
+            self.debug(cpu);
+        }
+    }
+
+    /// Add a breakpoint that will trigger when the CPU attempts to
+    /// write to `addr`
+    fn add_write_watchpoint(&mut self, addr: u32) {
+        // Make sure we're not adding the same address twice
+        if !self.write_watchpoints.contains(&addr) {
+            self.write_watchpoints.push(addr);
+        }
+    }
+
+    /// Delete write watchpoint at `addr`. Does nothing if there was no
+    /// breakpoint set for this address.
+    fn del_write_watchpoint(&mut self, addr: u32) {
+        self.write_watchpoints.retain(|&a| a != addr);
+    }
+
+    /// Called by the CPU when it's about to load a value from memory.
+    pub fn memory_write(&mut self, cpu: &mut Cpu, addr: u32) {
+        // XXX: same remark as memory_read for unaligned stores
+        if self.write_watchpoints.contains(&addr) {
+            println!("Write watchpoint triggered at 0x{:08x}", addr);
             self.debug(cpu);
         }
     }

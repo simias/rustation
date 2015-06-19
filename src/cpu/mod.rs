@@ -184,7 +184,12 @@ impl Cpu {
     }
 
     /// Memory write
-    fn store<T: Addressable>(&mut self, addr: u32, val: T) {
+    fn store<T: Addressable>(&mut self,
+                             addr: u32,
+                             val: T,
+                             debugger: &mut Debugger) {
+        debugger.memory_write(self, addr);
+
         if self.sr.cache_isolated() {
             self.cache_maintenance(addr, val);
         } else {
@@ -378,10 +383,10 @@ impl Cpu {
             0b100100 => self.op_lbu(instruction, debugger),
             0b100101 => self.op_lhu(instruction, debugger),
             0b100110 => self.op_lwr(instruction, debugger),
-            0b101000 => self.op_sb(instruction),
-            0b101001 => self.op_sh(instruction),
+            0b101000 => self.op_sb(instruction, debugger),
+            0b101001 => self.op_sh(instruction, debugger),
             0b101010 => self.op_swl(instruction, debugger),
-            0b101011 => self.op_sw(instruction),
+            0b101011 => self.op_sw(instruction, debugger),
             0b101110 => self.op_swr(instruction, debugger),
             0b110000 => self.op_lwc0(instruction),
             0b110001 => self.op_lwc1(instruction),
@@ -1169,7 +1174,9 @@ impl Cpu {
     }
 
     /// Store Byte
-    fn op_sb(&mut self, instruction: Instruction) {
+    fn op_sb(&mut self,
+             instruction: Instruction,
+             debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1178,11 +1185,13 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v    = self.reg(t);
 
-        self.store(addr, v as u8);
+        self.store(addr, v as u8, debugger);
     }
 
     /// Store Halfword
-    fn op_sh(&mut self, instruction: Instruction) {
+    fn op_sh(&mut self,
+             instruction: Instruction,
+             debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1193,7 +1202,7 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            self.store(addr, v as u16);
+            self.store(addr, v as u16, debugger);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1224,11 +1233,13 @@ impl Cpu {
             _ => unreachable!(),
         };
 
-        self.store(addr, mem);
+        self.store(addr, mem, debugger);
     }
 
     /// Store Word
-    fn op_sw(&mut self, instruction: Instruction) {
+    fn op_sw(&mut self,
+             instruction: Instruction,
+             debugger: &mut Debugger) {
 
         let i = instruction.imm_se();
         let t = instruction.t();
@@ -1239,7 +1250,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            self.store(addr, v);
+            self.store(addr, v, debugger);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1270,7 +1281,7 @@ impl Cpu {
             _ => unreachable!(),
         };
 
-        self.store(addr, mem);
+        self.store(addr, mem, debugger);
     }
 
     /// Load Word in Coprocessor 0

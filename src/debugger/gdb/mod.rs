@@ -397,6 +397,7 @@ impl GdbRemote {
 
         match btype {
             b'0' => debugger.add_breakpoint(addr),
+            b'2' => debugger.add_write_watchpoint(addr),
             b'3' => debugger.add_read_watchpoint(addr),
             // Unsupported breakpoint type
             _ => return self.send_empty_reply(),
@@ -419,6 +420,7 @@ impl GdbRemote {
 
         match btype {
             b'0' => debugger.del_breakpoint(addr),
+            b'2' => debugger.del_write_watchpoint(addr),
             b'3' => debugger.del_read_watchpoint(addr),
             // Unsupported breakpoint type
             _ => return self.send_empty_reply(),
