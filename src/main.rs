@@ -5,6 +5,7 @@ extern crate libc;
 mod cpu;
 mod memory;
 mod gpu;
+mod timekeeper;
 mod debugger;
 
 use std::path::Path;
@@ -36,7 +37,7 @@ fn main() {
     let sdl_context = sdl2::init(::sdl2::INIT_VIDEO).unwrap();
 
     let renderer = Renderer::new(&sdl_context);
-    let gpu = Gpu::new(renderer);
+    let gpu = Gpu::new(renderer, HardwareType::Ntsc);
     let inter = Interconnect::new(bios, gpu);
     let mut cpu = Cpu::new(inter);
 
@@ -60,4 +61,12 @@ fn main() {
             }
         }
     }
+}
+
+/// The are a few hardware differences between PAL and NTSC consoles,
+/// for instance runs slightly slower on PAL consoles.
+#[derive(Clone,Copy)]
+pub enum HardwareType {
+    Ntsc,
+    Pal,
 }

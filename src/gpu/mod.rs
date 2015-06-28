@@ -1,5 +1,7 @@
 use self::opengl::{Renderer, Position, Color};
 use memory::{Addressable, AccessWidth};
+use timekeeper::{TimeKeeper, Peripheral, Cycles};
+use HardwareType;
 
 pub mod opengl;
 
@@ -76,8 +78,6 @@ pub struct Gpu {
     display_line_start: u16,
     /// Display output last line relative to VSYNC
     display_line_end: u16,
-    /// True when the interrupt is active
-    interrupt: bool,
     /// DMA request direction
     dma_direction: DmaDirection,
     /// Buffer containing the current GP0 command
@@ -88,10 +88,23 @@ pub struct Gpu {
     gp0_command_method: fn(&mut Gpu),
     /// Current mode of the GP0 register
     gp0_mode: Gp0Mode,
+    /// True when the GP0 interrupt has been requested
+    gp0_interrupt: bool,
+    /// True when the VBLANK interrupt is high
+    vblank_interrupt: bool,
+    /// Fractional GPU cycle remainder resulting from the CPU
+    /// clock/GPU clock time conversion.
+    gpu_clock_frac: u16,
+    /// Currently displayed video output line
+    display_line: u16,
+    /// Current GPU clock tick for the current line
+    display_line_tick: u16,
+    /// Hardware type (PAL or NTSC)
+    hardware: HardwareType,
 }
 
 impl Gpu {
-    pub fn new(renderer: opengl::Renderer) -> Gpu {
+    pub fn new(renderer: opengl::Renderer, hardware: HardwareType) -> Gpu {
         Gpu {
             renderer: renderer,
             page_base_x: 0,
@@ -126,20 +139,199 @@ impl Gpu {
             display_horiz_end: 0xc00,
             display_line_start: 0x10,
             display_line_end: 0x100,
-            interrupt: false,
             dma_direction: DmaDirection::Off,
             gp0_command: CommandBuffer::new(),
             gp0_words_remaining: 0,
             gp0_command_method: Gpu::gp0_nop,
             gp0_mode: Gp0Mode::Command,
+            gp0_interrupt: false,
+            vblank_interrupt: false,
+            gpu_clock_frac: 0,
+            display_line: 0,
+            display_line_tick: 0,
+            hardware: hardware,
         }
     }
 
-    pub fn load<T: Addressable>(&self, offset: u32) -> T {
+    /// Return the number of GPU clock cycles in a line and number of
+    /// lines in a frame (or field for interlaced output) depending on
+    /// the configured video mode
+    fn get_vmode_timings(&self) -> (u16, u16) {
+        // The number of ticks per line is an estimate using the
+        // average line length recorded by the timer1 using the
+        // "hsync" clock source.
+        match self.vmode {
+            VMode::Ntsc => (3412, 263),
+            VMode::Pal  => (3404, 314),
+        }
+    }
+
+    /// Return the GPU to CPU clock ratio. The value is multiplied by
+    /// CLOCK_RATIO_FRAC to get a precise fixed point value.
+    fn gpu_to_cpu_clock_ratio(&self) -> Cycles {
+        // First we convert the delta into GPU clock periods.
+        // CPU clock in MHz
+        let cpu_clock = 33.8685f32;
+        // GPU clock in MHz
+        let gpu_clock =
+            match self.hardware {
+                HardwareType::Ntsc => 53.69f32,
+                HardwareType::Pal  => 53.20f32,
+            };
+
+        // Clock ratio shifted 16bits to the left
+        ((gpu_clock / cpu_clock) * CLOCK_RATIO_FRAC as f32) as Cycles
+    }
+
+    /// Update the GPU state to its current status
+    pub fn sync(&mut self, tk: &mut TimeKeeper) {
+        let delta = tk.sync(Peripheral::Gpu);
+
+        // Convert delta in GPU time, adding the leftover from the
+        // last time
+        let delta = self.gpu_clock_frac as Cycles +
+                    delta * self.gpu_to_cpu_clock_ratio();
+
+        // The 16 low bits are the new fractional part
+        self.gpu_clock_frac = delta as u16;
+
+        // Conwert delta back to integer
+        let delta = delta >> 16;
+
+        // Compute the current line and position within the line.
+
+        let (ticks_per_line, lines_per_frame) = self.get_vmode_timings();
+
+        let ticks_per_line = ticks_per_line as Cycles;
+        let lines_per_frame = lines_per_frame as Cycles;
+
+        let line_tick = self.display_line_tick as Cycles + delta;
+        let line      = self.display_line as Cycles +
+                        line_tick / ticks_per_line;
+
+        self.display_line_tick = (line_tick % ticks_per_line) as u16;
+
+        if line > lines_per_frame {
+            // New frame
+
+            if self.interlaced {
+                // Update the field
+                let nframes = line / lines_per_frame;
+
+                self.field =
+                    match (nframes + self.field as Cycles) & 1 != 0 {
+                        true  => Field::Top,
+                        false => Field::Bottom,
+                    }
+            }
+
+            self.display_line = (line % lines_per_frame) as u16;
+        } else {
+            self.display_line = line as u16;
+        }
+
+        let vblank_interrupt = self.in_vblank();
+        if !self.vblank_interrupt && vblank_interrupt {
+            // Rising edge of the vblank interrupt, should trigger an
+            // interrupt in the controller.
+            println!("GPU interrupt");
+        }
+
+        if self.vblank_interrupt && !vblank_interrupt {
+            // End of vertical blanking, probably as a good place as
+            // any to update the display
+            self.renderer.display();
+        }
+
+        self.vblank_interrupt = vblank_interrupt;
+
+        self.predict_next_sync(tk);
+    }
+
+    /// Predict when the next "forced" sync should take place
+    pub fn predict_next_sync(&self, tk: &mut TimeKeeper) {
+        let (ticks_per_line, lines_per_frame) = self.get_vmode_timings();
+
+        let ticks_per_line = ticks_per_line as Cycles;
+        let lines_per_frame = lines_per_frame as Cycles;
+
+        let mut delta = 0;
+
+        let cur_line = self.display_line as Cycles;
+
+        let display_line_start = self.display_line_start as Cycles;
+        let display_line_end   = self.display_line_end   as Cycles;
+
+        // Number of ticks to get to the start of the next line
+        delta += ticks_per_line - self.display_line_tick as Cycles;
+
+        // The various -1 in the next formulas are because we start
+        // counting at line 0. Without them we'd go one line too far.
+        if cur_line >= display_line_end {
+            // We're in the vertical blanking at the end of the
+            // frame. We want to synchronize at the end of the
+            // blanking at the beginning of the next frame.
+
+            // Number of ticks to get to the end of the frame
+            delta += (lines_per_frame - cur_line) * ticks_per_line;
+
+            // Numbef of ticks to get to the end of vblank in the next
+            // frame
+            delta += (display_line_start - 1) * ticks_per_line;
+
+        } else if cur_line < display_line_start {
+            // We're in the vertical blanking at the beginning of the
+            // frame. We want to synchronize at the end of the
+            // blanking for the current rame
+
+            delta += (display_line_start - 1 - cur_line) * ticks_per_line;
+        } else {
+            // We're in the active video, we want to synchronize at
+            // the beginning of the vertical blanking period
+            delta += (display_line_end - 1 - cur_line) * ticks_per_line;
+        }
+
+        // Convert delta in CPU clock periods.
+        delta *= CLOCK_RATIO_FRAC;
+        // Remove the current fractional cycle to be more accurate
+        delta -= self.gpu_clock_frac as Cycles;
+
+        // Divide by the ratio while always rounding up to make sure
+        // we're never triggered too early
+        let ratio = self.gpu_to_cpu_clock_ratio();
+        delta = (delta + ratio - 1) / ratio;
+
+        tk.set_next_sync_delta(Peripheral::Gpu, delta);
+    }
+
+    /// Return true if we're currently in the video blanking period
+    fn in_vblank(&self) -> bool {
+        self.display_line < self.display_line_start ||
+        self.display_line >= self.display_line_end
+    }
+
+    /// Return the index of the currently displayed VRAM line
+    fn displayed_vram_line(&self) -> u16 {
+        let offset =
+            match self.interlaced {
+                true  => self.display_line * 2 + self.field as u16,
+                false => self.display_line,
+            };
+
+        // The VRAM "wraps around" so we in case of an overflow we
+        // simply truncate to 9bits
+        (self.display_vram_y_start + offset) & 0x1ff
+    }
+
+    pub fn load<T: Addressable>(&mut self,
+                                tk: &mut TimeKeeper,
+                                offset: u32) -> T {
 
         if T::width() != AccessWidth::Word {
             panic!("Unhandled {:?} GPU load", T::width());
         }
+
+        self.sync(tk);
 
         let r =
             match offset {
@@ -151,17 +343,22 @@ impl Gpu {
         Addressable::from_u32(r)
     }
 
-    pub fn store<T: Addressable>(&mut self, offset: u32, val: T) {
+    pub fn store<T: Addressable>(&mut self,
+                                 tk: &mut TimeKeeper,
+                                 offset: u32,
+                                 val: T) {
 
         if T::width() != AccessWidth::Word {
             panic!("Unhandled {:?} GPU load", T::width());
         }
 
+        self.sync(tk);
+
         let val = val.as_u32();
 
         match offset {
             0 => self.gp0(val),
-            4 => self.gp1(val),
+            4 => self.gp1(val, tk),
             _ => unreachable!(),
         }
     }
@@ -182,14 +379,12 @@ impl Gpu {
         // Bit 14: not supported
         r |= (self.texture_disable as u32) << 15;
         r |= self.hres.into_status();
-        // XXX Temporary hack: if we don't emulate bit 31 correctly
-        // setting `vres` to 1 locks the BIOS:
-        // r |= (self.vres as u32) << 19;
+        r |= (self.vres as u32) << 19;
         r |= (self.vmode as u32) << 20;
         r |= (self.display_depth as u32) << 21;
         r |= (self.interlaced as u32) << 22;
         r |= (self.display_disabled as u32) << 23;
-        r |= (self.interrupt as u32) << 24;
+        r |= (self.gp0_interrupt as u32) << 24;
 
         // For now we pretend that the GPU is always ready:
         // Ready to receive command
@@ -201,10 +396,11 @@ impl Gpu {
 
         r |= (self.dma_direction as u32) << 29;
 
-        // Bit 31 should change depending on the currently drawn line
-        // (whether it's even, odd or in the vblack apparently). Let's
-        // not bother with it for now.
-        r |= 0 << 31;
+        // Bit 31 is 1 if the currently displayed VRAM line is odd, 0
+        // if it's even or if we're in the vertical blanking.
+        if !self.in_vblank() {
+            r |= ((self.displayed_vram_line() & 1) as u32) << 31
+        }
 
         // Not sure about that, I'm guessing that it's the signal
         // checked by the DMA in when sending data in Request
@@ -474,10 +670,6 @@ impl Gpu {
         let y = ((y << 5) as i16) >> 5;
 
         self.renderer.set_draw_offset(x, y);
-
-        // XXX Temporary hack: force display when changing offset
-        // since we don't have proper timings
-        self.renderer.display();
     }
 
     /// GP0(0xE6): Set Mask Bit Setting
@@ -489,25 +681,25 @@ impl Gpu {
     }
 
     /// Handle writes to the GP1 command register
-    pub fn gp1(&mut self, val: u32) {
+    pub fn gp1(&mut self, val: u32, tk: &mut TimeKeeper) {
         let opcode = (val >> 24) & 0xff;
 
         match opcode {
-            0x00 => self.gp1_reset(val),
+            0x00 => self.gp1_reset(val, tk),
             0x01 => self.gp1_reset_command_buffer(),
             0x02 => self.gp1_acknowledge_irq(),
             0x03 => self.gp1_display_enable(val),
             0x04 => self.gp1_dma_direction(val),
             0x05 => self.gp1_display_vram_start(val),
             0x06 => self.gp1_display_horizontal_range(val),
-            0x07 => self.gp1_display_vertical_range(val),
-            0x08 => self.gp1_display_mode(val),
+            0x07 => self.gp1_display_vertical_range(val, tk),
+            0x08 => self.gp1_display_mode(val, tk),
             _    => panic!("Unhandled GP1 command {:08x}", val),
         }
     }
 
     /// GP1(0x00): Soft Reset
-    fn gp1_reset(&mut self, _: u32) {
+    fn gp1_reset(&mut self, _: u32, tk: &mut TimeKeeper) {
         self.page_base_x = 0;
         self.page_base_y = 0;
         self.semi_transparency = 0;
@@ -535,6 +727,7 @@ impl Gpu {
         self.display_vram_y_start = 0;
         self.hres = HorizontalRes::from_fields(0, 0);
         self.vres = VerticalRes::Y240Lines;
+        self.field = Field::Top;
 
         // XXX does PAL hardware reset to this config as well?
         self.vmode = VMode::Ntsc;
@@ -544,11 +737,15 @@ impl Gpu {
         self.display_line_start = 0x10;
         self.display_line_end = 0x100;
         self.display_depth = DisplayDepth::D15Bits;
+        self.display_line = 0;
+        self.display_line_tick = 0;
 
         self.renderer.set_draw_offset(0, 0);
 
         self.gp1_reset_command_buffer();
         self.gp1_acknowledge_irq();
+
+        self.sync(tk);
 
         // XXX should also invalidate GPU cache if we ever implement it
     }
@@ -563,7 +760,7 @@ impl Gpu {
 
     /// GP1(0x02): Acknowledge Interrupt
     fn gp1_acknowledge_irq(&mut self) {
-        self.interrupt = false;
+        self.gp0_interrupt = false;
     }
 
     /// GP1(0x03): Display Enable
@@ -596,13 +793,15 @@ impl Gpu {
     }
 
     /// GP1(0x07): Display Vertical Range
-    fn gp1_display_vertical_range(&mut self, val: u32) {
+    fn gp1_display_vertical_range(&mut self, val: u32, tk: &mut TimeKeeper) {
         self.display_line_start = (val & 0x3ff) as u16;
         self.display_line_end   = ((val >> 10) & 0x3ff) as u16;
+
+        self.sync(tk);
     }
 
     /// GP1(0x08): Display Mode
-    fn gp1_display_mode(&mut self, val: u32) {
+    fn gp1_display_mode(&mut self, val: u32, tk: &mut TimeKeeper) {
         let hr1 = (val & 3) as u8;
         let hr2 = ((val >> 6) & 1) as u8;
 
@@ -627,10 +826,14 @@ impl Gpu {
             };
 
         self.interlaced = val & 0x20 != 0;
+        // XXX Not sure if I should reset field here
+        self.field = Field::Top;
 
         if val & 0x80 != 0 {
             panic!("Unsupported display mode {:08x}", val);
         }
+
+        self.sync(tk);
     }
 }
 
@@ -760,3 +963,7 @@ impl ::std::ops::Index<usize> for CommandBuffer {
         &self.buffer[index]
     }
 }
+
+/// Use 16bits for the fractional part of the clock ratio to get good
+/// precision
+const CLOCK_RATIO_FRAC: Cycles = 0x10000;

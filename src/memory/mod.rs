@@ -5,6 +5,7 @@ mod dma;
 use self::bios::Bios;
 use self::ram::Ram;
 use self::dma::{Dma, Port, Direction, Step, Sync};
+use timekeeper::{TimeKeeper, Peripheral};
 use gpu::Gpu;
 
 /// Global interconnect
@@ -32,12 +33,37 @@ impl Interconnect {
         }
     }
 
+    pub fn sync(&mut self, tk: &mut TimeKeeper) {
+        if tk.needs_sync(Peripheral::Gpu) {
+            self.gpu.sync(tk);
+        }
+    }
+
     pub fn cache_control(&self) -> CacheControl {
         self.cache_control
     }
 
+    /// Interconnect: load instruction at `PC`. Only the RAM and BIOS
+    /// are supported, would it make sense to fetch instructions from
+    /// anything else?
+    pub fn load_instruction<T: Addressable>(&self, pc: u32) -> T {
+        let abs_addr = map::mask_region(pc);
+
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            return self.ram.load(offset);
+        }
+
+        if let Some(offset) = map::BIOS.contains(abs_addr) {
+            return self.bios.load(offset);
+        }
+
+        panic!("unhandled instruction load at address {:08x}", pc);
+    }
+
     /// Interconnect: load value at `addr`
-    pub fn load<T: Addressable>(&self, addr: u32) -> T {
+    pub fn load<T: Addressable>(&mut self,
+                                tk: &mut TimeKeeper,
+                                addr: u32) -> T {
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
@@ -58,7 +84,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.load(offset);
+            return self.gpu.load(tk, offset);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
@@ -82,7 +108,10 @@ impl Interconnect {
     }
 
     /// Interconnect: store `val` into `addr`
-    pub fn store<T: Addressable>(&mut self, addr: u32, val: T) {
+    pub fn store<T: Addressable>(&mut self,
+                                 tk: &mut TimeKeeper,
+                                 addr: u32,
+                                 val: T) {
 
         let abs_addr = map::mask_region(addr);
 
@@ -100,7 +129,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.store(offset, val);
+            return self.gpu.store(tk, offset, val);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
