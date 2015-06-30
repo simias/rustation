@@ -47,6 +47,7 @@ impl Renderer {
     pub fn new(sdl_context: &sdl2::Sdl) -> Renderer {
         sdl2::video::gl_set_attribute(GLAttr::GLContextMajorVersion, 3);
         sdl2::video::gl_set_attribute(GLAttr::GLContextMinorVersion, 3);
+        sdl2::video::gl_set_attribute(GLAttr::GLContextProfileMask, 1); // core profile
 
         // XXX Debug context is likely to be slower, we should make
         // that configurable at some point.
