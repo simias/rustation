@@ -20,7 +20,16 @@ use sdl2::event::Event;
 use sdl2::keycode::KeyCode;
 
 fn main() {
-    let bios = Bios::new(&Path::new("roms/SCPH1001.BIN")).unwrap();
+    let argv: Vec<_> = std::env::args().collect();
+
+    if argv.len() < 2 {
+        println!("Usage: {} <BIOS-file>", argv[0]);
+        println!("Recommended BIOS: SCPH1001.BIN");
+        return;
+    }
+
+
+    let bios = Bios::new(&Path::new(&argv[1])).unwrap();
 
     // We must initialize SDL before the interconnect is created since
     // it contains the GPU and the GPU needs to create a window
