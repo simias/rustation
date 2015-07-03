@@ -58,13 +58,17 @@ impl Renderer {
                                               WindowPos::PosCentered,
                                               WindowPos::PosCentered,
                                               1024, 512,
-                                              OPENGL).unwrap();
+                                              OPENGL)
+            .ok().expect("Can't create SDL2 window");
 
-        let gl_context = window.gl_create_context().unwrap();
+        let gl_context = window.gl_create_context()
+            .ok().expect("Can't create GL context");
 
         gl::load_with(|s|
-                      sdl2::video::gl_get_proc_address(s).unwrap()
-                      as *const c_void);
+                      match sdl2::video::gl_get_proc_address(s) {
+                          None => panic!("Can't get proc address for {}", s),
+                          Some(a) => a as *const c_void,
+                      });
 
         // Clear the window
         unsafe {
