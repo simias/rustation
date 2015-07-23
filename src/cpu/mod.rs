@@ -1,5 +1,8 @@
+mod cop0;
+
 use std::fmt::{Display, Formatter, Error};
 
+use self::cop0::{Cop0, Exception};
 use memory::{Interconnect, Addressable, AccessWidth};
 use timekeeper::TimeKeeper;
 use debugger::Debugger;
@@ -32,12 +35,8 @@ pub struct Cpu {
     icache: [ICacheLine; 0x100],
     /// Memory interface
     inter: Interconnect,
-    /// Cop0 register 12: Status Register
-    sr: StatusRegister,
-    /// Cop0 register 13: Cause Register
-    cause: u32,
-    /// Cop0 register 14: EPC
-    epc: u32,
+    /// Coprocessor 0: System control
+    cop0: Cop0,
     /// Load initiated by the current instruction (will take effect
     /// after the load delay slot)
     load: (RegisterIndex, u32),
@@ -72,9 +71,7 @@ impl Cpu {
             lo:         0xdeadbeef,
             icache:     [ICacheLine::new(); 0x100],
             inter:      inter,
-            sr:         StatusRegister(0),
-            cause:      0,
-            epc:        0,
+            cop0:       Cop0::new(),
             load:       (RegisterIndex(0), 0),
             branch:     false,
             delay_slot: false,
@@ -86,7 +83,7 @@ impl Cpu {
         // Synchronize the peripherals
         self.inter.sync(&mut self.tk);
 
-        // Save the address of the current instruction to save in
+        // Save the address of the current instruction to store in
         // `EPC` in case of an exception.
         self.current_pc = self.pc;
 
@@ -124,7 +121,14 @@ impl Cpu {
         self.delay_slot = self.branch;
         self.branch     = false;
 
-        self.decode_and_execute(instruction, debugger);
+        // Check for pending interrupts
+        // XXX add software IRQs (should all be handled in StatusRegister code)
+        if self.cop0.irq_active(self.inter.irq_state()) {
+            self.exception(Exception::Interrupt);
+        } else {
+            // No interrupt pending, run the current instruction
+            self.decode_and_execute(instruction, debugger);
+        }
 
         // Copy the output registers as input for the next instruction
         self.regs = self.out_regs;
@@ -208,7 +212,7 @@ impl Cpu {
                              debugger: &mut Debugger) {
         debugger.memory_write(self, addr);
 
-        if self.sr.cache_isolated() {
+        if self.cop0.cache_isolated() {
             self.cache_maintenance(addr, val);
         } else {
             self.inter.store(&mut self.tk, addr, val);
@@ -267,25 +271,14 @@ impl Cpu {
     /// Trigger an exception
     fn exception(&mut self, cause: Exception) {
         // Update the status register
-        self.sr.enter_exception();
-
-        // Update `CAUSE` register with the exception code (bits
-        // [6:2])
-        self.cause = (cause as u32) << 2;
-
-        // Save current instruction address in `EPC`
-        self.epc = self.current_pc;
-
-        if self.delay_slot {
-            // When an exception occurs in a delay slot `EPC` points
-            // to the branch instruction and bit 31 of `CAUSE` is set.
-            self.epc = self.epc.wrapping_sub(4);
-            self.cause |= 1 << 31;
-        }
+        let handler_addr =
+            self.cop0.enter_exception(cause,
+                                      self.current_pc,
+                                      self.delay_slot);
 
         // Exceptions don't have a branch delay, we jump directly into
         // the handler
-        self.pc      = self.sr.exception_handler();
+        self.pc      = handler_addr;
         self.next_pc = self.pc.wrapping_add(4);
     }
 
@@ -306,7 +299,7 @@ impl Cpu {
     }
 
     pub fn sr(&self) -> u32 {
-        self.sr.as_u32()
+        self.cop0.sr()
     }
 
     pub fn lo(&self) -> u32 {
@@ -322,7 +315,7 @@ impl Cpu {
     }
 
     pub fn cause(&self) -> u32 {
-        self.cause
+        self.cop0.cause(self.inter.irq_state())
     }
 
     pub fn bad(&self) -> u32 {
@@ -981,9 +974,9 @@ impl Cpu {
         let cop_r = instruction.d().0;
 
         let v = match cop_r {
-            12 => self.sr.as_u32(),
-            13 => self.cause,
-            14 => self.epc,
+            12 => self.cop0.sr(),
+            13 => self.cop0.cause(self.inter.irq_state()),
+            14 => self.cop0.epc(),
             _  =>
                 panic!("Unhandled read from cop0r{}", cop_r),
         };
@@ -1003,7 +996,7 @@ impl Cpu {
                 if v != 0 {
                     panic!("Unhandled write to cop0r{}: {:08x}", cop_r, v)
                 },
-            12 => self.sr = StatusRegister(v),
+            12 => self.cop0.set_sr(v),
             13 => // Cause register
                 if v != 0 {
                     panic!("Unhandled write to CAUSE register: {:08x}", v)
@@ -1022,7 +1015,7 @@ impl Cpu {
             panic!("Invalid cop0 instruction: {}", instruction);
         }
 
-        self.sr.return_from_exception();
+        self.cop0.return_from_exception();
     }
 
     /// Load Byte (signed)
@@ -1438,79 +1431,8 @@ impl Display for Instruction {
     }
 }
 
-/// Exception types (as stored in the `CAUSE` register)
-#[derive(Clone,Copy)]
-enum Exception {
-    /// Address error on load
-    LoadAddressError = 0x4,
-    /// Address error on store
-    StoreAddressError = 0x5,
-    /// System call (caused by the SYSCALL opcode)
-    SysCall = 0x8,
-    /// Breakpoint (caused by the BREAK opcode)
-    Break = 0x9,
-    /// CPU encountered an unknown instruction
-    IllegalInstruction = 0xa,
-    /// Unsupported coprocessor operation
-    CoprocessorError = 0xb,
-    /// Arithmetic overflow
-    Overflow = 0xc,
-}
-
 #[derive(Clone,Copy)]
 struct RegisterIndex(u32);
-
-#[derive(Clone,Copy)]
-struct StatusRegister(u32);
-
-impl StatusRegister {
-
-    fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    fn cache_isolated(self) -> bool {
-        self.0 & 0x10000 != 0
-    }
-
-    /// Return the exception handler address depending on the value of
-    /// the BEV bit
-    fn exception_handler(self) -> u32 {
-        match self.0 & (1 << 22) != 0 {
-            true  => 0xbfc00180,
-            false => 0x80000080,
-        }
-    }
-
-    /// Shift bits [5:0] of `SR` two places to the left. Those bits
-    /// are three pairs of Interrupt Enable/User Mode bits behaving
-    /// like a stack 3 entries deep. Entering an exception pushes a
-    /// pair of zeroes by left shifting the stack which disables
-    /// interrupts and puts the CPU in kernel mode. The original third
-    /// entry is discarded (it's up to the kernel to handle more than
-    /// two recursive exception levels).
-    fn enter_exception(&mut self) {
-        let mut sr = self.0;
-
-        let mode = sr & 0x3f;
-        sr &= !0x3f;
-        sr |= (mode << 2) & 0x3f;
-
-        *self = StatusRegister(sr);
-    }
-
-    /// The opposite of `enter_exception`: shift mode the other way
-    /// around, discarding the current state.
-    fn return_from_exception(&mut self) {
-        let mut sr = self.0;
-
-        let mode = sr & 0x3f;
-        sr &= !0x3f;
-        sr |= mode >> 2;
-
-        *self = StatusRegister(sr);
-    }
-}
 
 /// Instruction cache line
 #[derive(Clone, Copy)]

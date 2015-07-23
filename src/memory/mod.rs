@@ -1,15 +1,18 @@
 pub mod bios;
+pub mod interrupts;
 mod ram;
 mod dma;
 
 use self::bios::Bios;
 use self::ram::Ram;
 use self::dma::{Dma, Port, Direction, Step, Sync};
+use self::interrupts::InterruptState;
 use timekeeper::{TimeKeeper, Peripheral};
 use gpu::Gpu;
 
 /// Global interconnect
 pub struct Interconnect {
+    irq_state: InterruptState,
     /// Basic Input/Output memory
     bios: Bios,
     /// Main RAM
@@ -25,6 +28,7 @@ pub struct Interconnect {
 impl Interconnect {
     pub fn new(bios: Bios, gpu: Gpu) -> Interconnect {
         Interconnect {
+            irq_state: InterruptState::new(),
             bios: bios,
             ram: Ram::new(),
             dma: Dma::new(),
@@ -35,12 +39,16 @@ impl Interconnect {
 
     pub fn sync(&mut self, tk: &mut TimeKeeper) {
         if tk.needs_sync(Peripheral::Gpu) {
-            self.gpu.sync(tk);
+            self.gpu.sync(tk, &mut self.irq_state);
         }
     }
 
     pub fn cache_control(&self) -> CacheControl {
         self.cache_control
+    }
+
+    pub fn irq_state(&self) -> InterruptState {
+        self.irq_state
     }
 
     /// Interconnect: load instruction at `PC`. Only the RAM and BIOS
@@ -75,8 +83,14 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
-            println!("IRQ control read {:x}", offset);
-            return Addressable::from_u32(0);
+            let v =
+                match offset {
+                    0 => Addressable::from_u32(self.irq_state.status() as u32),
+                    4 => Addressable::from_u32(self.irq_state.mask() as u32),
+                    _ => panic!("Unhandled IRQ load at address {:08x}", addr),
+                };
+
+            return v;
         }
 
         if let Some(offset) = map::DMA.contains(abs_addr) {
@@ -84,7 +98,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.load(tk, offset);
+            return self.gpu.load(tk, &mut self.irq_state, offset);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
@@ -120,7 +134,11 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
-            println!("IRQ control: {:x} <- {:08x}", offset, val.as_u32());
+            match offset {
+                0 => self.irq_state.ack(val.as_u32() as u16),
+                4 => self.irq_state.set_mask(val.as_u32() as u16),
+                _ => panic!("Unhandled IRQ store at address {:08x}"),
+            }
             return;
         }
 
@@ -129,7 +147,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.store(tk, offset, val);
+            return self.gpu.store(tk, &mut self.irq_state, offset, val);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {

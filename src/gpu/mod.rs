@@ -1,5 +1,6 @@
 use self::opengl::{Renderer, Position, Color};
 use memory::{Addressable, AccessWidth};
+use memory::interrupts::{Interrupt, InterruptState};
 use timekeeper::{TimeKeeper, Peripheral, Cycles};
 use HardwareType;
 
@@ -184,7 +185,9 @@ impl Gpu {
     }
 
     /// Update the GPU state to its current status
-    pub fn sync(&mut self, tk: &mut TimeKeeper) {
+    pub fn sync(&mut self,
+                tk: &mut TimeKeeper,
+                irq_state: &mut InterruptState) {
         let delta = tk.sync(Peripheral::Gpu);
 
         // Convert delta in GPU time, adding the leftover from the
@@ -231,10 +234,10 @@ impl Gpu {
         }
 
         let vblank_interrupt = self.in_vblank();
+
         if !self.vblank_interrupt && vblank_interrupt {
-            // Rising edge of the vblank interrupt, should trigger an
-            // interrupt in the controller.
-            println!("GPU interrupt");
+            // Rising edge of the vblank interrupt
+            irq_state.set_high(Interrupt::VBlank);
         }
 
         if self.vblank_interrupt && !vblank_interrupt {
@@ -325,13 +328,14 @@ impl Gpu {
 
     pub fn load<T: Addressable>(&mut self,
                                 tk: &mut TimeKeeper,
+                                irq_state: &mut InterruptState,
                                 offset: u32) -> T {
 
         if T::width() != AccessWidth::Word {
             panic!("Unhandled {:?} GPU load", T::width());
         }
 
-        self.sync(tk);
+        self.sync(tk, irq_state);
 
         let r =
             match offset {
@@ -345,6 +349,7 @@ impl Gpu {
 
     pub fn store<T: Addressable>(&mut self,
                                  tk: &mut TimeKeeper,
+                                 irq_state: &mut InterruptState,
                                  offset: u32,
                                  val: T) {
 
@@ -352,13 +357,13 @@ impl Gpu {
             panic!("Unhandled {:?} GPU load", T::width());
         }
 
-        self.sync(tk);
+        self.sync(tk, irq_state);
 
         let val = val.as_u32();
 
         match offset {
             0 => self.gp0(val),
-            4 => self.gp1(val, tk),
+            4 => self.gp1(val, tk, irq_state),
             _ => unreachable!(),
         }
     }
@@ -681,25 +686,30 @@ impl Gpu {
     }
 
     /// Handle writes to the GP1 command register
-    pub fn gp1(&mut self, val: u32, tk: &mut TimeKeeper) {
+    pub fn gp1(&mut self,
+               val: u32,
+               tk: &mut TimeKeeper,
+               irq_state: &mut InterruptState) {
         let opcode = (val >> 24) & 0xff;
 
         match opcode {
-            0x00 => self.gp1_reset(val, tk),
+            0x00 => self.gp1_reset(tk, irq_state),
             0x01 => self.gp1_reset_command_buffer(),
             0x02 => self.gp1_acknowledge_irq(),
             0x03 => self.gp1_display_enable(val),
             0x04 => self.gp1_dma_direction(val),
             0x05 => self.gp1_display_vram_start(val),
             0x06 => self.gp1_display_horizontal_range(val),
-            0x07 => self.gp1_display_vertical_range(val, tk),
-            0x08 => self.gp1_display_mode(val, tk),
+            0x07 => self.gp1_display_vertical_range(val, tk, irq_state),
+            0x08 => self.gp1_display_mode(val, tk, irq_state),
             _    => panic!("Unhandled GP1 command {:08x}", val),
         }
     }
 
     /// GP1(0x00): Soft Reset
-    fn gp1_reset(&mut self, _: u32, tk: &mut TimeKeeper) {
+    fn gp1_reset(&mut self,
+                 tk: &mut TimeKeeper,
+                 irq_state: &mut InterruptState) {
         self.page_base_x = 0;
         self.page_base_y = 0;
         self.semi_transparency = 0;
@@ -729,7 +739,6 @@ impl Gpu {
         self.vres = VerticalRes::Y240Lines;
         self.field = Field::Top;
 
-        // XXX does PAL hardware reset to this config as well?
         self.vmode = VMode::Ntsc;
         self.interlaced = true;
         self.display_horiz_start = 0x200;
@@ -745,7 +754,7 @@ impl Gpu {
         self.gp1_reset_command_buffer();
         self.gp1_acknowledge_irq();
 
-        self.sync(tk);
+        self.sync(tk, irq_state);
 
         // XXX should also invalidate GPU cache if we ever implement it
     }
@@ -793,15 +802,21 @@ impl Gpu {
     }
 
     /// GP1(0x07): Display Vertical Range
-    fn gp1_display_vertical_range(&mut self, val: u32, tk: &mut TimeKeeper) {
+    fn gp1_display_vertical_range(&mut self,
+                                  val: u32,
+                                  tk: &mut TimeKeeper,
+                                  irq_state: &mut InterruptState) {
         self.display_line_start = (val & 0x3ff) as u16;
         self.display_line_end   = ((val >> 10) & 0x3ff) as u16;
 
-        self.sync(tk);
+        self.sync(tk, irq_state);
     }
 
     /// GP1(0x08): Display Mode
-    fn gp1_display_mode(&mut self, val: u32, tk: &mut TimeKeeper) {
+    fn gp1_display_mode(&mut self,
+                        val: u32,
+                        tk: &mut TimeKeeper,
+                        irq_state: &mut InterruptState) {
         let hr1 = (val & 3) as u8;
         let hr2 = ((val >> 6) & 1) as u8;
 
@@ -833,7 +848,7 @@ impl Gpu {
             panic!("Unsupported display mode {:08x}", val);
         }
 
-        self.sync(tk);
+        self.sync(tk, irq_state);
     }
 }
 
