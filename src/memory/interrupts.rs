@@ -1,8 +1,10 @@
 /// The Playstation supports 10 interrupts
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Interrupt {
     /// Display in vertical blanking
     VBlank = 0,
+    /// DMA transfer done
+    Dma = 3,
 }
 
 #[derive(Clone,Copy)]
@@ -22,7 +24,8 @@ impl InterruptState {
         }
     }
 
-    /// Return true if at least one interrupt is active and not masked
+    /// Return true if at least one interrupt is asserted and not
+    /// masked
     pub fn active(self) -> bool {
         (self.status & self.mask) != 0
     }
@@ -44,7 +47,9 @@ impl InterruptState {
         self.mask = mask;
     }
 
-    pub fn set_high(&mut self, which: Interrupt) {
+    /// Trigger the interrupt `which`, must be called on the rising
+    /// edge of the interrupt signal.
+    pub fn assert(&mut self, which: Interrupt) {
         self.status |= 1 << (which as usize);
     }
 }

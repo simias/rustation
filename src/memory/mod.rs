@@ -278,7 +278,7 @@ impl Interconnect {
                 7 => {
                     match minor {
                         0 => self.dma.set_control(val),
-                        4 => self.dma.set_interrupt(val),
+                        4 => self.dma.set_interrupt(val, &mut self.irq_state),
                         _ => panic!("Unhandled DMA write {:x}: {:08x}",
                                     offset, val),
                     }
@@ -304,6 +304,8 @@ impl Interconnect {
                 Sync::LinkedList => self.do_dma_linked_list(port),
                 _                => self.do_dma_block(port),
         }
+
+        self.dma.done(port, &mut self.irq_state);
     }
 
     /// Emulate DMA transfer for linked list synchronization mode.
@@ -352,8 +354,6 @@ impl Interconnect {
 
             addr = header & 0x1ffffc;
         }
-
-        channel.done();
     }
 
     /// Emulate DMA transfer for Manual and Request synchronization
@@ -414,8 +414,6 @@ impl Interconnect {
             addr = addr.wrapping_add(increment);
             remsz -= 1;
         }
-
-        channel.done();
     }
 }
 

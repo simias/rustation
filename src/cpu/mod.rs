@@ -122,7 +122,6 @@ impl Cpu {
         self.branch     = false;
 
         // Check for pending interrupts
-        // XXX add software IRQs (should all be handled in StatusRegister code)
         if self.cop0.irq_active(self.inter.irq_state()) {
             self.exception(Exception::Interrupt);
         } else {

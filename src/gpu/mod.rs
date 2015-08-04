@@ -237,7 +237,7 @@ impl Gpu {
 
         if !self.vblank_interrupt && vblank_interrupt {
             // Rising edge of the vblank interrupt
-            irq_state.set_high(Interrupt::VBlank);
+            irq_state.assert(Interrupt::VBlank);
         }
 
         if self.vblank_interrupt && !vblank_interrupt {

@@ -1,3 +1,5 @@
+use memory::interrupts::{Interrupt, InterruptState};
+
 /// Direct Memory Access
 pub struct Dma {
     /// DMA control register
@@ -65,12 +67,18 @@ impl Dma {
     }
 
     /// Set the value of the interrupt register
-    pub fn set_interrupt(&mut self, val: u32) {
+    pub fn set_interrupt(&mut self,
+                         val: u32,
+                         irq_state: &mut InterruptState) {
+        let prev_irq = self.irq();
+
         // Unknown what bits [5:0] do
         self.irq_dummy = (val & 0x3f) as u8;
 
         self.force_irq = (val >> 15) & 1 != 0;
 
+        // XXX I don't think disabling the channel IRQ clears the
+        // interrupt in channel_irq_flags but I should check that.
         self.channel_irq_en = ((val >> 16) & 0x7f) as u8;
 
         self.irq_en = (val >> 23) & 1 != 0;
@@ -79,7 +87,10 @@ impl Dma {
         let ack = ((val >> 24) & 0x3f) as u8;
         self.channel_irq_flags &= !ack;
 
-        println!("DMA IRQ en: {} {:08x}", self.irq_en, val);
+        if !prev_irq && self.irq() {
+            // Rising edge of the done interrupt
+            irq_state.assert(Interrupt::Dma);
+        }
     }
 
     /// Return a reference to a channel by port number.
@@ -90,6 +101,24 @@ impl Dma {
     /// Return a mutable reference to a channel by port number.
     pub fn channel_mut(&mut self, port: Port) -> &mut Channel {
         &mut self.channels[port as usize]
+    }
+
+    pub fn done(&mut self,
+                port: Port,
+                irq_state: &mut InterruptState) {
+        self.channel_mut(port).done();
+
+        let prev_irq = self.irq();
+
+        // Set interrupt flag if the channel's interrupt is enabled
+        let it_en = self.channel_irq_en & (1 << (port as usize));
+
+        self.channel_irq_flags |= it_en;
+
+        if !prev_irq && self.irq() {
+            // Rising edge of the done interrupt
+            irq_state.assert(Interrupt::Dma);
+        }
     }
 }
 
@@ -229,12 +258,9 @@ impl Channel {
     }
 
     /// Set the channel status to "completed" state
-    pub fn done(&mut self) {
+    fn done(&mut self) {
         self.enable = false;
         self.trigger = false;
-
-        // XXX Need to set the correct value for the other fields (in
-        // particular interrupts)
     }
 
     pub fn direction(&self) -> Direction {
