@@ -1,11 +1,13 @@
 pub mod bios;
 pub mod interrupts;
+pub mod timers;
 mod ram;
 mod dma;
 
 use self::bios::Bios;
 use self::ram::Ram;
 use self::dma::{Dma, Port, Direction, Step, Sync};
+use self::timers::Timers;
 use self::interrupts::InterruptState;
 use timekeeper::{TimeKeeper, Peripheral};
 use gpu::Gpu;
@@ -21,6 +23,8 @@ pub struct Interconnect {
     dma: Dma,
     /// Graphics Processor Unit
     gpu: Gpu,
+    /// System timers
+    timers: Timers,
     /// Cache Control register
     cache_control: CacheControl,
 }
@@ -33,6 +37,7 @@ impl Interconnect {
             ram: Ram::new(),
             dma: Dma::new(),
             gpu: gpu,
+            timers: Timers::new(),
             cache_control: CacheControl(0),
         }
     }
@@ -102,9 +107,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            println!("Unhandled read from timer register {:x}",
-                     offset);
-            return Addressable::from_u32(0);
+            return self.timers.load(tk, &mut self.irq_state, offset);
         }
 
         if let Some(_) = map::SPU.contains(abs_addr) {
@@ -147,12 +150,19 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.store(tk, &mut self.irq_state, offset, val);
+            return self.gpu.store(tk,
+                                  &mut self.timers,
+                                  &mut self.irq_state,
+                                  offset,
+                                  val);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            println!("Unhandled write to timer register {:x}: {:08x}",
-                     offset, val.as_u32());
+            self.timers.store(tk,
+                              &mut self.irq_state,
+                              &mut self.gpu,
+                              offset,
+                              val);
             return;
         }
 
@@ -451,6 +461,12 @@ pub trait Addressable {
     /// Retreive the value of the Addressable as an u32. If the
     /// Addressable is 8 or 16bits wide the MSBs are padded with 0s.
     fn as_u32(&self) -> u32;
+    /// Retreive the value of the Addressable as an u16. If the
+    /// Addressable is 8 bit wide the MSBs are padded with 0s, if it
+    /// was 32bit wide the MSBs are truncated.
+    fn as_u16(&self) -> u16 {
+        self.as_u32() as u16
+    }
 }
 
 impl Addressable for u8 {

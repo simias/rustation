@@ -1,7 +1,8 @@
 use self::opengl::{Renderer, Position, Color};
 use memory::{Addressable, AccessWidth};
 use memory::interrupts::{Interrupt, InterruptState};
-use timekeeper::{TimeKeeper, Peripheral, Cycles};
+use memory::timers::Timers;
+use timekeeper::{TimeKeeper, Peripheral, Cycles, FracCycles};
 use HardwareType;
 
 pub mod opengl;
@@ -94,8 +95,9 @@ pub struct Gpu {
     /// True when the VBLANK interrupt is high
     vblank_interrupt: bool,
     /// Fractional GPU cycle remainder resulting from the CPU
-    /// clock/GPU clock time conversion.
-    gpu_clock_frac: u16,
+    /// clock/GPU clock time conversion. Effectively the phase of the
+    /// GPU clock relative to the CPU, expressed in CPU clock periods.
+    gpu_clock_phase: u16,
     /// Currently displayed video output line
     display_line: u16,
     /// Current GPU clock tick for the current line
@@ -147,7 +149,7 @@ impl Gpu {
             gp0_mode: Gp0Mode::Command,
             gp0_interrupt: false,
             vblank_interrupt: false,
-            gpu_clock_frac: 0,
+            gpu_clock_phase: 0,
             display_line: 0,
             display_line_tick: 0,
             hardware: hardware,
@@ -157,7 +159,7 @@ impl Gpu {
     /// Return the number of GPU clock cycles in a line and number of
     /// lines in a frame (or field for interlaced output) depending on
     /// the configured video mode
-    fn get_vmode_timings(&self) -> (u16, u16) {
+    fn vmode_timings(&self) -> (u16, u16) {
         // The number of ticks per line is an estimate using the
         // average line length recorded by the timer1 using the
         // "hsync" clock source.
@@ -169,7 +171,7 @@ impl Gpu {
 
     /// Return the GPU to CPU clock ratio. The value is multiplied by
     /// CLOCK_RATIO_FRAC to get a precise fixed point value.
-    fn gpu_to_cpu_clock_ratio(&self) -> Cycles {
+    fn gpu_to_cpu_clock_ratio(&self) -> FracCycles {
         // First we convert the delta into GPU clock periods.
         // CPU clock in MHz
         let cpu_clock = 33.8685f32;
@@ -181,29 +183,73 @@ impl Gpu {
             };
 
         // Clock ratio shifted 16bits to the left
-        ((gpu_clock / cpu_clock) * CLOCK_RATIO_FRAC as f32) as Cycles
+        FracCycles::from_f32(gpu_clock / cpu_clock)
+    }
+
+    /// Return the period of the dotclock expressed in CPU clock
+    /// periods
+    pub fn dotclock_period(&self) -> FracCycles {
+        let gpu_clock_period = self.gpu_to_cpu_clock_ratio();
+
+        let dotclock_divider = self.hres.dotclock_divider();
+
+        // Dividing the clock frequency means multiplying its period
+        let period = gpu_clock_period.get_fp() * dotclock_divider as Cycles;
+
+        FracCycles::from_fp(period)
+    }
+
+    /// Return the current phase of the GPU dotclock relative to the
+    /// CPU clock
+    /// XXX bad: this is not the correct phase , it's the GPU clock
+    pub fn dotclock_phase(&self) -> FracCycles {
+        FracCycles::from_cycles(self.gpu_clock_phase as Cycles)
+    }
+
+    /// Return the period of the HSync signal in CPU clock periods
+    pub fn hsync_period(&self) -> FracCycles {
+        let (ticks_per_line, _) = self.vmode_timings();
+
+        let line_len = FracCycles::from_cycles(ticks_per_line as Cycles);
+
+        // Convert from GPU cycles into CPU cycles
+        line_len.divide(self.gpu_to_cpu_clock_ratio())
+    }
+
+    /// Return the phase of the hsync (position within the line) in
+    /// CPU clock periods.
+    pub fn hsync_phase(&self) -> FracCycles {
+        let phase = FracCycles::from_cycles(self.display_line_tick as Cycles);
+
+        let clock_phase = FracCycles::from_fp(self.gpu_clock_phase as Cycles);
+
+        let phase = phase.add(clock_phase);
+
+        // Convert phase from GPU clock cycles into CPU clock cycles
+        phase.multiply(self.gpu_to_cpu_clock_ratio())
     }
 
     /// Update the GPU state to its current status
     pub fn sync(&mut self,
                 tk: &mut TimeKeeper,
                 irq_state: &mut InterruptState) {
+
         let delta = tk.sync(Peripheral::Gpu);
 
         // Convert delta in GPU time, adding the leftover from the
         // last time
-        let delta = self.gpu_clock_frac as Cycles +
-                    delta * self.gpu_to_cpu_clock_ratio();
+        let delta = self.gpu_clock_phase as Cycles +
+                    delta * self.gpu_to_cpu_clock_ratio().get_fp();
 
         // The 16 low bits are the new fractional part
-        self.gpu_clock_frac = delta as u16;
+        self.gpu_clock_phase = delta as u16;
 
         // Conwert delta back to integer
         let delta = delta >> 16;
 
         // Compute the current line and position within the line.
 
-        let (ticks_per_line, lines_per_frame) = self.get_vmode_timings();
+        let (ticks_per_line, lines_per_frame) = self.vmode_timings();
 
         let ticks_per_line = ticks_per_line as Cycles;
         let lines_per_frame = lines_per_frame as Cycles;
@@ -253,7 +299,7 @@ impl Gpu {
 
     /// Predict when the next "forced" sync should take place
     pub fn predict_next_sync(&self, tk: &mut TimeKeeper) {
-        let (ticks_per_line, lines_per_frame) = self.get_vmode_timings();
+        let (ticks_per_line, lines_per_frame) = self.vmode_timings();
 
         let ticks_per_line = ticks_per_line as Cycles;
         let lines_per_frame = lines_per_frame as Cycles;
@@ -295,13 +341,13 @@ impl Gpu {
         }
 
         // Convert delta in CPU clock periods.
-        delta *= CLOCK_RATIO_FRAC;
+        delta <<= FracCycles::frac_bits();
         // Remove the current fractional cycle to be more accurate
-        delta -= self.gpu_clock_frac as Cycles;
+        delta -= self.gpu_clock_phase as Cycles;
 
         // Divide by the ratio while always rounding up to make sure
         // we're never triggered too early
-        let ratio = self.gpu_to_cpu_clock_ratio();
+        let ratio = self.gpu_to_cpu_clock_ratio().get_fp();
         delta = (delta + ratio - 1) / ratio;
 
         tk.set_next_sync_delta(Peripheral::Gpu, delta);
@@ -349,6 +395,7 @@ impl Gpu {
 
     pub fn store<T: Addressable>(&mut self,
                                  tk: &mut TimeKeeper,
+                                 timers: &mut Timers,
                                  irq_state: &mut InterruptState,
                                  offset: u32,
                                  val: T) {
@@ -363,7 +410,7 @@ impl Gpu {
 
         match offset {
             0 => self.gp0(val),
-            4 => self.gp1(val, tk, irq_state),
+            4 => self.gp1(val, tk, timers, irq_state),
             _ => unreachable!(),
         }
     }
@@ -689,11 +736,15 @@ impl Gpu {
     pub fn gp1(&mut self,
                val: u32,
                tk: &mut TimeKeeper,
+               timers: &mut Timers,
                irq_state: &mut InterruptState) {
         let opcode = (val >> 24) & 0xff;
 
         match opcode {
-            0x00 => self.gp1_reset(tk, irq_state),
+            0x00 => {
+                self.gp1_reset(tk, irq_state);
+                timers.video_timings_changed(tk, irq_state, self);
+            },
             0x01 => self.gp1_reset_command_buffer(),
             0x02 => self.gp1_acknowledge_irq(),
             0x03 => self.gp1_display_enable(val),
@@ -701,7 +752,10 @@ impl Gpu {
             0x05 => self.gp1_display_vram_start(val),
             0x06 => self.gp1_display_horizontal_range(val),
             0x07 => self.gp1_display_vertical_range(val, tk, irq_state),
-            0x08 => self.gp1_display_mode(val, tk, irq_state),
+            0x08 => {
+                self.gp1_display_mode(val, tk, irq_state);
+                timers.video_timings_changed(tk, irq_state, self);
+            }
             _    => panic!("Unhandled GP1 command {:08x}", val),
         }
     }
@@ -899,6 +953,40 @@ impl HorizontalRes {
 
         (hr as u32) << 16
     }
+
+    /// Return the divider used to generate the dotclock from the GPU
+    /// clock.
+    fn dotclock_divider(self) -> u8 {
+        let hr1 = (self.0 >> 1) & 0x3;
+        let hr2 = self.0 & 1 != 0;
+
+        // The encoding of this field is a bit weird, if bit
+        // "Horizontal Resolution 2" is set then we're in "368pixel"
+        // mode (dotclock = GPU clock / 7). If it's not set then we
+        // must check the other two bits of "Horizontal Resolution 2".
+        //
+        // Note that the horizontal resolutions given here are
+        // estimates, it's roughly the number of dotclock ticks
+        // necessary to fill a line with the given
+        // divider. `display_horiz_start` and `display_horiz_end` will
+        // give the actual resolution.
+        if hr2 {
+            // HRes ~ 368pixels
+            7
+        } else {
+            match hr1 {
+                // Hres ~ 256pixels
+                0 => 10,
+                // Hres ~ 320pixels
+                1 => 8,
+                // Hres ~ 512pixels
+                2 => 5,
+                // Hres ~ 640pixels
+                3 => 4,
+                _ => unreachable!(),
+            }
+        }
+    }
 }
 
 /// Video output vertical resolution
@@ -978,7 +1066,3 @@ impl ::std::ops::Index<usize> for CommandBuffer {
         &self.buffer[index]
     }
 }
-
-/// Use 16bits for the fractional part of the clock ratio to get good
-/// precision
-const CLOCK_RATIO_FRAC: Cycles = 0x10000;
