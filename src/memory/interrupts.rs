@@ -44,6 +44,18 @@ impl InterruptState {
     }
 
     pub fn set_mask(&mut self, mask: u16) {
+        // Temporary hack: trigger an error if a non-implemented
+        // interrupt is requested
+        let supported = [ Interrupt::VBlank,
+                          Interrupt::Dma ];
+
+        let rem = supported.iter().fold(mask,
+                                        |mask, &it| mask & !(1 << it as u16));
+
+        if rem != 0 {
+            panic!("Unsupported interrupt: {:04x}", rem);
+        }
+
         self.mask = mask;
     }
 
