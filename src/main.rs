@@ -7,6 +7,7 @@ mod memory;
 mod gpu;
 mod timekeeper;
 mod debugger;
+mod cdrom;
 
 use std::path::Path;
 

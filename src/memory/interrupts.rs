@@ -3,6 +3,8 @@
 pub enum Interrupt {
     /// Display in vertical blanking
     VBlank = 0,
+    /// CDROM controller
+    CdRom = 2,
     /// DMA transfer done
     Dma = 3,
 }
@@ -47,6 +49,7 @@ impl InterruptState {
         // Temporary hack: trigger an error if a non-implemented
         // interrupt is requested
         let supported = [ Interrupt::VBlank,
+                          Interrupt::CdRom,
                           Interrupt::Dma ];
 
         let rem = supported.iter().fold(mask,

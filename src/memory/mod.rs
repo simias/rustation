@@ -11,6 +11,7 @@ use self::timers::Timers;
 use self::interrupts::InterruptState;
 use timekeeper::{TimeKeeper, Peripheral};
 use gpu::Gpu;
+use cdrom::CdRom;
 
 /// Global interconnect
 pub struct Interconnect {
@@ -27,6 +28,8 @@ pub struct Interconnect {
     timers: Timers,
     /// Cache Control register
     cache_control: CacheControl,
+    /// CDROM controller
+    cdrom: CdRom,
 }
 
 impl Interconnect {
@@ -39,6 +42,7 @@ impl Interconnect {
             gpu: gpu,
             timers: Timers::new(),
             cache_control: CacheControl(0),
+            cdrom: CdRom::new(),
         }
     }
 
@@ -106,6 +110,10 @@ impl Interconnect {
             return self.gpu.load(tk, &mut self.irq_state, offset);
         }
 
+        if let Some(offset) = map::CDROM.contains(abs_addr) {
+            return self.cdrom.load(tk, &mut self.irq_state, offset);
+        }
+
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
             return self.timers.load(tk, &mut self.irq_state, offset);
         }
@@ -155,6 +163,10 @@ impl Interconnect {
                                   &mut self.irq_state,
                                   offset,
                                   val);
+        }
+
+        if let Some(offset) = map::CDROM.contains(abs_addr) {
+            return self.cdrom.store(tk, &mut self.irq_state, offset, val);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
@@ -462,10 +474,15 @@ pub trait Addressable {
     /// Addressable is 8 or 16bits wide the MSBs are padded with 0s.
     fn as_u32(&self) -> u32;
     /// Retreive the value of the Addressable as an u16. If the
-    /// Addressable is 8 bit wide the MSBs are padded with 0s, if it
+    /// Addressable was 8 bit wide the MSBs are padded with 0s, if it
     /// was 32bit wide the MSBs are truncated.
     fn as_u16(&self) -> u16 {
         self.as_u32() as u16
+    }
+    /// Retreive the value of the Addressable as an u8. If the
+    /// Addressable was 16 or 32bit wide the MSBs are truncated.
+    fn as_u8(&self) -> u8 {
+        self.as_u32() as u8
     }
 }
 
@@ -568,6 +585,9 @@ mod map {
     pub const DMA: Range = Range(0x1f801080, 0x80);
 
     pub const TIMERS: Range = Range(0x1f801100, 0x30);
+
+    /// CDROM controller
+    pub const CDROM: Range = Range(0x1f801800, 0x4);
 
     pub const GPU: Range = Range(0x1f801810, 8);
 
