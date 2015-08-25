@@ -321,7 +321,7 @@ pub enum Sync {
 }
 
 /// The 7 DMA ports
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum Port {
     /// Macroblock decoder input
     MdecIn = 0,

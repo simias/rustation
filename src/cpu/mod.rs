@@ -1,8 +1,10 @@
 mod cop0;
+mod gte;
 
 use std::fmt::{Display, Formatter, Error};
 
 use self::cop0::{Cop0, Exception};
+use self::gte::Gte;
 use memory::{Interconnect, Addressable, AccessWidth};
 use timekeeper::TimeKeeper;
 use debugger::Debugger;
@@ -37,6 +39,8 @@ pub struct Cpu {
     inter: Interconnect,
     /// Coprocessor 0: System control
     cop0: Cop0,
+    /// Coprocessor 2: Geometry Transform Engine
+    gte: Gte,
     /// Load initiated by the current instruction (will take effect
     /// after the load delay slot)
     load: (RegisterIndex, u32),
@@ -72,6 +76,7 @@ impl Cpu {
             icache:     [ICacheLine::new(); 0x100],
             inter:      inter,
             cop0:       Cop0::new(),
+            gte:        Gte::new(),
             load:       (RegisterIndex(0), 0),
             branch:     false,
             delay_slot: false,
@@ -955,21 +960,6 @@ impl Cpu {
         }
     }
 
-    /// Coprocessor 1 opcode (does not exist on the Playstation)
-    fn op_cop1(&mut self, _: Instruction) {
-        self.exception(Exception::CoprocessorError);
-    }
-
-    /// Coprocessor 2 opcode (GTE)
-    fn op_cop2(&mut self, instruction: Instruction) {
-        panic!("unhandled GTE instruction: {}", instruction);
-    }
-
-    /// Coprocessor 3 opcode (does not exist on the Playstation)
-    fn op_cop3(&mut self, _: Instruction) {
-        self.exception(Exception::CoprocessorError);
-    }
-
     /// Move From Coprocessor 0
     fn op_mfc0(&mut self, instruction: Instruction) {
         let cpu_r = instruction.t();
@@ -979,8 +969,7 @@ impl Cpu {
             12 => self.cop0.sr(),
             13 => self.cop0.cause(self.inter.irq_state()),
             14 => self.cop0.epc(),
-            _  =>
-                panic!("Unhandled read from cop0r{}", cop_r),
+            _  => panic!("Unhandled read from cop0r{}", cop_r),
         };
 
         self.load = (cpu_r, v)
@@ -1018,6 +1007,40 @@ impl Cpu {
         }
 
         self.cop0.return_from_exception();
+    }
+
+    /// Coprocessor 1 opcode (does not exist on the Playstation)
+    fn op_cop1(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+
+    /// Coprocessor 2 opcode (GTE)
+    fn op_cop2(&mut self, instruction: Instruction) {
+        // XXX: we should check that the GTE is enabled in cop0's
+        // status register, otherwise the cop2 instructions seem to
+        // freeze the CPU (or maybe raise an exception?). Furthermore
+        // it seems that one has to wait at least two cycles (tested
+        // with two nops) after raising the flag in the status
+        // register before the GTE can be accessed.
+        match instruction.cop_opcode() {
+            0b00110 => self.op_ctc2(instruction),
+            _       => panic!("unhandled GTE instruction {}", instruction),
+        }
+    }
+
+    /// Move To Coprocessor 2 Control register
+    fn op_ctc2(&mut self, instruction: Instruction) {
+        let cpu_r = instruction.t();
+        let cop_r = instruction.d().0;
+
+        let v = self.reg(cpu_r);
+
+        self.gte.set_control(cop_r, v);
+    }
+
+    /// Coprocessor 3 opcode (does not exist on the Playstation)
+    fn op_cop3(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
     }
 
     /// Load Byte (signed)

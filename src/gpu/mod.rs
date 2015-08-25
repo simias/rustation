@@ -494,14 +494,20 @@ impl Gpu {
                         (1, Gpu::gp0_nop as fn(&mut Gpu)),
                     0x01 =>
                         (1, Gpu::gp0_clear_cache as fn(&mut Gpu)),
+                    0x02 =>
+                        (3, Gpu::gp0_fill_rect as fn(&mut Gpu)),
                     0x28 =>
                         (5, Gpu::gp0_quad_mono_opaque as fn(&mut Gpu)),
                     0x2c =>
                         (9, Gpu::gp0_quad_texture_blend_opaque as fn(&mut Gpu)),
+                    0x2d =>
+                        (9, Gpu::gp0_quad_texture_raw_opaque as fn(&mut Gpu)),
                     0x30 =>
                         (6, Gpu::gp0_triangle_shaded_opaque as fn(&mut Gpu)),
                     0x38 =>
                         (8, Gpu::gp0_quad_shaded_opaque as fn(&mut Gpu)),
+                    0x65 =>
+                        (4, Gpu::gp0_rect_texture_raw_opaque as fn(&mut Gpu)),
                     0xa0 =>
                         (3, Gpu::gp0_image_load as fn(&mut Gpu)),
                     0xc0 =>
@@ -559,6 +565,25 @@ impl Gpu {
         // Not implemented
     }
 
+    /// GP0(0x02): Fill Rectangle
+    fn gp0_fill_rect(&mut self) {
+        // XXX Not affected by mask setting
+        let top_left = Position::from_gp0(self.gp0_command[1]);
+
+        let size = Position::from_gp0(self.gp0_command[2]);
+
+        let positions = [
+            top_left,
+            Position(top_left.0 + size.0, top_left.1),
+            Position(top_left.0, top_left.1 + size.1),
+            Position(top_left.0 + size.0, top_left.1 + size.1),
+            ];
+
+        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
+
+        self.renderer.push_quad(positions, colors);
+    }
+
     /// GP0(0x28): Monochrome Opaque Quadrilateral
     fn gp0_quad_mono_opaque(&mut self) {
         let positions = [
@@ -574,8 +599,24 @@ impl Gpu {
         self.renderer.push_quad(positions, colors);
     }
 
-    /// GP0(0x2C): Textured Opaque Quadrilateral
+    /// GP0(0x2C): Texture-blended Opaque Quadrilateral
     fn gp0_quad_texture_blend_opaque(&mut self) {
+        let positions = [
+            Position::from_gp0(self.gp0_command[1]),
+            Position::from_gp0(self.gp0_command[3]),
+            Position::from_gp0(self.gp0_command[5]),
+            Position::from_gp0(self.gp0_command[7]),
+            ];
+
+        // XXX We don't support textures for now, use a solid red
+        // color instead
+        let colors = [ Color(0x80, 0x00, 0x00); 4];
+
+        self.renderer.push_quad(positions, colors);
+    }
+
+    /// GP0(0x2D): Raw Textured Opaque Quadrilateral
+    fn gp0_quad_texture_raw_opaque(&mut self) {
         let positions = [
             Position::from_gp0(self.gp0_command[1]),
             Position::from_gp0(self.gp0_command[3]),
@@ -622,6 +663,25 @@ impl Gpu {
             Color::from_gp0(self.gp0_command[4]),
             Color::from_gp0(self.gp0_command[6]),
             ];
+
+        self.renderer.push_quad(positions, colors);
+    }
+
+    /// GP0(0x65): Opaque rectange with raw texture
+    fn gp0_rect_texture_raw_opaque(&mut self) {
+        let top_left = Position::from_gp0(self.gp0_command[1]);
+
+        let size = Position::from_gp0(self.gp0_command[3]);
+
+        let positions = [
+            top_left,
+            Position(top_left.0 + size.0, top_left.1),
+            Position(top_left.0, top_left.1 + size.1),
+            Position(top_left.0 + size.0, top_left.1 + size.1),
+            ];
+
+        // XXX Needs texture blending
+        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
 
         self.renderer.push_quad(positions, colors);
     }

@@ -125,6 +125,11 @@ impl Interconnect {
             return Addressable::from_u32(0);
         }
 
+        if let Some(_) = map::JOY_MEMCARD.contains(abs_addr) {
+            println!("Unhandled read from PIO register {:08x}", abs_addr);
+            return Addressable::from_u32(!0);
+        }
+
         if let Some(_) = map::EXPANSION_1.contains(abs_addr) {
             // No expansion implemented. Returns full ones when no
             // expansion is present
@@ -233,7 +238,7 @@ impl Interconnect {
             return;
         }
 
-        panic!("unhandled store32 into address {:08x}: {:08x}",
+        panic!("unhandled store into address {:08x}: {:08x}",
                addr, val.as_u32());
     }
 
@@ -351,7 +356,7 @@ impl Interconnect {
         // I don't know if the DMA even supports linked list mode for
         // anything besides the GPU
         if port != Port::Gpu {
-            panic!("Attempted linked list DMA on port {}", port as u8);
+            panic!("Attempted linked list DMA on port {:?}", port);
         }
 
         loop {
@@ -420,8 +425,8 @@ impl Interconnect {
 
                     match port {
                         Port::Gpu => self.gpu.gp0(src_word),
-                        _ => panic!("Unhandled DMA destination port {}",
-                                    port as u8),
+                        _ => panic!("Unhandled DMA destination port {:?}",
+                                    port),
                     }
                 }
                 Direction::ToRam => {
@@ -434,7 +439,12 @@ impl Interconnect {
                             // Pointer to the previous entry
                             _ => addr.wrapping_sub(4) & 0x1fffff,
                         },
-                        _ => panic!("Unhandled DMA source port {}", port as u8),
+                        Port::Gpu => {
+                            // XXX to be implemented
+                            println!("DMA GPU READ");
+                            0
+                        }
+                        _ => panic!("Unhandled DMA source port {:?}", port),
                     };
 
                     self.ram.store(cur_addr, src_word);
