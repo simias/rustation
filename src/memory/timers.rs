@@ -258,6 +258,7 @@ impl Timer {
         r |= self.free_run as u16;
         r |= (self.sync as u16) << 1;
         r |= (self.target_wrap as u16) << 3;
+        r |= (self.target_irq as u16) << 4;
         r |= (self.wrap_irq as u16) << 5;
         r |= (self.repeat_irq as u16) << 6;
         r |= (self.pulse_irq as u16) << 7;
