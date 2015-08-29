@@ -1,8 +1,9 @@
 use timekeeper::{TimeKeeper, Cycles, FracCycles, Peripheral};
 use gpu::Gpu;
 use super::{Addressable, AccessWidth};
-use super::interrupts::InterruptState;
+use super::interrupts::{InterruptState, Interrupt};
 
+#[derive(Debug)]
 pub struct Timers {
     /// The three timers. They're mostly identical except that they
     /// can each select a unique clock source besides the regular
@@ -56,7 +57,7 @@ impl Timers {
             gpu.sync(tk, irq_state);
         }
 
-        timer.reconfigure(gpu);
+        timer.reconfigure(gpu, tk);
     }
 
     pub fn load<T: Addressable>(&mut self,
@@ -95,12 +96,27 @@ impl Timers {
         for t in &mut self.timers {
             if t.needs_gpu() {
                 t.sync(tk, irq_state);
-                t.reconfigure(gpu);
+                t.reconfigure(gpu, tk);
             }
+        }
+    }
+
+    pub fn sync(&mut self,
+                tk: &mut TimeKeeper,
+                irq_state: &mut InterruptState) {
+        if tk.needs_sync(Peripheral::Timer0) {
+            self.timers[0].sync(tk, irq_state);
+        }
+        if tk.needs_sync(Peripheral::Timer1) {
+            self.timers[1].sync(tk, irq_state);
+        }
+        if tk.needs_sync(Peripheral::Timer2) {
+            self.timers[2].sync(tk, irq_state);
         }
     }
 }
 
+#[derive(Debug)]
 struct Timer {
     /// Timer instance (Timer0, 1 or 2)
     instance: Peripheral,
@@ -108,8 +124,8 @@ struct Timer {
     counter: u16,
     /// Counter target
     target: u16,
-    /// If true do not synchronize the timer with an external signal
-    free_run: bool,
+    /// If true we synchronize the timer with an external signal
+    use_sync: bool,
     /// The synchronization mode when `free_run` is false. Each one of
     /// the three timers interprets this mode differently.
     sync: Sync,
@@ -125,14 +141,12 @@ struct Timer {
     /// If true the interrupt is automatically cleared and will
     /// re-trigger when one of the interrupt conditions occurs again
     repeat_irq: bool,
-    /// XXX Not sure what this bit does. Does it simply invert the IRQ
-    /// signal each time an interrupt condition is encountered?
-    pulse_irq: bool,
+    /// If true the irq signal is inverted each time an interrupt
+    /// condition is reached instead of a single pulse.
+    negate_irq: bool,
     /// Clock source (2bits). Each timer can either use the CPU
     /// SysClock or an alternative clock source.
     clock_source: ClockSource,
-    /// XXX Not sure what this does exactly
-    request_interrupt: bool,
     /// True if the target has been reached since the last read
     target_reached: bool,
     /// True if the counter reached 0xffff and overflowed since the
@@ -143,6 +157,8 @@ struct Timer {
     period: FracCycles,
     /// Current position within a period of a counter tick.
     phase: FracCycles,
+    /// True if interrupt signal is active
+    interrupt: bool,
 }
 
 impl Timer {
@@ -151,19 +167,19 @@ impl Timer {
             instance: instance,
             counter: 0,
             target: 0,
-            free_run: false,
+            use_sync: false,
             sync: Sync::from_field(0),
             target_wrap: false,
             target_irq: false,
             wrap_irq: false,
             repeat_irq: false,
-            pulse_irq: false,
+            negate_irq: false,
             clock_source: ClockSource::from_field(0),
-            request_interrupt: false,
             target_reached: false,
             overflow_reached: false,
             period: FracCycles::from_cycles(1),
             phase: FracCycles::from_cycles(0),
+            interrupt: false,
         }
     }
 
@@ -173,7 +189,7 @@ impl Timer {
     ///
     /// If the GPU is needed for the timings it must be synchronized
     /// before this function is called.
-    fn reconfigure(&mut self, gpu: &Gpu) {
+    fn reconfigure(&mut self, gpu: &Gpu, tk: &mut TimeKeeper) {
 
         match self.clock_source.clock(self.instance) {
             Clock::SysClock => {
@@ -195,14 +211,22 @@ impl Timer {
                 self.phase  = gpu.hsync_phase();
             }
         }
+
+        self.predict_next_sync(tk);
     }
 
     /// Synchronize this timer.
-    /// XXX Handle interrupts
     fn sync(&mut self,
             tk: &mut TimeKeeper,
-            _: &mut InterruptState) {
+            irq_state: &mut InterruptState) {
         let delta = tk.sync(self.instance);
+
+        if delta == 0 {
+            // The interrupt code below might glitch if it's called
+            // two times in a row (trigger the interrupt twice). It
+            // probably wouldn't be too dangerous but I'd rather keep it clean.
+            return;
+        }
 
         let delta_frac = FracCycles::from_cycles(delta);
 
@@ -214,38 +238,103 @@ impl Timer {
         // Store the new phase
         self.phase = FracCycles::from_fp(phase);
 
-        let target = match self.target_wrap {
+        count += self.counter as Cycles;
+
+        let mut target_passed = false;
+
+        if (self.counter <= self.target) && (count > self.target as Cycles) {
+            // XXX I'm not sure if those flags are set when the
+            // target/0xffff are reached or at the beginning of the
+            // next period.
+            self.target_reached = true;
+            target_passed = true;
+        }
+
+        let wrap = match self.target_wrap {
             // We wrap *after* the target is reached, so we need to
             // add 1 to it for our modulo to work correctly later.
+
+            // XXX: Actually it seems that it happens after the target
+            // is reach but not a full period later. Maybe only one
+            // cycle? This IP is a mess.
             true  => (self.target as Cycles) + 1,
             false => 0x10000,
         };
 
-        count += self.counter as Cycles;
+        let mut overflow = false;
 
-        if count >= target {
-            count %= target;
-
-            // XXX I'm not sure if those flags are set when the
-            // target/0xffff are reached or at the beginning of the
-            // next tick.
-            self.target_reached = true;
+        if count >= wrap {
+            count %= wrap;
 
             // XXX check that this flag is set even when we're using
             // `target_wrap` and target is set to 0xffff or if it's
             // just in "targetless" mode.
-            if target == 0x10000 {
+            if wrap == 0x10000 {
                 self.overflow_reached = true;
+                // I can't reuse `self.overflow_reached` since it
+                // might be set continuously if the software doesn't
+                // ack it by reading the mode register
+                overflow = true;
             }
         }
 
         self.counter = count as u16;
+        if (self.wrap_irq && overflow) || (self.target_irq && target_passed) {
+            let interrupt =
+                match self.instance {
+                    Peripheral::Timer0 => Interrupt::Timer0,
+                    Peripheral::Timer1 => Interrupt::Timer1,
+                    Peripheral::Timer2 => Interrupt::Timer2,
+                    _ => unreachable!(),
+                };
+
+            if self.negate_irq {
+                panic!("Unhandled negate IRQ!");
+            } else {
+                // Pulse interrupt
+                irq_state.assert(interrupt);
+                self.interrupt = true;
+            }
+        } else if !self.negate_irq {
+            // Pulse is over
+            self.interrupt = false;
+        }
+
+        self.predict_next_sync(tk)
+    }
+
+    fn predict_next_sync(&mut self, tk: &mut TimeKeeper) {
+        // XXX add support for wrap IRQ
+
+        if !self.target_irq {
+            // No IRQ enabled, we don't need to be called back.
+            tk.no_sync_needed(self.instance);
+            return;
+        }
+
+        let countdown =
+            if self.counter <= self.target {
+                self.target - self.counter
+            } else {
+                0xffff - self.counter + self.target
+            };
+
+        // Convert from timer count to CPU cycles. I add + 1 to the
+        // countdown because the interrupt is generated on the
+        // following cycle (I think?)
+        let mut delta = self.period.get_fp() * (countdown as Cycles + 1);
+        delta -= self.phase.get_fp();
+
+        // Round up to the next CPU cycle
+        let delta = FracCycles::from_fp(delta).ceil();
+
+        tk.set_next_sync_delta(self.instance, delta);
     }
 
     /// Return true if the timer relies on the GPU for the clock
     /// source or synchronization
     pub fn needs_gpu(&self) -> bool {
-        if !self.free_run {
+        if self.use_sync {
             panic!("Sync mode not supported!");
         }
 
@@ -255,15 +344,16 @@ impl Timer {
     fn mode(&mut self) -> u16 {
         let mut r = 0u16;
 
-        r |= self.free_run as u16;
+        r |= self.use_sync as u16;
         r |= (self.sync as u16) << 1;
         r |= (self.target_wrap as u16) << 3;
         r |= (self.target_irq as u16) << 4;
         r |= (self.wrap_irq as u16) << 5;
         r |= (self.repeat_irq as u16) << 6;
-        r |= (self.pulse_irq as u16) << 7;
+        r |= (self.negate_irq as u16) << 7;
         r |= (self.clock_source.0 as u16) << 8;
-        r |= (self.request_interrupt as u16) << 10;
+        // Interrupt field is active low
+        r |= ((!self.interrupt) as u16) << 10;
         r |= (self.target_reached as u16) << 11;
         r |= (self.overflow_reached as u16) << 12;
 
@@ -276,27 +366,35 @@ impl Timer {
 
     /// Set the value of the mode register
     fn set_mode(&mut self, val: u16) {
-        self.free_run = (val & 1) == 0;
+        self.use_sync = (val & 1) != 0;
         self.sync = Sync::from_field((val >> 1) & 3);
         self.target_wrap = (val >> 3) & 1 != 0;
         self.target_irq = (val >> 4) & 1 != 0;
         self.wrap_irq = (val >> 5) & 1 != 0;
         self.repeat_irq = (val >> 6) & 1 != 0;
-        self.pulse_irq = (val >> 7) & 1 != 0;
+        self.negate_irq = (val >> 7) & 1 != 0;
         self.clock_source = ClockSource::from_field((val >> 8) & 3);
-        // Polarity of this flag appears to be reversed. I'm still not
-        // sure what it does though...
-        self.request_interrupt = (val >> 10) & 1 != 0;
+
+        // Writing to mode resets the interrupt flag
+        self.interrupt = false;
 
         // Writing to mode resets the counter
         self.counter = 0;
 
-        if self.request_interrupt {
-            panic!("Unsupported timer IRQ request");
+        if self.wrap_irq {
+            panic!("Wrap IRQ not supported");
         }
 
-        if !self.free_run {
-            panic!("{:?}: Only free run is supported!", self.instance);
+        if (self.wrap_irq || self.target_irq) && !self.repeat_irq {
+            panic!("One shot timer interrupts are not supported: {:?}", self);
+        }
+
+        if self.negate_irq {
+            panic!("Only pulse interrupts are supported: {:?}", self);
+        }
+
+        if self.use_sync {
+            panic!("Sync mode is not supported: {:?}", self);
         }
     }
 
@@ -319,7 +417,7 @@ impl Timer {
 
 /// Various synchronization modes when the timer is not in
 /// free-run.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Sync {
     /// For timer 1/2: Pause during H/VBlank. For timer 3: Stop counter
     Pause = 0,
@@ -347,7 +445,7 @@ impl Sync {
 
 /// Clock source is stored on two bits. The meaning of those bits
 /// depends on the timer instance.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct ClockSource(u8);
 
 impl ClockSource {
@@ -391,7 +489,7 @@ impl ClockSource {
 
 
 /// The four possible clock sources for the timers
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Clock {
     /// The CPU clock at ~33.87MHz
     SysClock,

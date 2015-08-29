@@ -81,7 +81,10 @@ impl Cpu {
     /// Run a single CPU instruction and return
     pub fn run_next_instruction(&mut self, debugger: &mut Debugger) {
         // Synchronize the peripherals
-        self.inter.sync(&mut self.tk);
+        if self.tk.sync_pending() {
+            self.inter.sync(&mut self.tk);
+            self.tk.update_sync_pending();
+        }
 
         // Save the address of the current instruction to store in
         // `EPC` in case of an exception.

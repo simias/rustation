@@ -8,6 +8,8 @@ pub struct TimeKeeper {
     /// Counter keeping track of the current date. Unit is a period of
     /// the CPU clock at 33.8685MHz (~29.5ns)
     now: Cycles,
+    /// Next time a peripheral needs an update
+    next_sync: Cycles,
     /// Time sheets for keeping track of the various peripherals
     timesheets: [TimeSheet; 4],
 }
@@ -16,6 +18,7 @@ impl TimeKeeper {
     pub fn new() -> TimeKeeper {
         TimeKeeper {
             now: 0,
+            next_sync: Cycles::max_value(),
             timesheets: [TimeSheet::new(); 4],
         }
     }
@@ -31,15 +34,39 @@ impl TimeKeeper {
     }
 
     pub fn set_next_sync_delta(&mut self, who: Peripheral, delta: Cycles) {
-        self.timesheets[who as usize].set_next_sync(self.now + delta)
+        let date = self.now + delta;
+
+        self.timesheets[who as usize].set_next_sync(date);
+
+        if date < self.next_sync {
+            self.next_sync = date;
+        }
+    }
+
+    /// Called by a peripheral when there's no asynchronous event
+    /// scheduled.
+    pub fn no_sync_needed(&mut self, who: Peripheral) {
+        // Instead of disabling the sync completely we can just use a
+        // distant date. Peripheral's syncs should be idempotent
+        // anyway.
+        self.timesheets[who as usize].set_next_sync(Cycles::max_value());
+    }
+
+    pub fn sync_pending(&self) -> bool{
+        self.next_sync <= self.now
     }
 
     pub fn needs_sync(&self, who: Peripheral) -> bool {
         self.timesheets[who as usize].needs_sync(self.now)
     }
+
+    pub fn update_sync_pending(&mut self) {
+        self.next_sync =
+            self.timesheets.iter().map(|t| t.next_sync).min().unwrap();
+    }
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, Debug)]
 /// Struct used to keep track of individual peripherals
 struct TimeSheet {
     /// Date of the last synchronization
@@ -80,7 +107,7 @@ impl TimeSheet {
 
 /// List of all peripherals requiring a TimeSheet. The value of the
 /// enum is used as the index in the table
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Peripheral {
     /// Graphics Processing Unit
     Gpu,
@@ -96,7 +123,7 @@ pub type Cycles = u64;
 /// Fixed point representation of a cycle counter used to store
 /// non-integer cycle counts. Required because the CPU and GPU clocks
 /// have a non-integer ratio.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct FracCycles(Cycles);
 
 impl FracCycles {
@@ -145,5 +172,13 @@ impl FracCycles {
         let numerator = self.get_fp() << FracCycles::frac_bits();
 
         FracCycles(numerator / denominator.get_fp())
+    }
+
+    pub fn ceil(self) -> Cycles {
+        let shift = FracCycles::frac_bits();
+
+        let align = (1 << shift) - 1;
+
+        (self.0 + align) >> shift
     }
 }

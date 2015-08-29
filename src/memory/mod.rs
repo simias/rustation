@@ -50,6 +50,8 @@ impl Interconnect {
         if tk.needs_sync(Peripheral::Gpu) {
             self.gpu.sync(tk, &mut self.irq_state);
         }
+
+        self.timers.sync(tk, &mut self.irq_state);
     }
 
     pub fn cache_control(&self) -> CacheControl {

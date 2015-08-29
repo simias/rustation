@@ -7,6 +7,12 @@ pub enum Interrupt {
     CdRom = 2,
     /// DMA transfer done
     Dma = 3,
+    /// Timer0 interrupt
+    Timer0 = 4,
+    /// Timer1 interrupt
+    Timer1 = 5,
+    /// Timer2 interrupt
+    Timer2 = 6,
 }
 
 #[derive(Clone,Copy)]
@@ -50,7 +56,10 @@ impl InterruptState {
         // interrupt is requested
         let supported = [ Interrupt::VBlank,
                           Interrupt::CdRom,
-                          Interrupt::Dma ];
+                          Interrupt::Dma,
+                          Interrupt::Timer0,
+                          Interrupt::Timer1,
+                          Interrupt::Timer2];
 
         let rem = supported.iter().fold(mask,
                                         |mask, &it| mask & !(1 << it as u16));
