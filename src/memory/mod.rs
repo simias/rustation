@@ -184,6 +184,12 @@ impl Interconnect {
             return;
         }
 
+        if let Some(_) = map::JOY_MEMCARD.contains(abs_addr) {
+            println!("Unhandled write to Joy/memcard register {:08x}: {:04x}",
+                     abs_addr, val.as_u32());
+            return;
+        }
+
         if let Some(_) = map::CACHE_CONTROL.contains(abs_addr) {
             if T::width() != AccessWidth::Word {
                 panic!("Unhandled cache control access");
@@ -573,6 +579,9 @@ mod map {
 
     /// Memory latency and expansion mapping
     pub const MEM_CONTROL: Range = Range(0x1f801000, 36);
+
+    /// Joystick and memory card controller
+    pub const JOY_MEMCARD: Range = Range(0x1f801040, 32);
 
     /// Register that has something to do with RAM configuration,
     /// configured by the BIOS
