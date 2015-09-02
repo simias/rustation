@@ -201,9 +201,8 @@ impl Gpu {
 
     /// Return the current phase of the GPU dotclock relative to the
     /// CPU clock
-    /// XXX bad: this is not the correct phase , it's the GPU clock
     pub fn dotclock_phase(&self) -> FracCycles {
-        FracCycles::from_cycles(self.gpu_clock_phase as Cycles)
+        panic!("GPU dotclock phase not implemented");
     }
 
     /// Return the period of the HSync signal in CPU clock periods
