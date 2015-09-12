@@ -34,7 +34,7 @@ impl Timers {
                                  val: T) {
 
         if T::width() != AccessWidth::Word &&
-           T::width() != AccessWidth::Halfword {
+           T::width() != AccessWidth::HalfWord {
             panic!("Unhandled {:?} timer store", T::width());
         }
 
@@ -66,7 +66,7 @@ impl Timers {
                                 offset: u32) -> T {
 
         if T::width() != AccessWidth::Word &&
-           T::width() != AccessWidth::Halfword {
+           T::width() != AccessWidth::HalfWord {
             panic!("Unhandled {:?} timer load", T::width());
         }
 

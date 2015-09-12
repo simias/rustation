@@ -12,6 +12,8 @@ use self::interrupts::InterruptState;
 use timekeeper::{TimeKeeper, Peripheral};
 use gpu::Gpu;
 use cdrom::CdRom;
+use padmemcard::PadMemCard;
+use padmemcard::gamepad;
 
 /// Global interconnect
 pub struct Interconnect {
@@ -30,6 +32,8 @@ pub struct Interconnect {
     cache_control: CacheControl,
     /// CDROM controller
     cdrom: CdRom,
+    /// Gamepad and memory card controller
+    pad_memcard: PadMemCard,
 }
 
 impl Interconnect {
@@ -43,12 +47,17 @@ impl Interconnect {
             timers: Timers::new(),
             cache_control: CacheControl(0),
             cdrom: CdRom::new(),
+            pad_memcard: PadMemCard::new(),
         }
     }
 
     pub fn sync(&mut self, tk: &mut TimeKeeper) {
         if tk.needs_sync(Peripheral::Gpu) {
             self.gpu.sync(tk, &mut self.irq_state);
+        }
+
+        if tk.needs_sync(Peripheral::PadMemCard) {
+            self.pad_memcard.sync(tk, &mut self.irq_state);
         }
 
         self.timers.sync(tk, &mut self.irq_state);
@@ -60,6 +69,10 @@ impl Interconnect {
 
     pub fn irq_state(&self) -> InterruptState {
         self.irq_state
+    }
+
+    pub fn pad_profiles(&mut self) -> [&mut gamepad::Profile; 2] {
+        self.pad_memcard.pad_profiles()
     }
 
     /// Interconnect: load instruction at `PC`. Only the RAM and BIOS
@@ -83,6 +96,11 @@ impl Interconnect {
     pub fn load<T: Addressable>(&mut self,
                                 tk: &mut TimeKeeper,
                                 addr: u32) -> T {
+        // XXX Average RAM load delay, needs to do per-device tests
+        // XXX This does not take the CPU pipelining into account so
+        // it might be a little too slow in some cases actually.
+        tk.tick(5);
+
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
@@ -125,9 +143,8 @@ impl Interconnect {
             return Addressable::from_u32(0);
         }
 
-        if let Some(_) = map::JOY_MEMCARD.contains(abs_addr) {
-            println!("Unhandled read from PIO register {:08x}", abs_addr);
-            return Addressable::from_u32(!0);
+        if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
+            return self.pad_memcard.load(tk, &mut self.irq_state, offset);
         }
 
         if let Some(_) = map::EXPANSION_1.contains(abs_addr) {
@@ -191,9 +208,8 @@ impl Interconnect {
             return;
         }
 
-        if let Some(_) = map::JOY_MEMCARD.contains(abs_addr) {
-            println!("Unhandled write to Joy/memcard register {:08x}: {:04x}",
-                     abs_addr, val.as_u32());
+        if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
+            self.pad_memcard.store(tk, &mut self.irq_state, offset, val);
             return;
         }
 
@@ -476,7 +492,7 @@ impl CacheControl {
 #[derive(PartialEq,Eq,Debug)]
 pub enum AccessWidth {
     Byte = 1,
-    Halfword = 2,
+    HalfWord = 2,
     Word = 4,
 }
 
@@ -520,7 +536,7 @@ impl Addressable for u8 {
 
 impl Addressable for u16 {
     fn width() -> AccessWidth {
-        AccessWidth::Halfword
+        AccessWidth::HalfWord
     }
 
     fn from_u32(v: u32) -> u16 {
@@ -592,8 +608,8 @@ mod map {
     /// Memory latency and expansion mapping
     pub const MEM_CONTROL: Range = Range(0x1f801000, 36);
 
-    /// Joystick and memory card controller
-    pub const JOY_MEMCARD: Range = Range(0x1f801040, 32);
+    /// Gamepad and memory card controller
+    pub const PAD_MEMCARD: Range = Range(0x1f801040, 32);
 
     /// Register that has something to do with RAM configuration,
     /// configured by the BIOS

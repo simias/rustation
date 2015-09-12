@@ -8,6 +8,7 @@ use self::gte::Gte;
 use memory::{Interconnect, Addressable, AccessWidth};
 use timekeeper::TimeKeeper;
 use debugger::Debugger;
+use padmemcard::gamepad;
 
 /// CPU state
 pub struct Cpu {
@@ -337,6 +338,10 @@ impl Cpu {
         self.pc = pc;
         self.next_pc = self.pc.wrapping_add(4);
         self.delay_slot = false;
+    }
+
+    pub fn pad_profiles(&mut self) -> [&mut gamepad::Profile; 2] {
+        self.inter.pad_profiles()
     }
 
     /// Decode `instruction`'s opcode and run the function
@@ -1517,3 +1522,6 @@ impl ICacheLine {
         self.line[index as usize] = instruction;
     }
 }
+
+/// Playstation CPU clock in MHz
+pub const CPU_FREQ_MHZ: f32 = 33.8685f32;

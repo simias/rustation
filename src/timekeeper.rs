@@ -11,7 +11,7 @@ pub struct TimeKeeper {
     /// Next time a peripheral needs an update
     next_sync: Cycles,
     /// Time sheets for keeping track of the various peripherals
-    timesheets: [TimeSheet; 4],
+    timesheets: [TimeSheet; 5],
 }
 
 impl TimeKeeper {
@@ -19,7 +19,7 @@ impl TimeKeeper {
         TimeKeeper {
             now: 0,
             next_sync: Cycles::max_value(),
-            timesheets: [TimeSheet::new(); 4],
+            timesheets: [TimeSheet::new(); 5],
         }
     }
 
@@ -111,9 +111,12 @@ impl TimeSheet {
 pub enum Peripheral {
     /// Graphics Processing Unit
     Gpu,
+    /// Timers
     Timer0,
     Timer1,
     Timer2,
+    /// Gamepad/Memory Card controller
+    PadMemCard,
 }
 
 /// 64bit timestamps will wrap in roughly 17271 years with a CPU clock

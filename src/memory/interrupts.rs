@@ -13,6 +13,8 @@ pub enum Interrupt {
     Timer1 = 5,
     /// Timer2 interrupt
     Timer2 = 6,
+    /// Gamepad and Memory Card controller interrupt
+    PadMemCard = 7,
 }
 
 #[derive(Clone,Copy)]
@@ -39,12 +41,12 @@ impl InterruptState {
     }
 
     pub fn status(self) -> u16 {
-        self.status
+         self.status
     }
 
     /// Acknowledge interrupts by writing 0 to the corresponding bit
     pub fn ack(&mut self, ack: u16) {
-        self.status &= ack;
+         self.status &= ack;
     }
 
     pub fn mask(self) -> u16 {
@@ -59,7 +61,8 @@ impl InterruptState {
                           Interrupt::Dma,
                           Interrupt::Timer0,
                           Interrupt::Timer1,
-                          Interrupt::Timer2];
+                          Interrupt::Timer2,
+                          Interrupt::PadMemCard];
 
         let rem = supported.iter().fold(mask,
                                         |mask, &it| mask & !(1 << it as u16));
