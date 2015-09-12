@@ -45,15 +45,16 @@ Playstation. We'll see if this turns out to be a good idea...
 * DMA
 * Debugger
 * CDROM controller (mostly placeholder code)
+* Gamepad controller (only digital pad for now)
 
 ## Todo list
 
-* Gamepad controller
 * CDROM support to boot up an actual game
 * GTE
 * Most of the GPU
 * MDEC
 * SPU
+* Memory card
 * More accurate timings
 * Many, many other things...
 
