@@ -250,11 +250,9 @@ impl PadMemCard {
 
         self.bus = BusState::Transfer(response, dsr, tx_duration);
 
-        if self.dsr_it {
-            // XXX For now pretend that the DSR pulse follows
-            // immediately after the last byte, probably not accurate.
-            tk.set_next_sync_delta(Peripheral::PadMemCard, tx_duration);
-        }
+        // XXX For now pretend that the DSR pulse follows
+        // immediately after the last byte, probably not accurate.
+        tk.set_next_sync_delta(Peripheral::PadMemCard, tx_duration);
     }
 
     fn stat(&self) -> u32 {
