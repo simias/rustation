@@ -148,12 +148,19 @@ impl Cpu {
         let pc = self.current_pc;
         let cc = self.inter.cache_control();
 
-        // KSEG1 region is never cached
-        let kseg1 = (pc & 0xe0000000) == 0xa0000000;
+        // KUSEG and KSEG0 regions are cached. KSEG1 is uncached and
+        // KSEG2 doesn't contain any code
+        let cached = pc < 0xa0000000;
 
-        if !kseg1 && cc.icache_enabled() {
-            // Cache tag: bits [31:12]
-            let tag  = pc & 0xfffff000;
+        if cached && cc.icache_enabled() {
+            // The MSB is ignored: running from KUSEG or KSEG0 hits
+            // the same cachelines. So for instance addresses
+            // 0x00000000 and 0x80000000 have the same tag and you can
+            // jump from one to the other without having to reload the
+            // cache.
+
+            // Cache tag: bits [30:12]
+            let tag  = pc & 0x7ffff000;
             // Cache line "bucket": bits [11:4]
             let line = (pc >> 4) & 0xff;
             // Index in the cache line: bits [3:2]
@@ -190,6 +197,13 @@ impl Cpu {
             // Cache line is now guaranteed to be valid
             line.instruction(index)
         } else {
+            // XXX Apparently pointing the PC to KSEG2 causes a bus
+            // error no matter what, even if you point it at some
+            // valid register address (like the "cache control"
+            // register). Not like it should happen anyway, there's
+            // nowhere to put code in KSEG2, only a bunch of
+            // registers.
+
             // Cache disabled, fetch directly from memory. Takes 4
             // cycles on average.
             self.tk.tick(4);
