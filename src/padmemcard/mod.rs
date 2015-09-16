@@ -263,9 +263,7 @@ impl PadMemCard {
         stat |= (self.rx_not_empty as u32) << 1;
         // RX parity error should always be 0 in our case.
         stat |= 0 << 3;
-        // XXX Since we don't emulate joystick timings properly we're
-        // going to pretend the ack line (active low) is always high.
-        stat |= 0 << 7;
+        stat |= (self.dsr as u32) << 7;
         stat |= (self.interrupt as u32) << 9;
         // XXX needs to add the baudrate counter in bits [31:11];
         stat |= 0 << 11;
