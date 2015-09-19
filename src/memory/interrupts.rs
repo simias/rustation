@@ -1,4 +1,4 @@
-/// The Playstation supports 10 interrupts
+/// The PlayStation supports 10 interrupts
 #[derive(Clone, Copy, Debug)]
 pub enum Interrupt {
     /// Display in vertical blanking

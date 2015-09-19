@@ -488,7 +488,7 @@ impl CacheControl {
     }
 }
 
-/// Types of access supported by the Playstation architecture
+/// Types of access supported by the PlayStation architecture
 #[derive(PartialEq,Eq,Debug)]
 pub enum AccessWidth {
     Byte = 1,

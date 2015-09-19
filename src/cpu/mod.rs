@@ -1018,7 +1018,7 @@ impl Cpu {
     /// Return From Exception
     fn op_rfe(&mut self, instruction: Instruction) {
         // There are other instructions with the same encoding but all
-        // are virtual memory related and the Playstation doesn't
+        // are virtual memory related and the PlayStation doesn't
         // implement them. Still, let's make sure we're not running
         // buggy code.
         if instruction.0 & 0x3f != 0b010000 {
@@ -1028,7 +1028,7 @@ impl Cpu {
         self.cop0.return_from_exception();
     }
 
-    /// Coprocessor 1 opcode (does not exist on the Playstation)
+    /// Coprocessor 1 opcode (does not exist on the PlayStation)
     fn op_cop1(&mut self, _: Instruction) {
         self.exception(Exception::CoprocessorError);
     }
@@ -1057,7 +1057,7 @@ impl Cpu {
         self.gte.set_control(cop_r, v);
     }
 
-    /// Coprocessor 3 opcode (does not exist on the Playstation)
+    /// Coprocessor 3 opcode (does not exist on the PlayStation)
     fn op_cop3(&mut self, _: Instruction) {
         self.exception(Exception::CoprocessorError);
     }
@@ -1537,5 +1537,5 @@ impl ICacheLine {
     }
 }
 
-/// Playstation CPU clock in MHz
+/// PlayStation CPU clock in MHz
 pub const CPU_FREQ_MHZ: f32 = 33.8685f32;

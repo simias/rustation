@@ -1,9 +1,9 @@
-[![Build Status](https://travis-ci.org/simias/psx-rs.svg)]
-(https://travis-ci.org/simias/psx-rs)
+[![Build Status](https://travis-ci.org/simias/rustation.svg)]
+(https://travis-ci.org/simias/rustation)
 
-# psx-rs
+# Rustation PlayStation emulator
 
-Playstation emulator in the Rust programing language.
+PlayStation emulator in the Rust programing language.
 
 The focus of this emulator is to write code that's clean, accurate and
 hopefully easy to understand. There's no plugin infrastructure, the
@@ -33,7 +33,7 @@ not clear or properly commented don't hesitate to fill an issue.
 
 I also created a [/psx/ board on 8chan](https://8ch.net/psx/) if you
 prefer something less formal to discuss this emulator and all things
-Playstation. We'll see if this turns out to be a good idea...
+PlayStation. We'll see if this turns out to be a good idea...
 
 ## Currently implemented (even partially)
 
@@ -62,7 +62,7 @@ Playstation. We'll see if this turns out to be a good idea...
 
 You'll need [Rust and its package manager Cargo]
 (https://www.rust-lang.org/),
-[SDL2](https://www.libsdl.org/download-2.0.php) and a Playstation
+[SDL2](https://www.libsdl.org/download-2.0.php) and a PlayStation
 BIOS. The emulator is mainly tested with BIOS version `SCPH1001` whose
 SHA-1 is `10155d8d6e6e832d6ea66db9bc098321fb5e8ebf`.
 
