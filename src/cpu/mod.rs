@@ -430,7 +430,7 @@ impl Cpu {
             0b101110 => self.op_swr(instruction, debugger),
             0b110000 => self.op_lwc0(instruction),
             0b110001 => self.op_lwc1(instruction),
-            0b110010 => self.op_lwc2(instruction),
+            0b110010 => self.op_lwc2(instruction, debugger),
             0b110011 => self.op_lwc3(instruction),
             0b111000 => self.op_swc0(instruction),
             0b111001 => self.op_swc1(instruction),
@@ -1041,9 +1041,17 @@ impl Cpu {
         // it seems that one has to wait at least two cycles (tested
         // with two nops) after raising the flag in the status
         // register before the GTE can be accessed.
-        match instruction.cop_opcode() {
-            0b00110 => self.op_ctc2(instruction),
-            _       => panic!("unhandled GTE instruction {}", instruction),
+
+        let cop_opcode = instruction.cop_opcode();
+
+        if cop_opcode & 0x10 != 0 {
+            // GTE command
+            self.gte.command(instruction.0);
+        } else {
+            match cop_opcode {
+                0b00110 => self.op_ctc2(instruction),
+                _       => panic!("unhandled GTE instruction {}", instruction),
+            }
         }
     }
 
@@ -1355,8 +1363,24 @@ impl Cpu {
     }
 
     /// Load Word in Coprocessor 2
-    fn op_lwc2(&mut self, instruction: Instruction) {
-        panic!("unhandled GTE LWC: {}", instruction);
+    fn op_lwc2(&mut self,
+               instruction: Instruction,
+               debugger: &mut Debugger) {
+        let i = instruction.imm_se();
+        let cop_r = instruction.t().0;
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        // Address must be 32bit aligned
+        if addr % 4 == 0 {
+            let v = self.load(addr, debugger);
+
+            // Send to coprocessor
+            self.gte.set_data(cop_r, v);
+        } else {
+            self.exception(Exception::LoadAddressError);
+        }
     }
 
     /// Load Word in Coprocessor 3
