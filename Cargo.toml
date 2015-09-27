@@ -1,6 +1,6 @@
 [package]
 
-name = "psx-rs"
+name = "rustation"
 version = "0.0.1"
 authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
 

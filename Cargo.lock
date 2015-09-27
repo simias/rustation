@@ -1,5 +1,5 @@
 [root]
-name = "psx-rs"
+name = "rustation"
 version = "0.0.1"
 dependencies = [
  "gl 0.0.12 (registry+https://github.com/rust-lang/crates.io-index)",
