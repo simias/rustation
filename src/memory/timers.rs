@@ -107,9 +107,11 @@ impl Timers {
         if tk.needs_sync(Peripheral::Timer0) {
             self.timers[0].sync(tk, irq_state);
         }
+
         if tk.needs_sync(Peripheral::Timer1) {
             self.timers[1].sync(tk, irq_state);
         }
+
         if tk.needs_sync(Peripheral::Timer2) {
             self.timers[2].sync(tk, irq_state);
         }

@@ -12,6 +12,7 @@ use self::interrupts::InterruptState;
 use timekeeper::{TimeKeeper, Peripheral};
 use gpu::Gpu;
 use cdrom::CdRom;
+use cdrom::disc::Disc;
 use padmemcard::PadMemCard;
 use padmemcard::gamepad;
 
@@ -37,7 +38,7 @@ pub struct Interconnect {
 }
 
 impl Interconnect {
-    pub fn new(bios: Bios, gpu: Gpu) -> Interconnect {
+    pub fn new(bios: Bios, gpu: Gpu, disc: Option<Disc>) -> Interconnect {
         Interconnect {
             irq_state: InterruptState::new(),
             bios: bios,
@@ -46,7 +47,7 @@ impl Interconnect {
             gpu: gpu,
             timers: Timers::new(),
             cache_control: CacheControl(0),
-            cdrom: CdRom::new(),
+            cdrom: CdRom::new(disc),
             pad_memcard: PadMemCard::new(),
         }
     }
@@ -61,6 +62,10 @@ impl Interconnect {
         }
 
         self.timers.sync(tk, &mut self.irq_state);
+
+        if tk.needs_sync(Peripheral::CdRom) {
+            self.cdrom.sync(tk, &mut self.irq_state);
+        }
     }
 
     pub fn cache_control(&self) -> CacheControl {
@@ -460,6 +465,7 @@ impl Interconnect {
                             println!("DMA GPU READ");
                             0
                         }
+                        Port::CdRom => self.cdrom.dma_read_word(),
                         _ => panic!("Unhandled DMA source port {:?}", port),
                     };
 

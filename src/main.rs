@@ -20,22 +20,54 @@ use memory::bios::Bios;
 use debugger::Debugger;
 use padmemcard::gamepad;
 use padmemcard::gamepad::{Button, ButtonState};
+use cdrom::disc::{Disc, Region};
 
 use sdl2::event::{Event, EventPump};
 use sdl2::keycode::KeyCode;
 use sdl2::{joystick, controller};
 
+// Allow dead code so that "cargo test" won't yell at us...
+#[allow(dead_code)]
 fn main() {
     let argv: Vec<_> = std::env::args().collect();
 
     if argv.len() < 2 {
-        println!("Usage: {} <BIOS-file>", argv[0]);
+        println!("Usage: {} <BIOS-file> [CDROM-bin-file]", argv[0]);
         println!("Recommended BIOS: SCPH1001.BIN");
         return;
     }
 
-
     let bios = Bios::new(&Path::new(&argv[1])).unwrap();
+
+    let (disc, video_standard) =
+        if argv.len() > 2 {
+            let disc_path = &Path::new(&argv[2]);
+
+            match Disc::from_path(disc_path) {
+                Ok(disc) => {
+                    let region = disc.region();
+
+                    println!("Disc region: {:?}", region);
+
+                    let video_standard =
+                        match region {
+                            Region::Europe => HardwareType::Pal,
+                            Region::NorthAmerica => HardwareType::Ntsc,
+                            Region::Japan => HardwareType::Ntsc,
+                        };
+
+                    (Some(disc), video_standard)
+                }
+                Err(e) => {
+                    println!("Bad disc: {}", e);
+                    return;
+                }
+            }
+        } else {
+            // No disc, use region at random. Should probably handle
+            // BIOS regions...
+            (None, HardwareType::Ntsc)
+        };
 
     // We must initialize SDL before the interconnect is created since
     // it contains the GPU and the GPU needs to create a window
@@ -48,8 +80,8 @@ fn main() {
     let _controller = initialize_sdl2_controllers();
 
     let renderer = Renderer::new(&sdl_context);
-    let gpu = Gpu::new(renderer, HardwareType::Ntsc);
-    let inter = Interconnect::new(bios, gpu);
+    let gpu = Gpu::new(renderer, video_standard);
+    let inter = Interconnect::new(bios, gpu, disc);
     let mut cpu = Cpu::new(inter);
 
     let mut debugger = Debugger::new();

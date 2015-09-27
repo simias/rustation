@@ -3,6 +3,23 @@
 //! point representations shifting things around it's probably going
 //! to be a problem sooner or later.
 
+/// List of all peripherals requiring a TimeSheet. The value of the
+/// enum is used as the index in the timesheet table
+#[derive(Clone, Copy, Debug)]
+pub enum Peripheral {
+    /// Graphics Processing Unit
+    Gpu,
+    /// Timers
+    Timer0,
+    Timer1,
+    Timer2,
+    /// Gamepad/Memory Card controller
+    PadMemCard,
+    /// CD-ROM controller
+    CdRom,
+}
+
+
 /// Struct keeping track of the various peripheral's emulation advancement.
 pub struct TimeKeeper {
     /// Counter keeping track of the current date. Unit is a period of
@@ -11,7 +28,7 @@ pub struct TimeKeeper {
     /// Next time a peripheral needs an update
     next_sync: Cycles,
     /// Time sheets for keeping track of the various peripherals
-    timesheets: [TimeSheet; 5],
+    timesheets: [TimeSheet; 6],
 }
 
 impl TimeKeeper {
@@ -19,7 +36,7 @@ impl TimeKeeper {
         TimeKeeper {
             now: 0,
             next_sync: Cycles::max_value(),
-            timesheets: [TimeSheet::new(); 5],
+            timesheets: [TimeSheet::new(); 6],
         }
     }
 
@@ -40,6 +57,22 @@ impl TimeKeeper {
 
         if date < self.next_sync {
             self.next_sync = date;
+        }
+    }
+
+    /// Set next sync *only* if it's closer than what's already
+    /// configured.
+    pub fn set_next_sync_delta_if_closer(&mut self,
+                                         who: Peripheral,
+                                         delta: Cycles) {
+        let date = self.now + delta;
+
+        let timesheet = &mut self.timesheets[who as usize];
+
+        let next_sync = timesheet.next_sync();
+
+        if next_sync > date {
+            timesheet.set_next_sync(date);
         }
     }
 
@@ -96,6 +129,10 @@ impl TimeSheet {
         delta
     }
 
+    fn next_sync(&self) -> Cycles {
+        self.next_sync
+    }
+
     fn set_next_sync(&mut self, when: Cycles) {
         self.next_sync = when;
     }
@@ -103,20 +140,6 @@ impl TimeSheet {
     fn needs_sync(&self, now: Cycles) -> bool {
         self.next_sync <= now
     }
-}
-
-/// List of all peripherals requiring a TimeSheet. The value of the
-/// enum is used as the index in the table
-#[derive(Clone, Copy, Debug)]
-pub enum Peripheral {
-    /// Graphics Processing Unit
-    Gpu,
-    /// Timers
-    Timer0,
-    Timer1,
-    Timer2,
-    /// Gamepad/Memory Card controller
-    PadMemCard,
 }
 
 /// 64bit timestamps will wrap in roughly 17271 years with a CPU clock

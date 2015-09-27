@@ -1538,4 +1538,4 @@ impl ICacheLine {
 }
 
 /// PlayStation CPU clock in MHz
-pub const CPU_FREQ_MHZ: f32 = 33.8685f32;
+pub const CPU_FREQ_HZ: u32 = 33_868_500;

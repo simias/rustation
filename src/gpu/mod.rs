@@ -173,15 +173,18 @@ impl Gpu {
     /// CLOCK_RATIO_FRAC to get a precise fixed point value.
     fn gpu_to_cpu_clock_ratio(&self) -> FracCycles {
         // First we convert the delta into GPU clock periods.
-        // GPU clock in MHz
+        // GPU clock in Hz
         let gpu_clock =
             match self.hardware {
-                HardwareType::Ntsc => 53.69f32,
-                HardwareType::Pal  => 53.20f32,
+                HardwareType::Ntsc => 53_690_000.,
+                HardwareType::Pal  => 53_200_000.,
             };
 
+        // CPU clock in Hz
+        let cpu_clock = ::cpu::CPU_FREQ_HZ as f32;
+
         // Clock ratio shifted 16bits to the left
-        FracCycles::from_f32(gpu_clock / ::cpu::CPU_FREQ_MHZ)
+        FracCycles::from_f32(gpu_clock / cpu_clock)
     }
 
     /// Return the period of the dotclock expressed in CPU clock
