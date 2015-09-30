@@ -488,44 +488,44 @@ impl Gpu {
             // We start a new GP0 command
             let opcode = (val >> 24) & 0xff;
 
-            let (len, method) =
+            let (len, method): (u32, fn(&mut Gpu)) =
                 match opcode {
                     0x00 =>
-                        (1, Gpu::gp0_nop as fn(&mut Gpu)),
+                        (1, Gpu::gp0_nop),
                     0x01 =>
-                        (1, Gpu::gp0_clear_cache as fn(&mut Gpu)),
+                        (1, Gpu::gp0_clear_cache),
                     0x02 =>
-                        (3, Gpu::gp0_fill_rect as fn(&mut Gpu)),
+                        (3, Gpu::gp0_fill_rect),
                     0x28 =>
-                        (5, Gpu::gp0_quad_mono_opaque as fn(&mut Gpu)),
+                        (5, Gpu::gp0_quad_mono_opaque),
                     0x2c =>
-                        (9, Gpu::gp0_quad_texture_blend_opaque as fn(&mut Gpu)),
+                        (9, Gpu::gp0_quad_texture_blend_opaque),
                     0x2f =>
-                        (9, Gpu::gp0_quad_texture_blend_opaque as fn(&mut Gpu)),
+                        (9, Gpu::gp0_quad_texture_blend_opaque),
                     0x2d =>
-                        (9, Gpu::gp0_quad_texture_raw_opaque as fn(&mut Gpu)),
+                        (9, Gpu::gp0_quad_texture_raw_opaque),
                     0x30 =>
-                        (6, Gpu::gp0_triangle_shaded_opaque as fn(&mut Gpu)),
+                        (6, Gpu::gp0_triangle_shaded_opaque),
                     0x38 =>
-                        (8, Gpu::gp0_quad_shaded_opaque as fn(&mut Gpu)),
+                        (8, Gpu::gp0_quad_shaded_opaque),
                     0x65 =>
-                        (4, Gpu::gp0_rect_texture_raw_opaque as fn(&mut Gpu)),
+                        (4, Gpu::gp0_rect_texture_raw_opaque),
                     0xa0 =>
-                        (3, Gpu::gp0_image_load as fn(&mut Gpu)),
+                        (3, Gpu::gp0_image_load),
                     0xc0 =>
-                        (3, Gpu::gp0_image_store as fn(&mut Gpu)),
+                        (3, Gpu::gp0_image_store),
                     0xe1 =>
-                        (1, Gpu::gp0_draw_mode as fn(&mut Gpu)),
+                        (1, Gpu::gp0_draw_mode),
                     0xe2 =>
-                        (1, Gpu::gp0_texture_window as fn(&mut Gpu)),
+                        (1, Gpu::gp0_texture_window),
                     0xe3 =>
-                        (1, Gpu::gp0_drawing_area_top_left as fn(&mut Gpu)),
+                        (1, Gpu::gp0_drawing_area_top_left),
                     0xe4 =>
-                        (1, Gpu::gp0_drawing_area_bottom_right as fn(&mut Gpu)),
+                        (1, Gpu::gp0_drawing_area_bottom_right),
                     0xe5 =>
-                        (1, Gpu::gp0_drawing_offset as fn(&mut Gpu)),
+                        (1, Gpu::gp0_drawing_offset),
                     0xe6 =>
-                        (1, Gpu::gp0_mask_bit_setting as fn(&mut Gpu)),
+                        (1, Gpu::gp0_mask_bit_setting),
                     _    => panic!("Unhandled GP0 command {:08x}", val),
                 };
 

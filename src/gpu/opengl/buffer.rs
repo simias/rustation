@@ -24,45 +24,48 @@ impl<T: Copy + Default> Buffer<T> {
     /// object.
     pub fn new() -> Buffer<T> {
         let mut object = 0;
-        let mut memory;
 
-        unsafe {
-            // Generate the buffer object
-            gl::GenBuffers(1, &mut object);
+        let memory =
+            unsafe {
+                // Generate the buffer object
+                gl::GenBuffers(1, &mut object);
 
-            // Bind it
-            gl::BindBuffer(gl::ARRAY_BUFFER, object);
+                // Bind it
+                gl::BindBuffer(gl::ARRAY_BUFFER, object);
 
-            // Compute the size of the buffer
-            let element_size = size_of::<T>() as GLsizeiptr;
-            let buffer_size = element_size * VERTEX_BUFFER_LEN as GLsizeiptr;
+                // Compute the size of the buffer
+                let element_size = size_of::<T>() as GLsizeiptr;
+                let buffer_size = element_size *
+                    VERTEX_BUFFER_LEN as GLsizeiptr;
 
-            // Write only persistent mapping. Not coherent!
-            let access = gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT;
+                // Write only persistent mapping. Not coherent!
+                let access = gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT;
 
-            // Allocate buffer memory
-            gl::BufferStorage(gl::ARRAY_BUFFER,
-                              buffer_size,
-                              ptr::null(),
-                              access);
+                // Allocate buffer memory
+                gl::BufferStorage(gl::ARRAY_BUFFER,
+                                  buffer_size,
+                                  ptr::null(),
+                                  access);
 
-            // Remap the entire buffer
-            memory = gl::MapBufferRange(gl::ARRAY_BUFFER,
-                                        0,
-                                        buffer_size,
-                                        access) as *mut T;
+                // Remap the entire buffer
+                let memory = gl::MapBufferRange(gl::ARRAY_BUFFER,
+                                            0,
+                                            buffer_size,
+                                            access) as *mut T;
 
-            check_for_errors();
+                check_for_errors();
 
-            // Reset the buffer to 0 to avoid hard-to-reproduce bugs
-            // if we do something wrong with unitialized memory
-            let s = slice::from_raw_parts_mut(memory,
-                                              VERTEX_BUFFER_LEN as usize);
+                // Reset the buffer to 0 to avoid hard-to-reproduce bugs
+                // if we do something wrong with unitialized memory
+                let s = slice::from_raw_parts_mut(memory,
+                                                  VERTEX_BUFFER_LEN as usize);
 
-            for x in s.iter_mut() {
-                *x = Default::default();
-            }
-        }
+                for x in s.iter_mut() {
+                    *x = Default::default();
+                }
+
+                memory
+            };
 
         Buffer {
             object: object,

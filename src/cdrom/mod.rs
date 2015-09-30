@@ -462,17 +462,17 @@ impl CdRom {
         // TODO: is this really accurate? Need to run more tests.
         self.response.clear();
 
-        let handler =
+        let handler: fn (&mut CdRom) -> CommandState =
             match cmd {
-                0x01 => CdRom::cmd_get_stat as fn (&mut CdRom) -> CommandState,
-                0x02 => CdRom::cmd_set_loc as fn (&mut CdRom) -> CommandState,
-                0x06 => CdRom::cmd_read_n as fn (&mut CdRom) -> CommandState,
-                0x09 => CdRom::cmd_pause as fn (&mut CdRom) -> CommandState,
-                0x0e => CdRom::cmd_set_mode as fn (&mut CdRom) -> CommandState,
-                0x15 => CdRom::cmd_seek_l as fn (&mut CdRom) -> CommandState,
-                0x1a => CdRom::cmd_get_id as fn (&mut CdRom) -> CommandState,
-                0x1e => CdRom::cmd_read_toc as fn (&mut CdRom) -> CommandState,
-                0x19 => CdRom::cmd_test as fn (&mut CdRom) -> CommandState,
+                0x01 => CdRom::cmd_get_stat,
+                0x02 => CdRom::cmd_set_loc,
+                0x06 => CdRom::cmd_read_n,
+                0x09 => CdRom::cmd_pause,
+                0x0e => CdRom::cmd_set_mode,
+                0x15 => CdRom::cmd_seek_l,
+                0x1a => CdRom::cmd_get_id,
+                0x1e => CdRom::cmd_read_toc,
+                0x19 => CdRom::cmd_test,
                 _    => panic!("Unhandled CDROM command 0x{:02x} {:?}",
                                cmd, self.params),
             };

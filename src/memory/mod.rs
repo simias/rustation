@@ -419,7 +419,7 @@ impl Interconnect {
 
         let increment = match channel.step() {
             Step::Increment =>  4,
-            Step::Decrement => -4,
+            Step::Decrement => -4i32 as u32,
         };
 
         let mut addr = channel.base();
