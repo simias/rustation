@@ -62,9 +62,9 @@ impl Disc {
         let sector = try!(self.read_data_sector(msf));
 
         // On the discs I've tried we always have an ASCII license
-        // string in the first 112 bytes. I hope it's always like
+        // string in the first 76 data bytes. I hope it's always like
         // that...
-        let license_blob = &sector.bytes()[0..112];
+        let license_blob = &sector.data_bytes()[0..76];
 
         // There are spaces everywhere in the string (including in the
         // middle of some words), let's clean it up and convert to a
@@ -158,6 +158,11 @@ impl XaSector {
 
         // XXX handle out of bounds indexes?
         self.raw[index]
+    }
+
+    /// Return the sector data as a byte slice
+    fn data_bytes(&self) -> &[u8] {
+        &self.raw[self.data_offset as usize ..]
     }
 
     /// Validate CD-ROM XA Mode 1 or 2 sector
@@ -280,11 +285,6 @@ impl XaSector {
         Msf::from_bcd(self.raw[12],
                       self.raw[13],
                       self.raw[14])
-    }
-
-    /// Return the raw sector as a byte slice
-    fn bytes(&self) -> &[u8] {
-        &self.raw
     }
 }
 
