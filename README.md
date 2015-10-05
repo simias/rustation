@@ -3,6 +3,8 @@
 
 # Rustation PlayStation emulator
 
+![Rustation logo](https://raw.githubusercontent.com/wiki/simias/rustation/images/logo.png)
+
 PlayStation emulator in the Rust programing language.
 
 The focus of this emulator is to write code that's clean, accurate and
@@ -37,20 +39,19 @@ PlayStation. We'll see if this turns out to be a good idea...
 
 ## Currently implemented (even partially)
 
-* CPU (except for the GTE coprocessor)
+* CPU
+* Basic GTE support (ported from mednafen, missing many commands)
 * Instruction cache
 * Interrupts
 * Very basic GPU (enough to display the BIOS without textures)
 * Timers
 * DMA
 * Debugger
-* CDROM controller (mostly placeholder code)
+* CDROM controller (missing many commands)
 * Gamepad controller (only digital pad for now)
 
 ## Todo list
 
-* CDROM support to boot up an actual game
-* GTE
 * Most of the GPU
 * MDEC
 * SPU

@@ -17,3 +17,4 @@ before_script:
   - cargo -V
 script:
   - cargo build -v
+  - cargo test

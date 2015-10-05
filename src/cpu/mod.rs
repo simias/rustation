@@ -434,7 +434,7 @@ impl Cpu {
             0b110011 => self.op_lwc3(instruction),
             0b111000 => self.op_swc0(instruction),
             0b111001 => self.op_swc1(instruction),
-            0b111010 => self.op_swc2(instruction),
+            0b111010 => self.op_swc2(instruction, debugger),
             0b111011 => self.op_swc3(instruction),
             _        => self.op_illegal(instruction),
         }
@@ -1046,14 +1046,49 @@ impl Cpu {
 
         if cop_opcode & 0x10 != 0 {
             // GTE command
+            // XXX handle GTE command duration
             self.gte.command(instruction.0);
         } else {
             match cop_opcode {
+                0b00000 => self.op_mfc2(instruction),
+                0b00010 => self.op_cfc2(instruction),
+                0b00100 => self.op_mtc2(instruction),
                 0b00110 => self.op_ctc2(instruction),
                 _       => panic!("unhandled GTE instruction {}", instruction),
             }
         }
     }
+
+    /// Move From Coprocessor 2 Data register
+    fn op_mfc2(&mut self, instruction: Instruction) {
+        let cpu_r = instruction.t();
+        let cop_r = instruction.d().0;
+
+        let v = self.gte.data(cop_r);
+
+        self.load = (cpu_r, v)
+    }
+
+    /// Move From Coprocessor 2 Control register
+    fn op_cfc2(&mut self, instruction: Instruction) {
+        let cpu_r = instruction.t();
+        let cop_r = instruction.d().0;
+
+        let v = self.gte.control(cop_r);
+
+        self.load = (cpu_r, v)
+    }
+
+    /// Move To Coprocessor 2 Data register
+    fn op_mtc2(&mut self, instruction: Instruction) {
+        let cpu_r = instruction.t();
+        let cop_r = instruction.d().0;
+
+        let v = self.reg(cpu_r);
+
+        self.gte.set_data(cop_r, v);
+    }
+
 
     /// Move To Coprocessor 2 Control register
     fn op_ctc2(&mut self, instruction: Instruction) {
@@ -1402,8 +1437,22 @@ impl Cpu {
     }
 
     /// Store Word in Coprocessor 2
-    fn op_swc2(&mut self, instruction: Instruction) {
-        panic!("unhandled GTE SWC: {}", instruction);
+    fn op_swc2(&mut self,
+               instruction: Instruction,
+               debugger: &mut Debugger) {
+        let i = instruction.imm_se();
+        let cop_r = instruction.t().0;
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+        let v = self.gte.data(cop_r);
+
+        // Address must be 32bit aligned
+        if addr % 4 == 0 {
+            self.store(addr, v, debugger);
+        } else {
+            self.exception(Exception::LoadAddressError);
+        }
     }
 
     /// Store Word in Coprocessor 3

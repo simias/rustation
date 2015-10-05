@@ -486,7 +486,11 @@ impl Gpu {
     pub fn gp0(&mut self, val: u32) {
         if self.gp0_words_remaining == 0 {
             // We start a new GP0 command
-            let opcode = (val >> 24) & 0xff;
+            let opcode = val >> 24;
+
+            if opcode == 0x20 {
+                println!("GPU GP0 {:08x}", val);
+            }
 
             let (len, method): (u32, fn(&mut Gpu)) =
                 match opcode {
@@ -496,6 +500,8 @@ impl Gpu {
                         (1, Gpu::gp0_clear_cache),
                     0x02 =>
                         (3, Gpu::gp0_fill_rect),
+                    0x20 =>
+                        (4, Gpu::gp0_triangle_mono_opaque),
                     0x28 =>
                         (5, Gpu::gp0_quad_mono_opaque),
                     0x2c =>
@@ -508,6 +514,8 @@ impl Gpu {
                         (6, Gpu::gp0_triangle_shaded_opaque),
                     0x38 =>
                         (8, Gpu::gp0_quad_shaded_opaque),
+                    0x64 =>
+                        (4, Gpu::gp0_rect_texture_raw_opaque),
                     0x65 =>
                         (4, Gpu::gp0_rect_texture_raw_opaque),
                     0xa0 =>
@@ -585,6 +593,21 @@ impl Gpu {
 
         self.renderer.push_quad(positions, colors);
     }
+
+    /// GP0(0x20): Monochrome Opaque Triangle
+    fn gp0_triangle_mono_opaque(&mut self) {
+        let positions = [
+            Position::from_gp0(self.gp0_command[1]),
+            Position::from_gp0(self.gp0_command[2]),
+            Position::from_gp0(self.gp0_command[3]),
+            ];
+
+        // Only one color repeated 3 times
+        let colors = [ Color::from_gp0(self.gp0_command[0]); 3];
+
+        self.renderer.push_triangle(positions, colors);
+    }
+
 
     /// GP0(0x28): Monochrome Opaque Quadrilateral
     fn gp0_quad_mono_opaque(&mut self) {
