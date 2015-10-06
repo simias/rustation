@@ -45,6 +45,9 @@ pub struct CdRom {
     rx_active: bool,
     /// Index of the next byte to be read in the RX sector
     rx_index: u16,
+    /// If true we read the whole sector except for the sync bytes (//
+    /// 2340 bytes), otherwise it only reads 0x800 bytes.
+    read_whole_sector: bool,
 }
 
 impl CdRom {
@@ -65,6 +68,7 @@ impl CdRom {
             rx_sector: XaSector::new(),
             rx_active: false,
             rx_index: 0,
+            read_whole_sector: true,
         }
     }
 
@@ -305,6 +309,10 @@ impl CdRom {
 
         println!("CDROM: read sector {}", position);
 
+        if self.read_whole_sector {
+            panic!("Unhandled read whole sector");
+        }
+
         self.rx_sector =
             match self.disc_or_die().read_data_sector(position) {
                 Ok(s) => s,
@@ -468,6 +476,7 @@ impl CdRom {
                 0x02 => CdRom::cmd_set_loc,
                 0x06 => CdRom::cmd_read_n,
                 0x09 => CdRom::cmd_pause,
+                0x0a => CdRom::cmd_init,
                 0x0e => CdRom::cmd_set_mode,
                 0x15 => CdRom::cmd_seek_l,
                 0x1a => CdRom::cmd_get_id,
@@ -628,6 +637,17 @@ impl CdRom {
                                     self.drive_status()]))
     }
 
+    /// Reinitialize the CD ROM controller
+    fn cmd_init(&mut self) -> CommandState {
+        self.on_ack = CdRom::ack_init;
+
+        CommandState::RxPending(58_000,
+                                58_000 + 5401,
+                                IrqCode::Ok,
+                                Fifo::from_bytes(&[
+                                    self.drive_status()]))
+    }
+
     /// Configure the behaviour of the CDROM drive
     fn cmd_set_mode(&mut self) -> CommandState {
         if self.params.len() != 1 {
@@ -639,6 +659,7 @@ impl CdRom {
         let mode = self.params.pop();
 
         self.double_speed = (mode & 0x80) != 0;
+        self.read_whole_sector = (mode & 0x20) != 0;
 
         if mode & 0x7f != 0 {
             panic!("CDROM: unhandled mode: {:02x}", mode);
@@ -833,6 +854,18 @@ impl CdRom {
 
         CommandState::RxPending(2_000_000,
                                 2_000_000 + 1858,
+                                IrqCode::Done,
+                                Fifo::from_bytes(&[
+                                    self.drive_status()]))
+    }
+
+    fn ack_init(&mut self) -> CommandState {
+        self.read_state = ReadState::Idle;
+        self.double_speed = false;
+        self.read_whole_sector = true;
+
+        CommandState::RxPending(2_000_000,
+                                2_000_000 + 1870,
                                 IrqCode::Done,
                                 Fifo::from_bytes(&[
                                     self.drive_status()]))
