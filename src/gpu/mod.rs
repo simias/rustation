@@ -104,6 +104,8 @@ pub struct Gpu {
     display_line_tick: u16,
     /// Hardware type (PAL or NTSC)
     hardware: HardwareType,
+    /// Next word returned by the GPUREAD command
+    read_word: u32,
 }
 
 impl Gpu {
@@ -153,6 +155,7 @@ impl Gpu {
             display_line: 0,
             display_line_tick: 0,
             hardware: hardware,
+            read_word: 0,
         }
     }
 
@@ -478,8 +481,8 @@ impl Gpu {
     /// Retrieve value of the "read" register
     fn read(&self) -> u32 {
         println!("GPUREAD");
-        // Not implemented for now...
-        0
+        // XXX framebuffer read not supported
+        self.read_word
     }
 
     /// Handle writes to the GP0 command register
@@ -837,6 +840,7 @@ impl Gpu {
             0x05 => self.gp1_display_vram_start(val),
             0x06 => self.gp1_display_horizontal_range(val),
             0x07 => self.gp1_display_vertical_range(val, tk, irq_state),
+            0x10 => self.gp1_get_info(val),
             0x08 => {
                 self.gp1_display_mode(val, tk, irq_state);
                 timers.video_timings_changed(tk, irq_state, self);
@@ -949,6 +953,20 @@ impl Gpu {
         self.display_line_end   = ((val >> 10) & 0x3ff) as u16;
 
         self.sync(tk, irq_state);
+    }
+
+    /// Return various GPU state information in the GPUREAD register
+    fn gp1_get_info(&mut self, val: u32) {
+        // XXX what happens if we're in the middle of a framebuffer
+        // read?
+        let v =
+            match val & 0xf {
+                // GPU version. Seems to always be 2?
+                7 => 2,
+                _ => panic!("Unsupported GP1 info command {:08x}", val),
+            };
+
+        self.read_word = v;
     }
 
     /// GP1(0x08): Display Mode
