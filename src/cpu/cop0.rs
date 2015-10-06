@@ -90,7 +90,9 @@ impl Cop0 {
     pub fn return_from_exception(&mut self) {
         let mode = self.sr & 0x3f;
 
-        self.sr &= !0x3f;
+        // Bits [5:4] (the third and last mode in the stack) remains
+        // untouched and is therefore duplicated in the 2nd entry.
+        self.sr &= !0xf;
         self.sr |= mode >> 2;
     }
 
