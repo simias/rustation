@@ -45,8 +45,12 @@ pub struct CdRom {
     rx_active: bool,
     /// Index of the next byte to be read in the RX sector
     rx_index: u16,
-    /// If true we read the whole sector except for the sync bytes (//
-    /// 2340 bytes), otherwise it only reads 0x800 bytes.
+    /// Offset of `rx_index` in the sector buffer
+    rx_offset: u16,
+    /// Index of the last byte to be read in the RX sector
+    rx_len: u16,
+    /// If true we read the whole sector except for the sync bytes
+    /// (0x924 bytes), otherwise it only reads 0x800 bytes.
     read_whole_sector: bool,
 }
 
@@ -68,6 +72,8 @@ impl CdRom {
             rx_sector: XaSector::new(),
             rx_active: false,
             rx_index: 0,
+            rx_offset: 0,
+            rx_len: 0,
             read_whole_sector: true,
         }
     }
@@ -268,11 +274,13 @@ impl CdRom {
 
     /// Retreive a single byte from the RX buffer
     fn read_byte(&mut self) -> u8 {
-        if self.rx_index >= 0x800 {
+        if self.rx_index >= self.rx_len {
             panic!("Unhandled CDROM long read");
         }
 
-        let b = self.rx_sector.data_byte(self.rx_index);
+        let pos = self.rx_offset + self.rx_index;
+
+        let b = self.rx_sector.data_byte(pos);
 
         if self.rx_active {
             self.rx_index += 1;
@@ -309,15 +317,21 @@ impl CdRom {
 
         println!("CDROM: read sector {}", position);
 
-        if self.read_whole_sector {
-            panic!("Unhandled read whole sector");
-        }
-
         self.rx_sector =
             match self.disc_or_die().read_data_sector(position) {
                 Ok(s) => s,
                 Err(e) => panic!("Couldn't read sector: {}", e),
             };
+
+        if self.read_whole_sector {
+            // Read the entire sector except for the sync pattern
+            self.rx_offset = 12;
+            self.rx_len = 2340;
+        } else {
+            // Read 2048 bytes after the Mode2 XA sub-header
+            self.rx_offset = 24;
+            self.rx_len = 2048;
+        }
 
         // XXX in reality this should happen roughly 1969 cycles
         // later
@@ -671,7 +685,7 @@ impl CdRom {
         self.double_speed = (mode & 0x80) != 0;
         self.read_whole_sector = (mode & 0x20) != 0;
 
-        if mode & 0x7f != 0 {
+        if mode & 0x5f != 0 {
             panic!("CDROM: unhandled mode: {:02x}", mode);
         }
 

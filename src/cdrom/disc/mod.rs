@@ -62,9 +62,9 @@ impl Disc {
         let sector = try!(self.read_data_sector(msf));
 
         // On the discs I've tried we always have an ASCII license
-        // string in the first 76 data bytes. I hope it's always like
-        // that...
-        let license_blob = &sector.data_bytes()[0..76];
+        // string in the first 76 data bytes (after the header). I
+        // hope it's always like that...
+        let license_blob = &sector.data_bytes()[24..100];
 
         // There are spaces everywhere in the string (including in the
         // middle of some words), let's clean it up and convert to a
@@ -139,30 +139,25 @@ impl Disc {
 pub struct XaSector {
     /// The raw array of 2352 bytes contained in the sector
     raw: [u8; SECTOR_SIZE],
-    /// Offset of the first data byte in the sector (after the
-    /// headers)
-    data_offset: u16,
 }
 
 impl XaSector {
     pub fn new() -> XaSector {
         XaSector {
             raw: [0; SECTOR_SIZE],
-            data_offset: 0,
         }
     }
 
     /// Return payload data byte at `index`
     pub fn data_byte(&self, index: u16) -> u8 {
-        let index = self.data_offset as usize + index as usize;
+        let index = index as usize;
 
-        // XXX handle out of bounds indexes?
         self.raw[index]
     }
 
     /// Return the sector data as a byte slice
     fn data_bytes(&self) -> &[u8] {
-        &self.raw[self.data_offset as usize ..]
+        &self.raw
     }
 
     /// Validate CD-ROM XA Mode 1 or 2 sector
@@ -201,8 +196,8 @@ impl XaSector {
     /// XA spec defines two possible "forms" for this mode 2 data,
     /// there's an 8 byte sub-header at the beginning of the data that
     /// will tell us how to interpret it.
-    fn validate_mode2(mut self) -> io::Result<XaSector> {
-        // Mode 2 sub-header (from the CDi "green book"):
+    fn validate_mode2(self) -> io::Result<XaSector> {
+        // Mode 2 XA sub-header (from the CDi "green book"):
         //
         //   byte 16: File number
         //   byte 17: Channel number
@@ -226,9 +221,6 @@ impl XaSector {
 
             return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
         }
-
-        // Data starts right after the sub-header in both forms
-        self.data_offset = 24;
 
         // Look for form in submode bit 5
         match submode & 0x20 != 0 {
@@ -275,8 +267,7 @@ impl XaSector {
     /// ignore it like the CDi does (or maybe CD-ROM XA doesn't follow
     /// the CDi spec exactly here? Who knows.)
     fn validate_mode2_form2(self) -> io::Result<XaSector> {
-        // XXX todo...
-        panic!("Unhandled Mode 2 Form 2 sector at {}", self.msf());
+        Ok(self)
     }
 
     /// Return the MSF in the sector's header
