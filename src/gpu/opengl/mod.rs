@@ -66,8 +66,18 @@ impl Renderer {
 
         gl::load_with(|s|
                       match sdl2::video::gl_get_proc_address(s) {
-                          None => panic!("Can't get proc address for {}", s),
                           Some(a) => a as *const c_void,
+                          None => {
+                              println!("Can't get OpenGl proc address for {}",
+                                       s);
+                              // Returning a NULL pointer means that
+                              // calling the missing procedure will
+                              // panic. I guess the cleanest way to
+                              // handle this would be to keep a list
+                              // of required procedures and check if
+                              // those are loaded correctly.
+                              ptr::null()
+                          }
                       });
 
         // Clear the window
