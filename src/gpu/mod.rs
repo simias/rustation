@@ -49,6 +49,8 @@ pub struct Gpu {
     drawing_area_right: u16,
     /// Bottom-most line of drawing area
     drawing_area_bottom: u16,
+    /// Drawing offset in the framebuffer
+    drawing_offset: (i16, i16),
     /// Currently displayed field. For progressive output this is
     /// always Top.
     field: Field,
@@ -130,6 +132,7 @@ impl Gpu {
             drawing_area_top: 0,
             drawing_area_right: 0,
             drawing_area_bottom: 0,
+            drawing_offset: (0, 0),
             field: Field::Top,
             texture_disable: false,
             hres: HorizontalRes::from_fields(0, 0),
@@ -805,6 +808,7 @@ impl Gpu {
         let x = ((x << 5) as i16) >> 5;
         let y = ((y << 5) as i16) >> 5;
 
+        self.drawing_offset = (x, y);
         self.renderer.set_draw_offset(x, y);
     }
 
@@ -957,6 +961,26 @@ impl Gpu {
         // read?
         let v =
             match val & 0xf {
+                3 => {
+                    let top = self.drawing_area_top as u32;
+                    let left = self.drawing_area_left as u32;
+
+                    left | (top << 10)
+                }
+                4 => {
+                    let bottom = self.drawing_area_bottom as u32;
+                    let right = self.drawing_area_right as u32;
+
+                    right | (bottom << 10)
+                }
+                5 => {
+                    let (x, y) = self.drawing_offset;
+
+                    let x = (x as u32) & 0x7ff;
+                    let y = (y as u32) & 0x7ff;
+
+                    x | (y << 11)
+                }
                 // GPU version. Seems to always be 2?
                 7 => 2,
                 _ => panic!("Unsupported GP1 info command {:08x}", val),
