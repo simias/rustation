@@ -1,12 +1,10 @@
 use std::ptr;
 
 use sdl2;
-use sdl2::video::{GLAttr, OPENGL, WindowPos};
+use sdl2::video::GLProfile;
 
 use gl;
 use gl::types::{GLint, GLuint, GLubyte, GLshort, GLsizei};
-
-use libc::c_void;
 
 use self::error::check_for_errors;
 use self::shader::{compile_shader, link_program};
@@ -45,40 +43,26 @@ pub struct Renderer {
 impl Renderer {
 
     pub fn new(sdl_context: &sdl2::Sdl) -> Renderer {
-        sdl2::video::gl_set_attribute(GLAttr::GLContextMajorVersion, 3);
-        sdl2::video::gl_set_attribute(GLAttr::GLContextMinorVersion, 3);
+        let video_subsystem = sdl_context.video().unwrap();
+
+        let gl_attr = video_subsystem.gl_attr();
+        gl_attr.set_context_version(3, 3);
+        gl_attr.set_context_profile(GLProfile::Core);
 
         // XXX Debug context is likely to be slower, we should make
         // that configurable at some point.
-        sdl2::video::gl_set_attribute(GLAttr::GLContextFlags,
-                                      sdl2::video::GL_CONTEXT_DEBUG.bits());
+        gl_attr.set_context_flags().debug().set();
 
-        let window = sdl2::video::Window::new(&sdl_context,
-                                              "PSX",
-                                              WindowPos::PosCentered,
-                                              WindowPos::PosCentered,
-                                              1024, 512,
-                                              OPENGL)
-            .ok().expect("Can't create SDL2 window");
+        let window = video_subsystem.window("PSX", 1024, 512)
+                                    .position_centered()
+                                    .opengl()
+                                    .build()
+                                    .ok().expect("Can't create SDL2 window");
 
         let gl_context = window.gl_create_context()
             .ok().expect("Can't create GL context");
 
-        gl::load_with(|s|
-                      match sdl2::video::gl_get_proc_address(s) {
-                          Some(a) => a as *const c_void,
-                          None => {
-                              println!("Can't get OpenGl proc address for {}",
-                                       s);
-                              // Returning a NULL pointer means that
-                              // calling the missing procedure will
-                              // panic. I guess the cleanest way to
-                              // handle this would be to keep a list
-                              // of required procedures and check if
-                              // those are loaded correctly.
-                              ptr::null()
-                          }
-                      });
+        gl::load_with(|s| video_subsystem.gl_get_proc_address(s) );
 
         // Clear the window
         unsafe {
