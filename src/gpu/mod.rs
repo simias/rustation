@@ -491,10 +491,6 @@ impl Gpu {
             // We start a new GP0 command
             let opcode = val >> 24;
 
-            if opcode == 0x20 {
-                println!("GPU GP0 {:08x}", val);
-            }
-
             let (len, method): (u32, fn(&mut Gpu)) =
                 match opcode {
                     0x00 =>
