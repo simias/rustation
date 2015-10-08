@@ -31,6 +31,8 @@ pub struct CdRom {
     disc: Option<(Disc)>,
     /// Target of the next seek command
     seek_target: Msf,
+    /// True if `seek_target` has been set but no seek took place
+    seek_target_pending: bool,
     /// Current read position
     position: Msf,
     /// True if the drive is in double speed mode (2x, 150 sectors per
@@ -67,6 +69,7 @@ impl CdRom {
             on_ack: CdRom::ack_idle,
             disc: disc,
             seek_target: Msf::zero(),
+            seek_target_pending: false,
             position: Msf::zero(),
             double_speed: false,
             rx_sector: XaSector::new(),
@@ -300,6 +303,17 @@ impl CdRom {
 
         // Pack in a little endian word
         b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    }
+
+    fn do_seek(&mut self) {
+        // Make sure we don't end up in track1's pregap, I don't know
+        // if it's ever useful? Needs special handling at least...
+        if self.seek_target < Msf::from_bcd(0x00, 0x02, 0x00) {
+            panic!("Seek to track 1 pregap: {}", self.seek_target);
+        }
+
+        self.position = self.seek_target;
+        self.seek_target_pending = false;
     }
 
     /// Retrieve the current disc or panic if there's none. Used in
@@ -603,6 +617,7 @@ impl CdRom {
         let f = self.params.pop();
 
         self.seek_target = Msf::from_bcd(m, s, f);
+        self.seek_target_pending = true;
 
         match self.disc {
             Some(_) =>
@@ -623,6 +638,11 @@ impl CdRom {
     fn cmd_read_n(&mut self) -> CommandState {
         if !self.read_state.is_idle() {
             panic!("CDROM \"read n\" while we're already reading");
+        }
+
+        if self.seek_target_pending {
+            // XXX That should take some time...
+            self.do_seek();
         }
 
         let read_delay = self.cycles_per_sector();
@@ -698,13 +718,7 @@ impl CdRom {
 
     /// Execute seek. Target is given by previous "set loc" command.
     fn cmd_seek_l(&mut self) -> CommandState {
-        // Make sure we don't end up in track1's pregap, I don't know
-        // if it's ever useful? Needs special handling at least...
-        if self.seek_target < Msf::from_bcd(0x00, 0x02, 0x00) {
-            panic!("Seek to track 1 pregap: {}", self.seek_target);
-        }
-
-        self.position = self.seek_target;
+        self.do_seek();
 
         self.on_ack = CdRom::ack_seek_l;
 
@@ -866,6 +880,8 @@ impl CdRom {
                 None => 11_000,
             };
 
+        self.read_state = ReadState::Idle;
+
         CommandState::RxPending(rx_delay,
                                 rx_delay + 1859,
                                 IrqCode::Done,
@@ -884,6 +900,8 @@ impl CdRom {
     }
 
     fn ack_init(&mut self) -> CommandState {
+        self.position = Msf::zero();
+        self.seek_target = Msf::zero();
         self.read_state = ReadState::Idle;
         self.double_speed = false;
         self.read_whole_sector = true;
