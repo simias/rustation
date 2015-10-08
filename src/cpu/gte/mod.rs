@@ -583,6 +583,20 @@ impl Gte {
             25 => self.mac[1] = val as i32,
             26 => self.mac[2] = val as i32,
             27 => self.mac[3] = val as i32,
+            30 => {
+                self.lzcs = val;
+
+                // If val is negative we count the leading ones,
+                // otherwise we count the leading zeroes.
+                let tmp =
+                    if (val >> 31) & 1 != 0 {
+                        !val
+                    } else {
+                        val
+                    };
+
+                self.lzcr = tmp.leading_zeros() as u8;
+            }
             31 => println!("Write to read-only GTE data register 31"),
             _  => panic!("Unhandled GTE data register {} {:x}", reg, val),
         }
