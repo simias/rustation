@@ -1,6 +1,30 @@
 use super::Gte;
 
 #[test]
+fn gte_lzcr() {
+    let expected = [
+        (0x00000000, 32),
+        (0xffffffff, 32),
+        (0x00000001, 31),
+        (0x80000000, 1),
+        (0x7fffffff, 1),
+        (0xdeadbeef, 2),
+        (0x000c0ffe, 12),
+        (0xfffc0ffe, 14),
+    ];
+
+    let mut gte = Gte::new();
+
+    for &(lzcs, lzcr) in &expected {
+        gte.set_data(30, lzcs);
+
+        let r = gte.data(31);
+
+        assert!(r == lzcr);
+    }
+}
+
+#[test]
 fn gte_ops() {
     for test in TESTS {
         println!("Test: '{}'", test.desc);
