@@ -5,7 +5,7 @@ mod ram;
 mod dma;
 
 use self::bios::Bios;
-use self::ram::Ram;
+use self::ram::{Ram, ScratchPad};
 use self::dma::{Dma, Port, Direction, Step, Sync};
 use self::timers::Timers;
 use self::interrupts::InterruptState;
@@ -23,6 +23,8 @@ pub struct Interconnect {
     bios: Bios,
     /// Main RAM
     ram: Ram,
+    /// ScratchPad
+    scratch_pad: ScratchPad,
     /// DMA registers
     dma: Dma,
     /// Graphics Processor Unit
@@ -44,6 +46,7 @@ impl Interconnect {
             bios: bios,
             ram: Ram::new(),
             dma: Dma::new(),
+            scratch_pad: ScratchPad::new(),
             gpu: gpu,
             timers: Timers::new(),
             cache_control: CacheControl(0),
@@ -112,6 +115,14 @@ impl Interconnect {
             return self.ram.load(offset);
         }
 
+        if let Some(offset) = map::SCRATCH_PAD.contains(abs_addr) {
+            if addr > 0xa0000000 {
+                panic!("ScratchPad access through uncached memory");
+            }
+
+            return self.scratch_pad.load(offset);
+        }
+
         if let Some(offset) = map::BIOS.contains(abs_addr) {
             return self.bios.load(offset);
         }
@@ -171,6 +182,14 @@ impl Interconnect {
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
             return self.ram.store(offset, val);
+        }
+
+        if let Some(offset) = map::SCRATCH_PAD.contains(abs_addr) {
+            if addr > 0xa0000000 {
+                panic!("ScratchPad access through uncached memory");
+            }
+
+            return self.scratch_pad.store(offset, val);
         }
 
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
@@ -604,12 +623,17 @@ mod map {
         addr & REGION_MASK[index]
     }
 
-    pub const RAM: Range = Range(0x00000000, 2 * 1024 * 1024);
+    /// Main RAM: 2MB mirrored four times over the first 8MB (probably
+    /// in case they decided to use a bigger RAM later on?)
+    pub const RAM: Range = Range(0x00000000, 8 * 1024 * 1024);
 
     /// Expansion region 1
     pub const EXPANSION_1: Range = Range(0x1f000000, 512 * 1024);
 
     pub const BIOS: Range = Range(0x1fc00000, 512 * 1024);
+
+    /// ScratchPad: data cache used as a fast 1kB RAM
+    pub const SCRATCH_PAD: Range = Range(0x1f800000, 1024);
 
     /// Memory latency and expansion mapping
     pub const MEM_CONTROL: Range = Range(0x1f801000, 36);

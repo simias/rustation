@@ -6,8 +6,10 @@ use super::Addressable;
 
 /// BIOS image
 pub struct Bios {
-    /// BIOS memory
-    data: Vec<u8>
+    /// BIOS memory. Boxed in order not to overflow the stack at the
+    /// construction site. Might change once "placement new" is
+    /// available.
+    data: Box<[u8; BIOS_SIZE]>,
 }
 
 impl Bios {
@@ -15,18 +17,29 @@ impl Bios {
     /// Load a BIOS image from the file located at `path`
     pub fn new(path: &Path) -> Result<Bios> {
 
-        let file = try!(File::open(path));
-
-        let mut data = Vec::new();
+        let mut file = try!(File::open(path));
 
         // Load the BIOS
-        try!(file.take(BIOS_SIZE).read_to_end(&mut data));
+        let mut data = Box::new([0; BIOS_SIZE]);
+        let mut nread = 0;
 
-        if data.len() == BIOS_SIZE as usize {
-            Ok(Bios { data: data })
-        } else {
-            Err(Error::new(ErrorKind::InvalidInput, "Invalid BIOS size"))
+        while nread < BIOS_SIZE {
+            nread +=
+                match try!(file.read(&mut data[nread..])) {
+                    0 => return Err(Error::new(ErrorKind::InvalidInput,
+                                               "BIOS file is too small")),
+                    n => n,
+                };
         }
+
+        // Make sure the BIOS file is not too big, it's probably not a
+        // good dump otherwise.
+        if try!(file.read(&mut [0; 1])) != 0 {
+            return Err(Error::new(ErrorKind::InvalidInput,
+                                  "BIOS file is too big"));
+        }
+
+        Ok(Bios { data: data })
     }
 
     /// Fetch the little endian value at `offset`
@@ -44,4 +57,4 @@ impl Bios {
 }
 
 /// BIOS images are always 512KB in length
-const BIOS_SIZE: u64 = 512 * 1024;
+const BIOS_SIZE: usize = 512 * 1024;
