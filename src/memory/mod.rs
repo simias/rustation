@@ -150,12 +150,17 @@ impl Interconnect {
             return self.gpu.load(tk, &mut self.irq_state, offset);
         }
 
+        if let Some(offset) = map::TIMERS.contains(abs_addr) {
+            return self.timers.load(tk, &mut self.irq_state, offset);
+        }
+
         if let Some(offset) = map::CDROM.contains(abs_addr) {
             return self.cdrom.load(tk, &mut self.irq_state, offset);
         }
 
-        if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            return self.timers.load(tk, &mut self.irq_state, offset);
+        if let Some(offset) = map::MDEC.contains(abs_addr) {
+            println!("Unhandled load from MDEC register {:x}", offset);
+            return Addressable::from_u32(0);
         }
 
         if let Some(_) = map::SPU.contains(abs_addr) {
@@ -223,16 +228,21 @@ impl Interconnect {
                                   val);
         }
 
-        if let Some(offset) = map::CDROM.contains(abs_addr) {
-            return self.cdrom.store(tk, &mut self.irq_state, offset, val);
-        }
-
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
             self.timers.store(tk,
                               &mut self.irq_state,
                               &mut self.gpu,
                               offset,
                               val);
+            return;
+        }
+
+        if let Some(offset) = map::CDROM.contains(abs_addr) {
+            return self.cdrom.store(tk, &mut self.irq_state, offset, val);
+        }
+
+        if let Some(offset) = map::MDEC.contains(abs_addr) {
+            println!("Unhandled write to MDEC register {:x}", offset);
             return;
         }
 
@@ -480,6 +490,7 @@ impl Interconnect {
 
                     match port {
                         Port::Gpu => self.gpu.gp0(src_word),
+                        Port::MDecIn => (),
                         _ => panic!("Unhandled DMA destination port {:?}",
                                     port),
                     }
@@ -672,6 +683,8 @@ mod map {
     pub const CDROM: Range = Range(0x1f801800, 0x4);
 
     pub const GPU: Range = Range(0x1f801810, 8);
+
+    pub const MDEC: Range = Range(0x1f801820, 8);
 
     /// SPU registers
     pub const SPU: Range = Range(0x1f801c00, 640);

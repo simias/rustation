@@ -324,9 +324,9 @@ pub enum Sync {
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum Port {
     /// Macroblock decoder input
-    MdecIn = 0,
+    MDecIn = 0,
     /// Macroblock decoder output
-    MdecOut = 1,
+    MDecOut = 1,
     /// Graphics Processing Unit
     Gpu = 2,
     /// CD-ROM drive
@@ -342,8 +342,8 @@ pub enum Port {
 impl Port {
     pub fn from_index(index: u32) -> Port {
         match index {
-            0 => Port::MdecIn,
-            1 => Port::MdecOut,
+            0 => Port::MDecIn,
+            1 => Port::MDecOut,
             2 => Port::Gpu,
             3 => Port::CdRom,
             4 => Port::Spu,
