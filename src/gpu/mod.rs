@@ -516,8 +516,10 @@ impl Gpu {
                         (6, Gpu::gp0_triangle_shaded_opaque),
                     0x38 =>
                         (8, Gpu::gp0_quad_shaded_opaque),
+                    0x60 =>
+                        (3, Gpu::gp0_rect_opaque),
                     0x64 =>
-                        (4, Gpu::gp0_rect_texture_raw_opaque),
+                        (4, Gpu::gp0_rect_texture_blend_opaque),
                     0x65 =>
                         (4, Gpu::gp0_rect_texture_raw_opaque),
                     0xa0 =>
@@ -694,6 +696,42 @@ impl Gpu {
         self.renderer.push_quad(positions, colors);
     }
 
+    /// GP0(0x60): Opaque monochrome rectangle
+    fn gp0_rect_opaque(&mut self) {
+        let top_left = Position::from_gp0(self.gp0_command[1]);
+
+        let size = Position::from_gp0(self.gp0_command[2]);
+
+        let positions = [
+            top_left,
+            Position(top_left.0 + size.0, top_left.1),
+            Position(top_left.0, top_left.1 + size.1),
+            Position(top_left.0 + size.0, top_left.1 + size.1),
+            ];
+
+        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
+
+        self.renderer.push_quad(positions, colors);
+    }
+
+    /// GP0(0x64): Opaque rectange with texture blending
+    fn gp0_rect_texture_blend_opaque(&mut self) {
+        let top_left = Position::from_gp0(self.gp0_command[1]);
+
+        let size = Position::from_gp0(self.gp0_command[3]);
+
+        let positions = [
+            top_left,
+            Position(top_left.0 + size.0, top_left.1),
+            Position(top_left.0, top_left.1 + size.1),
+            Position(top_left.0 + size.0, top_left.1 + size.1),
+            ];
+
+        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
+
+        self.renderer.push_quad(positions, colors);
+    }
+
     /// GP0(0x65): Opaque rectange with raw texture
     fn gp0_rect_texture_raw_opaque(&mut self) {
         let top_left = Position::from_gp0(self.gp0_command[1]);
@@ -707,7 +745,6 @@ impl Gpu {
             Position(top_left.0 + size.0, top_left.1 + size.1),
             ];
 
-        // XXX Needs texture blending
         let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
 
         self.renderer.push_quad(positions, colors);
