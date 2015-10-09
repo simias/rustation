@@ -54,6 +54,8 @@ pub struct CdRom {
     /// If true we read the whole sector except for the sync bytes
     /// (0x924 bytes), otherwise it only reads 0x800 bytes.
     read_whole_sector: bool,
+    /// CDROM audio mixer connected to the SPU
+    mixer: Mixer,
 }
 
 impl CdRom {
@@ -78,6 +80,7 @@ impl CdRom {
             rx_offset: 0,
             rx_len: 0,
             read_whole_sector: true,
+            mixer: Mixer::new(),
         }
     }
 
@@ -152,12 +155,15 @@ impl CdRom {
             1 =>
                 match index {
                     0 => self.command(tk, val),
+                    3 => self.mixer.cd_right_to_spu_right = val,
                     _ => unimplemented(),
                 },
             2 =>
                 match index {
                     0 => self.push_param(val),
                     1 => self.irq_mask(val),
+                    2 => self.mixer.cd_left_to_spu_left = val,
+                    3 => self.mixer.cd_right_to_spu_left = val,
                     _ => unimplemented(),
                 },
             3 =>
@@ -174,6 +180,8 @@ impl CdRom {
                             panic!("Unhandled CDROM 3.1: {:02x}", val);
                         }
                     }
+                    2 => self.mixer.cd_left_to_spu_right = val,
+                    3 => println!("CDROM Mixer apply {:02x}", val),
                     _ => unimplemented(),
                 },
             _ => unimplemented(),
@@ -1056,5 +1064,27 @@ impl Fifo {
         self.read_idx = self.read_idx.wrapping_add(1) & 0x1f;
 
         self.buffer[idx]
+    }
+}
+
+/// CD-DA Audio playback mixer. The CDROM's audio stereo output can be
+/// mixed arbitrarily before reaching the SPU stereo input.
+struct Mixer {
+    cd_left_to_spu_left: u8,
+    cd_left_to_spu_right: u8,
+    cd_right_to_spu_left: u8,
+    cd_right_to_spu_right: u8,
+}
+
+impl Mixer {
+    fn new() -> Mixer {
+        Mixer {
+            // XXX are those the correct reset values? The registers
+            // are write only so it's not straightforward to test.
+            cd_left_to_spu_left: 0,
+            cd_left_to_spu_right: 0,
+            cd_right_to_spu_left: 0,
+            cd_right_to_spu_right: 0,
+        }
     }
 }
