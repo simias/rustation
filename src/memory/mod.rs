@@ -37,6 +37,9 @@ pub struct Interconnect {
     cdrom: CdRom,
     /// Gamepad and memory card controller
     pad_memcard: PadMemCard,
+    /// Contents of the RAM_SIZE register which is probably a
+    /// configuration register for the memory controller.
+    ram_size: u32,
 }
 
 impl Interconnect {
@@ -52,6 +55,7 @@ impl Interconnect {
             cache_control: CacheControl(0),
             cdrom: CdRom::new(disc),
             pad_memcard: PadMemCard::new(),
+            ram_size: 0,
         }
     }
 
@@ -169,6 +173,12 @@ impl Interconnect {
             return Addressable::from_u32(!0);
         }
 
+
+        if let Some(_) = map::RAM_SIZE.contains(abs_addr) {
+            // We ignore writes at this address
+            return Addressable::from_u32(self.ram_size);
+        }
+
         panic!("unhandled load at address {:08x}", addr);
     }
 
@@ -269,7 +279,12 @@ impl Interconnect {
         }
 
         if let Some(_) = map::RAM_SIZE.contains(abs_addr) {
-            // We ignore writes at this address
+
+            if T::width() != AccessWidth::Word {
+                panic!("Unhandled RAM_SIZE access");
+            }
+
+            self.ram_size = val.as_u32();
             return;
         }
 
