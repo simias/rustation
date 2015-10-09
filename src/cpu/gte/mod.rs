@@ -613,6 +613,7 @@ impl Gte {
 
         match opcode {
             0x06 => self.cmd_nclip(),
+            0x12 => self.cmd_mvmva(config),
             0x13 => self.cmd_ncds(config),
             0x2d => self.cmd_avsz3(),
             0x30 => self.cmd_rtpt(config),
@@ -643,6 +644,14 @@ impl Gte {
         let sum = a as i64 + b as i64 + c as i64;
 
         self.mac[0] = self.i64_to_i32_result(sum);
+    }
+
+    /// Multiply vector by matrix and add vector
+    fn cmd_mvmva(&mut self, config: CommandConfig) {
+        self.multiply_matrix_by_vector(config,
+                                       config.matrix,
+                                       config.vector_mul,
+                                       config.vector_add);
     }
 
     /// Normal color depth cue single vector
@@ -683,7 +692,7 @@ impl Gte {
         self.depth_queuing(projection_factor);
     }
 
-    fn do_ncd(&mut self, config: CommandConfig, vector_index: usize) {
+    fn do_ncd(&mut self, config: CommandConfig, vector_index: u8) {
 
         self.multiply_matrix_by_vector(config,
                                        Matrix::Light,
@@ -738,8 +747,11 @@ impl Gte {
     fn multiply_matrix_by_vector(&mut self,
                                  config: CommandConfig,
                                  matrix: Matrix,
-                                 vector_index: usize,
+                                 vector_index: u8,
                                  control_vector: ControlVector) {
+
+        let vector_index = vector_index as usize;
+
         if matrix == Matrix::Invalid {
             // This results in a pointless calculation. Mednafen's
             // code has the details, for now I think we can safely
@@ -1085,17 +1097,15 @@ impl Gte {
     }
 }
 
-/// Decoded command fields in GTE command instructions
+/// Decoded command fields in GTE command instructions. Meaning varies
+/// depending on the command used.
 #[derive(Clone, Copy)]
 struct CommandConfig {
-    /// Right shift value applied to intermediate results. Either 0 or
-    /// 12.
     shift: u8,
-    /// If true negative results are clamped to 0
     clamp_negative: bool,
-    /// Which matrix to use for the MVMVA command
     matrix: Matrix,
-    control_vector: ControlVector,
+    vector_mul: u8,
+    vector_add: ControlVector,
 }
 
 impl CommandConfig {
@@ -1109,11 +1119,14 @@ impl CommandConfig {
 
         let clamp_negative = command & (1 << 10) != 0;
 
+        let vector_index = (command >> 15 ) & 3;
+
         CommandConfig {
             shift: shift,
             clamp_negative: clamp_negative,
             matrix: Matrix::from_command(command),
-            control_vector: ControlVector::from_command(command),
+            vector_mul: vector_index as u8,
+            vector_add: ControlVector::from_command(command),
         }
     }
 }
