@@ -379,8 +379,10 @@ impl CdRom {
         r |= (self.params.empty() as u8) << 3;
         r |= (!self.params.full() as u8) << 4;
         r |= (!self.response.empty() as u8) << 5;
-        // TODO: "Data FIFO not empty"
-        r |= 0 << 6;
+
+        let data_available = self.rx_index < self.rx_len;
+
+        r |= (data_available as u8) << 6;
 
         // "Busy" flag
         match self.command_state {
