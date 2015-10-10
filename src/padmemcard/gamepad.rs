@@ -10,12 +10,12 @@ pub struct GamePad {
 
 impl GamePad {
     pub fn new(pad_type: Type) -> GamePad {
-        let profile =
+        let profile: Box<Profile> =
             match pad_type {
                 Type::Disconnected =>
-                    Box::new(DisconnectedProfile) as Box<Profile>,
+                    Box::new(DisconnectedProfile),
                 Type::Digital =>
-                    Box::new(DigitalProfile::new()) as Box<Profile>,
+                    Box::new(DigitalProfile::new()),
             };
 
         GamePad {
