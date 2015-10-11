@@ -11,6 +11,7 @@ use self::timers::Timers;
 use self::interrupts::InterruptState;
 use timekeeper::{TimeKeeper, Peripheral};
 use gpu::Gpu;
+use spu::Spu;
 use cdrom::CdRom;
 use cdrom::disc::Disc;
 use padmemcard::PadMemCard;
@@ -29,6 +30,8 @@ pub struct Interconnect {
     dma: Dma,
     /// Graphics Processor Unit
     gpu: Gpu,
+    /// Sound Processing Unit
+    spu: Spu,
     /// System timers
     timers: Timers,
     /// Cache Control register
@@ -48,9 +51,10 @@ impl Interconnect {
             irq_state: InterruptState::new(),
             bios: bios,
             ram: Ram::new(),
-            dma: Dma::new(),
             scratch_pad: ScratchPad::new(),
+            dma: Dma::new(),
             gpu: gpu,
+            spu: Spu::new(),
             timers: Timers::new(),
             cache_control: CacheControl(0),
             cdrom: CdRom::new(disc),
@@ -163,9 +167,8 @@ impl Interconnect {
             return Addressable::from_u32(0);
         }
 
-        if let Some(_) = map::SPU.contains(abs_addr) {
-            println!("Unhandled read from SPU register {:08x}", abs_addr);
-            return Addressable::from_u32(0);
+        if let Some(offset) = map::SPU.contains(abs_addr) {
+            return self.spu.load(offset);
         }
 
         if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
@@ -196,7 +199,8 @@ impl Interconnect {
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
-            return self.ram.store(offset, val);
+            self.ram.store(offset, val);
+            return;
         }
 
         if let Some(offset) = map::SCRATCH_PAD.contains(abs_addr) {
@@ -217,15 +221,17 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::DMA.contains(abs_addr) {
-            return self.set_dma_reg(offset, val);
+            self.set_dma_reg(offset, val);
+            return;
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.store(tk,
-                                  &mut self.timers,
-                                  &mut self.irq_state,
-                                  offset,
-                                  val);
+            self.gpu.store(tk,
+                           &mut self.timers,
+                           &mut self.irq_state,
+                           offset,
+                           val);
+            return;
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
@@ -246,9 +252,8 @@ impl Interconnect {
             return;
         }
 
-        if let Some(_) = map::SPU.contains(abs_addr) {
-            println!("Unhandled write to SPU register {:08x}: {:04x}",
-                     abs_addr, val.as_u32());
+        if let Some(offset) = map::SPU.contains(abs_addr) {
+            self.spu.store(offset, val);
             return;
         }
 

@@ -26,6 +26,7 @@ mod timekeeper;
 mod debugger;
 mod cdrom;
 mod padmemcard;
+mod spu;
 
 use std::path::Path;
 
