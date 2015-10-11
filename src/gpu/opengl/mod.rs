@@ -215,10 +215,6 @@ impl Renderer {
     /// Draw the buffered commands and reset the buffers
     pub fn draw(&mut self) {
         unsafe {
-            // Make sure all the data from the persistent mappings is
-            // flushed to the buffer
-            gl::MemoryBarrier(gl::CLIENT_MAPPED_BUFFER_BARRIER_BIT);
-
             gl::DrawArrays(gl::TRIANGLES, 0, self.nvertices as GLsizei);
         }
 

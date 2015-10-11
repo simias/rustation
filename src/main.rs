@@ -1,6 +1,9 @@
 extern crate sdl2;
-extern crate gl;
 extern crate libc;
+
+mod gl {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 
 mod cpu;
 mod memory;
