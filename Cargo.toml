@@ -4,6 +4,14 @@ name = "rustation"
 version = "0.0.1"
 authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
 
+description = "A PlayStation emulator"
+homepage = "https://github.com/simias/rustation"
+repository = "https://github.com/simias/rustation"
+documentation = "https://github.com/simias/rustation/wiki"
+readme = "README.md"
+license = "GPL-2.0+"
+keywords = ["emulator", "playstation"]
+
 [dependencies]
 
 libc = "0.1.6"
