@@ -1,17 +1,26 @@
-//! Check for error messages using GL_KHR_debug:
-//! https://www.opengl.org/registry/specs/KHR/debug.txt
-//!
-//! Requires a debug OpenGL!
+//! Check for error messages
 
 use gl;
-use gl::types::{GLenum, GLchar, GLsizei};
 
+#[cfg(not(target_os="macos"))]
+use gl::types::{GLenum, GLchar, GLsizei};
+#[cfg(not(target_os="macos"))]
 use std::str;
+
+#[cfg(target_os="macos")]
+pub fn check_for_errors() {
+    unsafe {
+        if gl::GetError() != gl::NO_ERROR {
+            panic!("Fatal OpenGL error");
+        }
+    }
+}
 
 /// Check for OpenGL errors using `gl::GetDebugMessageLog`. If a
 /// severe error is encountered this function panics. If the OpenGL
 /// context doesn't have the DEBUG attribute this *probably* won't do
 /// anything.
+#[cfg(not(target_os="macos"))]
 pub fn check_for_errors() {
     let mut fatal = false;
 
@@ -68,6 +77,7 @@ pub fn check_for_errors() {
     }
 }
 
+#[cfg(not(target_os="macos"))]
 #[derive(Debug,PartialEq,Eq,Clone,Copy)]
 enum DebugSeverity {
     High,
@@ -76,6 +86,7 @@ enum DebugSeverity {
     Notification,
 }
 
+#[cfg(not(target_os="macos"))]
 impl DebugSeverity {
     fn from_raw(raw: GLenum) -> DebugSeverity {
         match raw {
@@ -95,6 +106,7 @@ impl DebugSeverity {
     }
 }
 
+#[cfg(not(target_os="macos"))]
 #[derive(Debug,PartialEq,Eq,Clone,Copy)]
 enum DebugSource {
     Api,
@@ -105,6 +117,7 @@ enum DebugSource {
     Other,
 }
 
+#[cfg(not(target_os="macos"))]
 impl DebugSource {
     fn from_raw(raw: GLenum) -> DebugSource {
         match raw {
@@ -120,6 +133,7 @@ impl DebugSource {
 }
 
 
+#[cfg(not(target_os="macos"))]
 #[derive(Debug,PartialEq,Eq,Clone,Copy)]
 enum DebugType {
     Error,
@@ -133,6 +147,7 @@ enum DebugType {
     PopGroup,
 }
 
+#[cfg(not(target_os="macos"))]
 impl DebugType {
     fn from_raw(raw: GLenum) -> DebugType {
         match raw {

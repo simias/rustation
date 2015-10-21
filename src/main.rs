@@ -16,8 +16,11 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 extern crate sdl2;
-extern crate gl;
 extern crate libc;
+
+mod gl {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 
 mod cpu;
 mod memory;

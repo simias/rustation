@@ -38,20 +38,17 @@ impl<T: Copy + Default> Buffer<T> {
                 let buffer_size = element_size *
                     VERTEX_BUFFER_LEN as GLsizeiptr;
 
-                // Write only persistent mapping. Not coherent!
-                let access = gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT;
-
                 // Allocate buffer memory
-                gl::BufferStorage(gl::ARRAY_BUFFER,
-                                  buffer_size,
-                                  ptr::null(),
-                                  access);
+                gl::BufferData(gl::ARRAY_BUFFER,
+                               buffer_size,
+                               ptr::null(),
+                               gl::DYNAMIC_DRAW);
 
                 // Remap the entire buffer
                 let memory = gl::MapBufferRange(gl::ARRAY_BUFFER,
                                             0,
                                             buffer_size,
-                                            access) as *mut T;
+                                            gl::MAP_WRITE_BIT) as *mut T;
 
                 check_for_errors();
 
