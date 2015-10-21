@@ -531,6 +531,15 @@ impl Gte {
     /// MTC2 and LWC2 opcodes
     pub fn set_data(&mut self, reg: u32, val: u32) {
 
+        let val_to_rgbx = || -> (u8, u8, u8, u8) {
+            let r = val as u8;
+            let g = (val >> 8) as u8;
+            let b = (val >> 16) as u8;
+            let x = (val >> 24) as u8;
+
+            (r, g, b, x)
+        };
+
         match reg {
             0 => {
                 let v0 = val as i16;
@@ -556,14 +565,7 @@ impl Gte {
                 self.v[2][1] = v1;
             }
             5 => self.v[2][2] = val as i16,
-            6 => {
-                let r = val as u8;
-                let g = (val >> 8) as u8;
-                let b = (val >> 16) as u8;
-                let x = (val >> 24) as u8;
-
-                self.rgb = (r, g, b, x);
-            }
+            6 => self.rgb = val_to_rgbx(),
             7 => self.otz = val as u16,
             8 => self.ir[0] = val as i16,
             9 => self.ir[1] = val as i16,
@@ -592,14 +594,9 @@ impl Gte {
             17 => self.z_fifo[1] = val as u16,
             18 => self.z_fifo[2] = val as u16,
             19 => self.z_fifo[3] = val as u16,
-            22 => {
-                let r = val as u8;
-                let g = (val >> 8) as u8;
-                let b = (val >> 16) as u8;
-                let x = (val >> 24) as u8;
-
-                self.rgb_fifo[2] = (r, g, b, x);
-            }
+            20 => self.rgb_fifo[0] = val_to_rgbx(),
+            21 => self.rgb_fifo[1] = val_to_rgbx(),
+            22 => self.rgb_fifo[2] = val_to_rgbx(),
             24 => self.mac[0] = val as i32,
             25 => self.mac[1] = val as i32,
             26 => self.mac[2] = val as i32,
