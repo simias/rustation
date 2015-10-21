@@ -14,6 +14,5 @@ keywords = ["emulator", "playstation"]
 
 [dependencies]
 
-libc = "0.1.6"
 gl   = "0.1.0"
 sdl2 = "0.9.1"
