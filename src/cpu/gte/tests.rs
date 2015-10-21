@@ -126,7 +126,7 @@ impl Config {
 /// real console.
 static TESTS: &'static [Test] = &[
     Test {
-        desc: "First GTE command used by the SCPH-1001 BIOS",
+        desc: "GTE_RTPT, lm=0, cv=0, v=0, mx=0, sf=1",
         initial: Config {
             controls: &[
                 (0, 0x00000ffb),
@@ -225,7 +225,7 @@ static TESTS: &'static [Test] = &[
     },
 
     Test {
-        desc: "2nd GTE command: RTPT",
+        desc: "GTE_NCLIP, lm=0, cv=0, v=0, mx=0, sf=0",
         initial: Config {
             controls: &[
                 (0, 0x00000ffb),
@@ -341,7 +341,7 @@ static TESTS: &'static [Test] = &[
     },
 
     Test {
-        desc: "2nd GTE command: AVSZ3",
+        desc: "GTE_AVSZ3, lm=0, cv=0, v=0, mx=0, sf=1",
         initial: Config {
             controls: &[
                 (0, 0x00000ffb),
@@ -457,7 +457,7 @@ static TESTS: &'static [Test] = &[
     },
 
     Test {
-        desc: "First NCDS",
+        desc: "GTE_NCDS, lm=1, cv=0, v=0, mx=0, sf=1",
         initial: Config {
             controls: &[
                 (0, 0x00000ffb),
@@ -515,7 +515,6 @@ static TESTS: &'static [Test] = &[
                 (31, 0x00000020),
                 ],
         },
-        // GTE_OP GTE_NCDS, lm=1, cv=0, v=0, mx=0, sf=1
         command: 0x00080413,
         result: Config {
             controls: &[
@@ -572,7 +571,7 @@ static TESTS: &'static [Test] = &[
         },
     },
     Test {
-        desc: "DPCS random test",
+        desc: "GTE_DCPS, lm=0, cv=0, v=0, mx=0, sf=1",
         initial: Config {
             controls: &[
                 (0, 0x00000ffb),
@@ -683,7 +682,7 @@ static TESTS: &'static [Test] = &[
         },
     },
     Test {
-        desc: "RTPS random test",
+        desc: "GTE_RTPS, lm=0, cv=0, v=0, mx=0, sf=1",
         initial: Config {
             controls: &[
                 (0, 0x00000ffb),
@@ -775,6 +774,120 @@ static TESTS: &'static [Test] = &[
                 (27, 0x00000d12),
                 (28, 0x000068b7),
                 (29, 0x000068b7),
+                (31, 0x00000020),
+                ],
+        },
+    },
+    Test {
+        desc: "GTE_NCCT, lm=0, cv=0, v=0, mx=0, sf=1",
+        initial: Config {
+            controls: &[
+                (0, 0x00000ffb),
+                (1, 0xffb7ff44),
+                (2, 0xf9ca0ebc),
+                (3, 0x063700ad),
+                (4, 0x00000eb7),
+                (6, 0xfffffeac),
+                (7, 0x00001700),
+                (9, 0x00000fa0),
+                (10, 0x0000f060),
+                (11, 0x0000f060),
+                (13, 0x00000640),
+                (14, 0x00000640),
+                (15, 0x00000640),
+                (16, 0x0bb80fa0),
+                (17, 0x0fa00fa0),
+                (18, 0x0fa00bb8),
+                (19, 0x0bb80fa0),
+                (20, 0x00000fa0),
+                (24, 0x01400000),
+                (25, 0x00f00000),
+                (26, 0x00000400),
+                (27, 0xfffffec8),
+                (28, 0x01400000),
+                (29, 0x00000155),
+                (30, 0x00000100),
+                ],
+            data: &[
+                (0, 0x00000b50),
+                (1, 0xfffff4b0),
+                (2, 0x00e700d5),
+                (3, 0xfffffe21),
+                (4, 0x00b90119),
+                (5, 0xfffffe65),
+                (6, 0x2094a539),
+                (7, 0x00000572),
+                (8, 0x00001000),
+                (12, 0x00f40176),
+                (13, 0x00f9016b),
+                (14, 0x00ed0176),
+                (15, 0x00ed0176),
+                (17, 0x000015eb),
+                (18, 0x000015aa),
+                (19, 0x000015d9),
+                (24, 0x00572786),
+                (31, 0x00000020),
+                ],
+        },
+        command: 0x0008003f,
+        result: Config {
+            controls: &[
+                (0, 0x00000ffb),
+                (1, 0xffb7ff44),
+                (2, 0xf9ca0ebc),
+                (3, 0x063700ad),
+                (4, 0x00000eb7),
+                (6, 0xfffffeac),
+                (7, 0x00001700),
+                (9, 0x00000fa0),
+                (10, 0x0000f060),
+                (11, 0x0000f060),
+                (13, 0x00000640),
+                (14, 0x00000640),
+                (15, 0x00000640),
+                (16, 0x0bb80fa0),
+                (17, 0x0fa00fa0),
+                (18, 0x0fa00bb8),
+                (19, 0x0bb80fa0),
+                (20, 0x00000fa0),
+                (24, 0x01400000),
+                (25, 0x00f00000),
+                (26, 0x00000400),
+                (27, 0xfffffec8),
+                (28, 0x01400000),
+                (29, 0x00000155),
+                (30, 0x00000100),
+                (31, 0x00380000),
+                ],
+            data: &[
+                (0, 0x00000b50),
+                (1, 0xfffff4b0),
+                (2, 0x00e700d5),
+                (3, 0xfffffe21),
+                (4, 0x00b90119),
+                (5, 0xfffffe65),
+                (6, 0x2094a539),
+                (7, 0x00000572),
+                (8, 0x00001000),
+                (9, 0x000000b3),
+                (10, 0x00000207),
+                (11, 0x000001d1),
+                (12, 0x00f40176),
+                (13, 0x00f9016b),
+                (14, 0x00ed0176),
+                (15, 0x00ed0176),
+                (17, 0x000015eb),
+                (18, 0x000015aa),
+                (19, 0x000015d9),
+                (20, 0x20000000),
+                (21, 0x201b1f0a),
+                (22, 0x201d200b),
+                (24, 0x00572786),
+                (25, 0x000000b3),
+                (26, 0x00000207),
+                (27, 0x000001d1),
+                (28, 0x00000c81),
+                (29, 0x00000c81),
                 (31, 0x00000020),
                 ],
         },

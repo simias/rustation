@@ -110,6 +110,7 @@ impl Gte {
             0x13 => self.cmd_ncds(config),
             0x2d => self.cmd_avsz3(),
             0x30 => self.cmd_rtpt(config),
+            0x3f => self.cmd_ncct(config),
             _ => panic!("Unhandled GTE opcode {:02x}", opcode),
         }
 
@@ -434,6 +435,17 @@ impl Gte {
     /// Return the value of one of the "data" registers. Used by the
     /// MFC2 and SWC2 opcodes
     pub fn data(&self, reg: u32) -> u32 {
+        let rgbx_to_u32 = | rgbx | -> u32 {
+            let (r, g, b, x) = rgbx;
+
+            let r = r as u32;
+            let g = g as u32;
+            let b = b as u32;
+            let x = x as u32;
+
+            r | (g << 8) | (b << 16) | (x << 24)
+        };
+
         match reg {
             0 => {
                 let v0 = self.v[0][0] as u16 as u32;
@@ -456,16 +468,7 @@ impl Gte {
                 v0 | v1 << 16
             },
             5 => self.v[2][2] as u32,
-            6 => {
-                let (r, g, b, x) = self.rgb;
-
-                let r = r as u32;
-                let g = g as u32;
-                let b = b as u32;
-                let x = x as u32;
-
-                r | (g << 8) | (b << 16) | (x << 24)
-            }
+            6 => rgbx_to_u32(self.rgb),
             7 => self.otz as u32,
             8 => self.ir[0] as u32,
             9 => self.ir[1] as u32,
@@ -495,16 +498,9 @@ impl Gte {
             17 => self.z_fifo[1] as u32,
             18 => self.z_fifo[2] as u32,
             19 => self.z_fifo[3] as u32,
-            22 => {
-                let (r, g, b, x) = self.rgb_fifo[2];
-
-                let mut v = r as u32;
-                v |= (g as u32) << 8;
-                v |= (b as u32) << 16;
-                v |= (x as u32) << 24;
-
-                v
-            }
+            20 => rgbx_to_u32(self.rgb_fifo[0]),
+            21 => rgbx_to_u32(self.rgb_fifo[1]),
+            22 => rgbx_to_u32(self.rgb_fifo[2]),
             24 => self.mac[0] as u32,
             25 => self.mac[1] as u32,
             26 => self.mac[2] as u32,
@@ -730,6 +726,50 @@ impl Gte {
         let projection_factor = self.do_rtp(config, 2);
 
         self.depth_queuing(projection_factor);
+    }
+
+    /// Normal Color Color Triple. Operates on V0, V1 and V2
+    fn cmd_ncct(&mut self, config: CommandConfig) {
+
+        // Transform the three vectors at once
+        self.do_ncc(config, 0);
+        self.do_ncc(config, 1);
+        self.do_ncc(config, 2);
+    }
+
+    fn do_ncc(&mut self, config: CommandConfig, vector_index: u8) {
+        self.multiply_matrix_by_vector(config,
+                                       Matrix::Light,
+                                       vector_index,
+                                       ControlVector::Zero);
+
+        // Use the custom 4th vector to store the intermediate
+        // values. This vector does not exist in the real hardware (at
+        // least not in the registers), it's just a hack to make the
+        // code simpler.
+        self.v[3][0] = self.ir[1];
+        self.v[3][1] = self.ir[2];
+        self.v[3][2] = self.ir[3];
+
+        self.multiply_matrix_by_vector(config,
+                                       Matrix::Color,
+                                       3,
+                                       ControlVector::BackgroundColor);
+
+
+        let (r, g, b, _) = self.rgb;
+
+        let col = [r, g, b];
+
+        for i in 0..3 {
+            let col = (col[i] as i32) << 4;
+            let ir = self.ir[i + 1] as i32;
+
+            self.mac[i + 1] = (col * ir) >> config.shift;
+        }
+
+        self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
     }
 
     fn do_ncd(&mut self, config: CommandConfig, vector_index: u8) {
