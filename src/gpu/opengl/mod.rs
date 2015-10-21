@@ -122,12 +122,11 @@ impl Renderer {
             let index = find_program_attrib(program, "vertex_color");
             gl::EnableVertexAttribArray(index);
 
-            // Link the buffer and the index: 3 GLByte attributes,
-            // not normalized. That should send the data untouched to
-            // the vertex shader.
-            gl::VertexAttribIPointer(index,
+            // Link the buffer and the index: 3 GLByte attributes, normalized.
+            gl::VertexAttribPointer(index,
                                      3,
                                      gl::UNSIGNED_BYTE,
+                                     gl::TRUE,
                                      0,
                                      ptr::null());
         }

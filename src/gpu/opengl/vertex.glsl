@@ -1,7 +1,7 @@
 #version 330 core
 
 in ivec2 vertex_position;
-in uvec3 vertex_color;
+in vec3 vertex_color;
 
 // Drawing offset
 uniform ivec2 offset;
@@ -20,8 +20,5 @@ void main() {
 
   gl_Position.xyzw = vec4(xpos, ypos, 0.0, 1.0);
 
-  // Convert the components from [0;255] to [0;1]
-  color = vec3(float(vertex_color.r) / 255,
-	       float(vertex_color.g) / 255,
-	       float(vertex_color.b) / 255);
+  color = vertex_color;
 }
