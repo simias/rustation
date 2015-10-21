@@ -93,6 +93,30 @@ impl Gte {
         }
     }
 
+    /// Execute GTE command
+    pub fn command(&mut self, command: u32) {
+        let opcode = command & 0x3f;
+
+        let config = CommandConfig::from_command(command);
+
+        // Clear flags prior to command execution
+        self.flags = 0;
+
+        match opcode {
+            0x06 => self.cmd_nclip(),
+            0x10 => self.cmd_dpcs(config),
+            0x12 => self.cmd_mvmva(config),
+            0x13 => self.cmd_ncds(config),
+            0x2d => self.cmd_avsz3(),
+            0x30 => self.cmd_rtpt(config),
+            _ => panic!("Unhandled GTE opcode {:02x}", opcode),
+        }
+
+        // Update the flags MSB: OR together bits [30:23] + [18:13]
+        let msb = self.flags & 0x7f87e000 != 0;
+        self.flags |= (msb as u32) << 31;
+    }
+
     /// Return the value of one of the "control" registers. Used by
     /// the CFC2 opcode.
     pub fn control(&self, reg: u32) -> u32 {
@@ -602,29 +626,6 @@ impl Gte {
         }
     }
 
-    /// Execute GTE command
-    pub fn command(&mut self, command: u32) {
-        let opcode = command & 0x3f;
-
-        let config = CommandConfig::from_command(command);
-
-        // Clear flags prior to command execution
-        self.flags = 0;
-
-        match opcode {
-            0x06 => self.cmd_nclip(),
-            0x12 => self.cmd_mvmva(config),
-            0x13 => self.cmd_ncds(config),
-            0x2d => self.cmd_avsz3(),
-            0x30 => self.cmd_rtpt(config),
-            _ => panic!("Unhandled GTE opcode {:02x}", opcode),
-        }
-
-        // Update the flags MSB: OR together bits [30:23] + [18:13]
-        let msb = self.flags & 0x7f87e000 != 0;
-        self.flags |= (msb as u32) << 31;
-    }
-
     /// Normal clipping
     fn cmd_nclip(&mut self) {
         let (x0, y0) = self.xy_fifo[0];
@@ -644,6 +645,35 @@ impl Gte {
         let sum = a as i64 + b as i64 + c as i64;
 
         self.mac[0] = self.i64_to_i32_result(sum);
+    }
+
+    /// Depth Queue Single
+    fn cmd_dpcs(&mut self, config: CommandConfig) {
+        let fc = ControlVector::FarColor.index();
+
+        let (r, g, b, _) = self.rgb;
+
+        let col = [r, g, b];
+        for i in 0..3 {
+            let fc = (self.control_vectors[fc][i] as i64) << 12;
+            let col = (col[i] as i64) << 4;
+
+            let product = fc - col;
+
+            let tmp = self.i64_to_i32_result(product) >> config.shift;
+
+            let ir0 = self.ir[0] as i64;
+
+            let foo = self.i32_to_i16_saturate(CommandConfig::from_command(0),
+                                               i as u8, tmp) as i64;
+
+            let res = self.i64_to_i32_result(col + ir0 * foo);
+
+            self.mac[i + 1] = res >> config.shift;
+        }
+
+        self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
     }
 
     /// Multiply vector by matrix and add vector
