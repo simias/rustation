@@ -103,6 +103,7 @@ impl Gte {
         self.flags = 0;
 
         match opcode {
+            0x01 => self.cmd_rtps(config),
             0x06 => self.cmd_nclip(),
             0x10 => self.cmd_dpcs(config),
             0x12 => self.cmd_mvmva(config),
@@ -626,6 +627,15 @@ impl Gte {
         }
     }
 
+    /// Rotate, Translate and Perspective transform Single. Operates
+    /// on V0.
+    fn cmd_rtps(&mut self, config: CommandConfig) {
+        // Transform vector 0
+        let projection_factor = self.do_rtp(config, 0);
+
+        self.depth_queuing(projection_factor);
+    }
+
     /// Normal clipping
     fn cmd_nclip(&mut self) {
         let (x0, y0) = self.xy_fifo[0];
@@ -710,7 +720,7 @@ impl Gte {
     }
 
     /// Rotate, Translate and Perspective transform Triple. Operates
-    /// on V0, V1` and V2
+    /// on V0, V1 and V2
     fn cmd_rtpt(&mut self, config: CommandConfig) {
 
         // Transform the three vectors at once
