@@ -131,6 +131,7 @@ impl PadMemCard {
                 T::from_u32(self.stat())
             }
             10 => T::from_u32(self.control() as u32),
+            14 => T::from_u32(self.baud_div as u32),
             _ => panic!("Unhandled gamepad read {:?} 0x{:x}",
                         T::width(), offset),
         }
