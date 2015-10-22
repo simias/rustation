@@ -16,7 +16,9 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 extern crate sdl2;
-extern crate gl;
+#[macro_use]
+extern crate glium;
+extern crate glium_sdl2;
 
 mod cpu;
 mod memory;

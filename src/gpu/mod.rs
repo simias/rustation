@@ -1,4 +1,4 @@
-use self::opengl::{Renderer, Position, Color};
+use self::opengl::{Renderer, Vertex, Position, Color};
 use memory::{Addressable, AccessWidth};
 use memory::interrupts::{Interrupt, InterruptState};
 use memory::timers::Timers;
@@ -582,172 +582,189 @@ impl Gpu {
     /// GP0(0x02): Fill Rectangle
     fn gp0_fill_rect(&mut self) {
         // XXX Not affected by mask setting
-        let top_left = Position::from_gp0(self.gp0_command[1]);
+        let top_left = Position::from_packed(self.gp0_command[1]);
+        let size = Position::from_packed(self.gp0_command[2]);
 
-        let size = Position::from_gp0(self.gp0_command[2]);
+        let color = Color::from_packed(self.gp0_command[0]);
 
-        let positions = [
-            top_left,
-            Position(top_left.0 + size.0, top_left.1),
-            Position(top_left.0, top_left.1 + size.1),
-            Position(top_left.0 + size.0, top_left.1 + size.1),
-            ];
+        let vertices = [
+            Vertex::new(top_left, color),
+            Vertex::new(Position::new(top_left.x + size.x, top_left.y), color),
+            Vertex::new(Position::new(top_left.x, top_left.y + size.y), color),
+            Vertex::new(Position::new(top_left.x + size.x, top_left.y + size.y), color),
+        ];
 
-        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
-
-        self.renderer.push_quad(positions, colors);
+        self.renderer.push_quad(&vertices);
     }
 
     /// GP0(0x20): Monochrome Opaque Triangle
     fn gp0_triangle_mono_opaque(&mut self) {
-        let positions = [
-            Position::from_gp0(self.gp0_command[1]),
-            Position::from_gp0(self.gp0_command[2]),
-            Position::from_gp0(self.gp0_command[3]),
-            ];
-
         // Only one color repeated 3 times
-        let colors = [ Color::from_gp0(self.gp0_command[0]); 3];
+        let color = Color::from_packed(self.gp0_command[0]);
 
-        self.renderer.push_triangle(positions, colors);
+        let vertices = [
+            Vertex::new(Position::from_packed(self.gp0_command[1]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[2]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[3]),
+                        color),
+        ];
+
+        self.renderer.push_triangle(&vertices);
     }
 
 
     /// GP0(0x28): Monochrome Opaque Quadrilateral
     fn gp0_quad_mono_opaque(&mut self) {
-        let positions = [
-            Position::from_gp0(self.gp0_command[1]),
-            Position::from_gp0(self.gp0_command[2]),
-            Position::from_gp0(self.gp0_command[3]),
-            Position::from_gp0(self.gp0_command[4]),
-            ];
-
         // Only one color repeated 4 times
-        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
+        let color = Color::from_packed(self.gp0_command[0]);
 
-        self.renderer.push_quad(positions, colors);
+        let vertices = [
+            Vertex::new(Position::from_packed(self.gp0_command[1]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[2]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[3]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[4]),
+                        color),
+        ];
+
+        self.renderer.push_quad(&vertices);
     }
 
     /// GP0(0x2C): Texture-blended Opaque Quadrilateral
     fn gp0_quad_texture_blend_opaque(&mut self) {
-        let positions = [
-            Position::from_gp0(self.gp0_command[1]),
-            Position::from_gp0(self.gp0_command[3]),
-            Position::from_gp0(self.gp0_command[5]),
-            Position::from_gp0(self.gp0_command[7]),
-            ];
-
         // XXX We don't support textures for now, use a solid red
         // color instead
-        let colors = [ Color(0x80, 0x00, 0x00); 4];
+        let color = Color::new(0x80, 0x00, 0x00);
 
-        self.renderer.push_quad(positions, colors);
+        let vertices = [
+            Vertex::new(Position::from_packed(self.gp0_command[1]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[3]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[5]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[7]),
+                        color),
+        ];
+
+        self.renderer.push_quad(&vertices);
     }
 
     /// GP0(0x2D): Raw Textured Opaque Quadrilateral
     fn gp0_quad_texture_raw_opaque(&mut self) {
-        let positions = [
-            Position::from_gp0(self.gp0_command[1]),
-            Position::from_gp0(self.gp0_command[3]),
-            Position::from_gp0(self.gp0_command[5]),
-            Position::from_gp0(self.gp0_command[7]),
-            ];
-
         // XXX We don't support textures for now, use a solid red
         // color instead
-        let colors = [ Color(0x80, 0x00, 0x00); 4];
+        let color = Color::new(0x80, 0x00, 0x00);
 
-        self.renderer.push_quad(positions, colors);
+        let vertices = [
+            Vertex::new(Position::from_packed(self.gp0_command[1]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[3]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[5]),
+                        color),
+            Vertex::new(Position::from_packed(self.gp0_command[7]),
+                        color),
+        ];
+
+        self.renderer.push_quad(&vertices);
     }
 
     /// GP0(0x30): Shaded Opaque Triangle
     fn gp0_triangle_shaded_opaque(&mut self) {
-        let positions = [
-            Position::from_gp0(self.gp0_command[1]),
-            Position::from_gp0(self.gp0_command[3]),
-            Position::from_gp0(self.gp0_command[5]),
-            ];
+        let vertices = [
+            Vertex::new(Position::from_packed(self.gp0_command[1]),
+                        Color::from_packed(self.gp0_command[0])),
+            Vertex::new(Position::from_packed(self.gp0_command[3]),
+                        Color::from_packed(self.gp0_command[2])),
+            Vertex::new(Position::from_packed(self.gp0_command[5]),
+                        Color::from_packed(self.gp0_command[4])),
+        ];
 
-        let colors = [
-            Color::from_gp0(self.gp0_command[0]),
-            Color::from_gp0(self.gp0_command[2]),
-            Color::from_gp0(self.gp0_command[4]),
-            ];
-
-        self.renderer.push_triangle(positions, colors);
+        self.renderer.push_triangle(&vertices);
     }
 
     /// GP0(0x38): Shaded Opaque Quadrilateral
     fn gp0_quad_shaded_opaque(&mut self) {
-        let positions = [
-            Position::from_gp0(self.gp0_command[1]),
-            Position::from_gp0(self.gp0_command[3]),
-            Position::from_gp0(self.gp0_command[5]),
-            Position::from_gp0(self.gp0_command[7]),
-            ];
+        let vertices = [
+            Vertex::new(Position::from_packed(self.gp0_command[1]),
+                        Color::from_packed(self.gp0_command[0])),
+            Vertex::new(Position::from_packed(self.gp0_command[3]),
+                        Color::from_packed(self.gp0_command[2])),
+            Vertex::new(Position::from_packed(self.gp0_command[5]),
+                        Color::from_packed(self.gp0_command[4])),
+            Vertex::new(Position::from_packed(self.gp0_command[7]),
+                        Color::from_packed(self.gp0_command[6])),
+        ];
 
-        let colors = [
-            Color::from_gp0(self.gp0_command[0]),
-            Color::from_gp0(self.gp0_command[2]),
-            Color::from_gp0(self.gp0_command[4]),
-            Color::from_gp0(self.gp0_command[6]),
-            ];
-
-        self.renderer.push_quad(positions, colors);
+        self.renderer.push_quad(&vertices);
     }
 
     /// GP0(0x60): Opaque monochrome rectangle
     fn gp0_rect_opaque(&mut self) {
-        let top_left = Position::from_gp0(self.gp0_command[1]);
+        let color = Color::from_packed(self.gp0_command[0]);
 
-        let size = Position::from_gp0(self.gp0_command[2]);
+        let top_left = Position::from_packed(self.gp0_command[1]);
+        let size = Position::from_packed(self.gp0_command[2]);
 
-        let positions = [
-            top_left,
-            Position(top_left.0 + size.0, top_left.1),
-            Position(top_left.0, top_left.1 + size.1),
-            Position(top_left.0 + size.0, top_left.1 + size.1),
-            ];
+        let vertices = [
+            Vertex::new(top_left, color),
+            Vertex::new(Position::new(top_left.x + size.x, top_left.y),
+                        color),
+            Vertex::new(Position::new(top_left.x, top_left.y + size.y),
+                        color),
+            Vertex::new(Position::new(top_left.x + size.x, top_left.y + size.y),
+                        color),
+        ];
 
-        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
 
-        self.renderer.push_quad(positions, colors);
+        self.renderer.push_quad(&vertices);
     }
 
     /// GP0(0x64): Opaque rectange with texture blending
     fn gp0_rect_texture_blend_opaque(&mut self) {
-        let top_left = Position::from_gp0(self.gp0_command[1]);
+        let color = Color::from_packed(self.gp0_command[0]);
 
-        let size = Position::from_gp0(self.gp0_command[3]);
+        let top_left = Position::from_packed(self.gp0_command[1]);
+        let size = Position::from_packed(self.gp0_command[3]);
 
-        let positions = [
-            top_left,
-            Position(top_left.0 + size.0, top_left.1),
-            Position(top_left.0, top_left.1 + size.1),
-            Position(top_left.0 + size.0, top_left.1 + size.1),
-            ];
+        let vertices = [
+            Vertex::new(top_left, color),
+            Vertex::new(Position::new(top_left.x + size.x, top_left.y),
+                        color),
+            Vertex::new(Position::new(top_left.x, top_left.y + size.y),
+                        color),
+            Vertex::new(Position::new(top_left.x + size.x, top_left.y + size.y),
+                        color),
+        ];
 
-        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
 
-        self.renderer.push_quad(positions, colors);
+        self.renderer.push_quad(&vertices);
     }
 
     /// GP0(0x65): Opaque rectange with raw texture
     fn gp0_rect_texture_raw_opaque(&mut self) {
-        let top_left = Position::from_gp0(self.gp0_command[1]);
+        let color = Color::from_packed(self.gp0_command[0]);
 
-        let size = Position::from_gp0(self.gp0_command[3]);
+        let top_left = Position::from_packed(self.gp0_command[1]);
+        let size = Position::from_packed(self.gp0_command[3]);
 
         let positions = [
-            top_left,
-            Position(top_left.0 + size.0, top_left.1),
-            Position(top_left.0, top_left.1 + size.1),
-            Position(top_left.0 + size.0, top_left.1 + size.1),
-            ];
+            Vertex::new(top_left, color),
+            Vertex::new(Position::new(top_left.x + size.x, top_left.y),
+                        color),
+            Vertex::new(Position::new(top_left.x, top_left.y + size.y),
+                        color),
+            Vertex::new(Position::new(top_left.x + size.x, top_left.y + size.y),
+                        color),
+        ];
 
-        let colors = [ Color::from_gp0(self.gp0_command[0]); 4];
 
-        self.renderer.push_quad(positions, colors);
+        self.renderer.push_quad(&positions);
     }
 
     /// GP0(0xA0): Image Load

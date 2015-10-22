@@ -1,52 +1,111 @@
-use std::ptr;
-
 use sdl2;
 use sdl2::video::GLProfile;
 
-use gl;
-use gl::types::{GLint, GLuint, GLubyte, GLshort, GLsizei};
+use glium_sdl2;
 
-use self::error::check_for_errors;
-use self::shader::{compile_shader, link_program};
-use self::shader::{find_program_attrib, find_program_uniform};
-use self::buffer::Buffer;
+use glium::{Program, VertexBuffer, Frame, Surface, DrawParameters, Rect};
+use glium::uniforms::{UniformsStorage, EmptyUniforms};
 
-mod error;
-mod shader;
-mod buffer;
+/// Maximum number of vertex that can be stored in an attribute
+/// buffers
+const VERTEX_BUFFER_LEN: u32 = 64 * 1024;
+
+#[derive(Copy,Clone,Debug)]
+pub struct Vertex {
+    pub position: [i16; 2],
+    pub color: [u8; 3],
+}
+
+implement_vertex!(Vertex, position, color);
+
+impl Vertex {
+    pub fn new(pos: Position, color: Color) -> Vertex {
+        Vertex {
+            position: [pos.x, pos.y],
+            color: [color.r, color.g, color.b],
+        }
+    }
+}
+
+#[derive(Copy,Clone,Default,Debug)]
+pub struct Position {
+    pub x: i16,
+    pub y: i16,
+}
+
+impl Position {
+    pub fn new(x: i16, y: i16) -> Position {
+        Position {
+            x: x,
+            y: y,
+        }
+    }
+
+    pub fn from_packed(val: u32) -> Position{
+        let x = val as i16;
+        let y = (val >> 16) as i16;
+
+        Position {
+            x: x,
+            y: y,
+        }
+    }
+}
+
+#[derive(Copy,Clone,Default,Debug)]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl Color {
+    pub fn new(r: u8, g: u8, b: u8) -> Color {
+        Color {
+            r: r,
+            g: g,
+            b: b
+        }
+    }
+
+    pub fn from_packed(val: u32) -> Color {
+        let r = val as u8;
+        let g = (val >> 8) as u8;
+        let b = (val >> 16) as u8;
+
+        Color {
+            r: r,
+            g: g,
+            b: b,
+        }
+    }
+}
 
 pub struct Renderer {
-    /// SDL2 Window
-    #[allow(dead_code)]
-    window: sdl2::video::Window,
-    /// OpenGL Context
-    #[allow(dead_code)]
-    gl_context: sdl2::video::GLContext,
+    /// Glium display
+    window: glium_sdl2::SDL2Facade,
+    /// Glium surface,
+    target: Option<Frame>,
     /// Framebuffer horizontal resolution (native: 1024)
     fb_x_res: u16,
     /// Framebuffer vertical resolution (native: 512)
     fb_y_res: u16,
-    /// Vertex shader object
-    vertex_shader: GLuint,
-    /// Fragment shader object
-    fragment_shader: GLuint,
     /// OpenGL Program object
-    program: GLuint,
-    /// OpenGL Vertex array object
-    vertex_array_object: GLuint,
-    /// Buffer containing the vertice positions
-    positions: Buffer<Position>,
-    /// Buffer containing the vertice colors
-    colors: Buffer<Color>,
+    program: Program,
+    /// Permanent vertex buffer
+    vertex_buffer: VertexBuffer<Vertex>,
+    /// GLSL uniforms
+    uniforms: UniformsStorage<'static, [i32; 2], EmptyUniforms>,
+    /// Glium draw parameters
+    params: DrawParameters<'static>,
     /// Current number or vertices in the buffers
     nvertices: u32,
-    /// Index of the "offset" shader uniform
-    uniform_offset: GLint,
 }
 
 impl Renderer {
 
     pub fn new(sdl_context: &sdl2::Sdl) -> Renderer {
+        use glium_sdl2::DisplayBuild;
         // Native PSX VRAM resolution
         let fb_x_res = 1024u16;
         let fb_y_res = 512u16;
@@ -66,158 +125,78 @@ impl Renderer {
         let window =
             video_subsystem.window("Rustation",
                                    fb_x_res as u32, fb_y_res as u32)
-            .position_centered()
-            .opengl()
-            .build()
-            .ok().expect("Can't create SDL2 window");
+                                    .position_centered()
+                                    .build_glium()
+                                    .ok().expect("Can't create SDL2 window");
 
-        let gl_context =
-            window.gl_create_context()
-            .ok().expect("Can't create GL context");
-
-        gl::load_with(|s| video_subsystem.gl_get_proc_address(s) );
-
-        // Clear the window
-        unsafe {
-            gl::ClearColor(0., 0., 0., 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-
-            // Enable scissor test
-            gl::Enable(gl::SCISSOR_TEST);
-            // Default to full screen
-            gl::Scissor(0, 0, fb_x_res as GLint, fb_y_res as GLint);
+        {
+            let mut target = window.draw();
+            target.clear_color(0.0, 0.0, 0.0, 1.0);
+            target.finish().unwrap();
         }
-        window.gl_swap_window();
-
         // "Slurp" the contents of the shader files. Note: this is a
         // compile-time thing.
         let vs_src = include_str!("vertex.glsl");
         let fs_src = include_str!("fragment.glsl");
 
-        // Compile our shaders...
-        let vertex_shader   = compile_shader(vs_src, gl::VERTEX_SHADER);
-        let fragment_shader = compile_shader(fs_src, gl::FRAGMENT_SHADER);
-        // ... Link our program...
-        let program = link_program(&[vertex_shader, fragment_shader]);
-        // ... And use it.
-        unsafe {
-            gl::UseProgram(program);
-        }
+        let program = Program::from_source(&window, vs_src, fs_src, None).unwrap();
 
-        // Generate our vertex attribute object that will hold our
-        // vertex attributes
-        let mut vao = 0;
-        unsafe {
-            gl::GenVertexArrays(1, &mut vao);
-            // Bind our VAO
-            gl::BindVertexArray(vao);
-        }
+        let vertex_buffer = VertexBuffer::empty_persistent(&window,
+                                                           VERTEX_BUFFER_LEN as usize).unwrap();
 
-        // Setup the "position" attribute. First we create the buffer
-        // holding the positions (this call also binds it)
-        let positions = Buffer::new();
+        let uniforms = uniform! {
+            offset: [0; 2],
+        };
 
-        unsafe {
-            // Then we retreive the index for the attribute in the
-            // shader
-            let index = find_program_attrib(program, "vertex_position");
-
-            // Enable it
-            gl::EnableVertexAttribArray(index);
-
-            // Link the buffer and the index: 2 GLshort attributes,
-            // not normalized. That should send the data untouched to
-            // the vertex shader.
-            gl::VertexAttribIPointer(index, 2, gl::SHORT, 0, ptr::null());
-        }
-
-        check_for_errors();
-
-        // Setup the "color" attribute and bind it
-        let colors = Buffer::new();
-
-        unsafe {
-            let index = find_program_attrib(program, "vertex_color");
-            gl::EnableVertexAttribArray(index);
-
-            // Link the buffer and the index: 3 GLByte attributes, normalized.
-            gl::VertexAttribPointer(index,
-                                     3,
-                                     gl::UNSIGNED_BYTE,
-                                     gl::TRUE,
-                                     0,
-                                     ptr::null());
-        }
-
-        check_for_errors();
-
-        // Retreive and initialize the draw offset
-        let uniform_offset = find_program_uniform(program, "offset");
-        unsafe {
-            gl::Uniform2i(uniform_offset, 0, 0);
-        }
+        let params = DrawParameters {
+            // Default to full screen
+            scissor: Some(Rect {
+                left: 0,
+                bottom: 0,
+                width: fb_x_res as u32,
+                height: fb_y_res as u32
+            }),
+            ..Default::default()
+        };
 
         Renderer {
+            target: Some(window.draw()),
             window: window,
-            gl_context: gl_context,
             fb_x_res: fb_x_res,
             fb_y_res: fb_y_res,
-            vertex_shader: vertex_shader,
-            fragment_shader: fragment_shader,
             program: program,
-            vertex_array_object: vao,
-            positions: positions,
-            colors: colors,
+            vertex_buffer: vertex_buffer,
+            uniforms: uniforms,
+            params: params,
             nvertices: 0,
-            uniform_offset: uniform_offset,
         }
     }
 
     /// Add a triangle to the draw buffer
-    pub fn push_triangle(&mut self,
-                         positions: [Position; 3],
-                         colors:    [Color; 3]) {
-
-        // Make sure we have enough room left to queue the vertex
-        if self.nvertices + 3 > VERTEX_BUFFER_LEN {
-            println!("Vertex attribute buffers full, forcing draw");
-            self.draw();
-        }
-
-        for i in 0..3 {
-            // Push
-            self.positions.set(self.nvertices, positions[i]);
-            self.colors.set(self.nvertices, colors[i]);
-            self.nvertices += 1;
-        }
-    }
-
-    /// Add a quad to the draw buffer
-    pub fn push_quad(&mut self,
-                     positions: [Position; 4],
-                     colors:    [Color; 4]) {
-
+    pub fn push_triangle(&mut self, vertices: &[Vertex; 3]) {
         // Make sure we have enough room left to queue the vertex. We
         // need to push two triangles to draw a quad, so 6 vertex
-        if self.nvertices + 6 > VERTEX_BUFFER_LEN {
+        if self.nvertices + 3 > VERTEX_BUFFER_LEN {
             // The vertex attribute buffers are full, force an early
             // draw
             self.draw();
         }
 
-        // Push the first triangle
-        for i in 0..3 {
-            self.positions.set(self.nvertices, positions[i]);
-            self.colors.set(self.nvertices, colors[i]);
-            self.nvertices += 1;
-        }
+        let slice = self.vertex_buffer.slice(self.nvertices as usize..
+                                             (self.nvertices + 3) as usize).unwrap();
+        slice.write(vertices);
+        self.nvertices += 3;
+    }
 
-        // Push the 2nd triangle
-        for i in 1..4 {
-            self.positions.set(self.nvertices, positions[i]);
-            self.colors.set(self.nvertices, colors[i]);
-            self.nvertices += 1;
-        }
+    /// Add a quad to the draw buffer
+    pub fn push_quad(&mut self, vertices: &[Vertex; 4]) {
+        // XXX Doesn't work, le slice retourne un [Vertex]
+        //// Push the first triangle
+        //self.push_triangle(&vertices[0..3]);
+        //// Push the 2nd triangle
+        //self.push_triangle(&vertices[1..4]);
+        self.push_triangle(&[vertices[0], vertices[1], vertices[2]]);
+        self.push_triangle(&[vertices[1], vertices[2], vertices[3]]);
     }
 
     /// Set the value of the uniform draw offset
@@ -225,9 +204,8 @@ impl Renderer {
         // Force draw for the primitives with the current offset
         self.draw();
 
-        // Update the uniform value
-        unsafe {
-            gl::Uniform2i(self.uniform_offset, x as GLint, y as GLint);
+        self.uniforms = uniform! {
+            offset : [x as i32, y as i32],
         }
     }
 
@@ -239,16 +217,16 @@ impl Renderer {
         // Render any pending primitives
         self.draw();
 
-        let fb_x_res = self.fb_x_res as GLint;
-        let fb_y_res = self.fb_y_res as GLint;
+        let fb_x_res = self.fb_x_res as i32;
+        let fb_y_res = self.fb_y_res as i32;
 
         // Scale PlayStation VRAM coordinates if our framebuffer is
         // not at the native resolution
-        let left = (left as GLint * fb_x_res) / 1024;
-        let right = (right as GLint * fb_x_res) / 1024;
+        let left = (left as i32 * fb_x_res) / 1024;
+        let right = (right as i32 * fb_x_res) / 1024;
 
-        let top = (top as GLint * fb_y_res) / 512;
-        let bottom = (bottom as GLint * fb_y_res) / 512;
+        let top = (top as i32 * fb_y_res) / 512;
+        let bottom = (bottom as i32 * fb_y_res) / 512;
 
         // Width and height are inclusive
         let width = right - left + 1;
@@ -262,97 +240,46 @@ impl Renderer {
             println!("Unsupported drawing area: {}x{} [{}x{}->{}x{}]",
                      width, height,
                      left, top, right, bottom);
-            unsafe {
-                // Don't draw anything...
-                gl::Scissor(0, 0, 0, 0);
-            }
+            self.params.scissor = Some(Rect {
+                left: 0,
+                bottom: 0,
+                width: 0,
+                height: 0,
+            });
         } else {
-            unsafe {
-                gl::Scissor(left, bottom, width, height);
-            }
+            self.params.scissor = Some(Rect {
+                left: left as u32,
+                bottom: bottom as u32,
+                width: width as u32,
+                height: height as u32,
+            });
         }
     }
 
     /// Draw the buffered commands and reset the buffers
     pub fn draw(&mut self) {
-        unsafe {
-            // Make sure all the data from the persistent mappings is
-            // flushed to the buffer
-            gl::MemoryBarrier(gl::CLIENT_MAPPED_BUFFER_BARRIER_BIT);
-
-            gl::DrawArrays(gl::TRIANGLES, 0, self.nvertices as GLsizei);
-        }
-
-        // Wait for GPU to complete
-        unsafe {
-            let sync = gl::FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0);
-
-            loop {
-                let r = gl::ClientWaitSync(sync,
-                                           gl::SYNC_FLUSH_COMMANDS_BIT,
-                                           10000000);
-
-                if r == gl::ALREADY_SIGNALED || r == gl::CONDITION_SATISFIED {
-                    // Drawing done
-                    break;
-                }
-            }
-        }
+        use glium::index;
+        self.target
+            .as_mut()
+            .unwrap()
+            .draw(self.vertex_buffer.slice(0..self.nvertices as usize).unwrap(),
+                  &index::NoIndices(index::PrimitiveType::TrianglesList),
+                  &self.program,
+                  &self.uniforms,
+                  &self.params)
+            .unwrap();
 
         // Reset the buffers
         self.nvertices = 0;
-
-        check_for_errors();
     }
 
     /// Draw the buffered commands and display them
     pub fn display(&mut self) {
-        self.draw();
-
-        self.window.gl_swap_window();
-    }
-}
-
-impl Drop for Renderer {
-    fn drop(&mut self) {
-        unsafe {
-            gl::DeleteVertexArrays(1, &self.vertex_array_object);
-            gl::DeleteShader(self.vertex_shader);
-            gl::DeleteShader(self.fragment_shader);
-            gl::DeleteProgram(self.program);
+        {
+            let target = self.target.take().unwrap();
+            target.finish().unwrap();
         }
+
+        self.target = Some(self.window.draw());
     }
 }
-
-/// Position in VRAM.
-#[derive(Copy,Clone,Default,Debug)]
-pub struct Position(pub GLshort, pub GLshort);
-
-impl Position {
-    /// Parse position from a GP0 parameter
-    pub fn from_gp0(val: u32) -> Position {
-        let x = val as i16;
-        let y = (val >> 16) as i16;
-
-        Position(x as GLshort, y as GLshort)
-    }
-}
-
-/// RGB color
-#[derive(Copy,Clone,Default,Debug)]
-pub struct Color(pub GLubyte, pub GLubyte, pub GLubyte);
-
-impl Color {
-    /// Parse color from a GP0 parameter
-    pub fn from_gp0(val: u32) -> Color {
-        let r = val as u8;
-        let g = (val >> 8) as u8;
-        let b = (val >> 16) as u8;
-
-        Color(r as GLubyte, g as GLubyte, b as GLubyte)
-    }
-}
-
-/// Maximum number of vertex that can be stored in an attribute
-/// buffers
-const VERTEX_BUFFER_LEN: u32 = 64 * 1024;

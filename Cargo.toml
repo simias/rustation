@@ -14,5 +14,6 @@ keywords = ["emulator", "playstation"]
 
 [dependencies]
 
-gl   = "0.1.0"
+glium = "0.10.0"
+glium_sdl2 = "0.8.0"
 sdl2 = "0.9.1"
