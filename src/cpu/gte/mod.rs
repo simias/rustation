@@ -446,6 +446,15 @@ impl Gte {
             r | (g << 8) | (b << 16) | (x << 24)
         };
 
+        let xy_to_u32 = | xy | -> u32 {
+            let (x, y) = xy;
+
+            let x = x as u16;
+            let y = y as u16;
+
+            (x as u32) | ((y as u32) << 16)
+        };
+
         match reg {
             0 => {
                 let v0 = self.v[0][0] as u16 as u32;
@@ -474,26 +483,10 @@ impl Gte {
             9 => self.ir[1] as u32,
             10 => self.ir[2] as u32,
             11 => self.ir[3] as u32,
-            12 => {
-                let (x, y) = self.xy_fifo[0];
-
-                (x as u32) | ((y as u32) << 16)
-            }
-            13 => {
-                let (x, y) = self.xy_fifo[1];
-
-                (x as u32) | ((y as u32) << 16)
-            }
-            14 => {
-                let (x, y) = self.xy_fifo[2];
-
-                (x as u32) | ((y as u32) << 16)
-            }
-            15 => {
-                let (x, y) = self.xy_fifo[3];
-
-                (x as u32) | ((y as u32) << 16)
-            }
+            12 => xy_to_u32(self.xy_fifo[0]),
+            13 => xy_to_u32(self.xy_fifo[1]),
+            14 => xy_to_u32(self.xy_fifo[2]),
+            15 => xy_to_u32(self.xy_fifo[3]),
             16 => self.z_fifo[0] as u32,
             17 => self.z_fifo[1] as u32,
             18 => self.z_fifo[2] as u32,
@@ -540,6 +533,13 @@ impl Gte {
             (r, g, b, x)
         };
 
+        let val_to_xy = || -> (i16, i16) {
+            let x = val as i16;
+            let y = (val >> 16) as i16;
+
+            (x, y)
+        };
+
         match reg {
             0 => {
                 let v0 = val as i16;
@@ -571,24 +571,18 @@ impl Gte {
             9 => self.ir[1] = val as i16,
             10 => self.ir[2] = val as i16,
             11 => self.ir[3] = val as i16,
-            12 => {
-                let v0 = val as i16;
-                let v1 = (val >> 16) as i16;
-
-                self.xy_fifo[0] = (v0, v1);
-            }
-            13 => {
-                let v0 = val as i16;
-                let v1 = (val >> 16) as i16;
-
-                self.xy_fifo[1] = (v0, v1);
-            }
+            12 => self.xy_fifo[0] = val_to_xy(),
+            13 => self.xy_fifo[1] = val_to_xy(),
             14 => {
-                let v0 = val as i16;
-                let v1 = (val >> 16) as i16;
-
-                self.xy_fifo[2] = (v0, v1);
-                self.xy_fifo[3] = (v0, v1);
+                let xy = val_to_xy();
+                self.xy_fifo[2] = xy;
+                self.xy_fifo[3] = xy;
+            }
+            15 => {
+                self.xy_fifo[3] = val_to_xy();
+                self.xy_fifo[0] = self.xy_fifo[1];
+                self.xy_fifo[1] = self.xy_fifo[2];
+                self.xy_fifo[2] = self.xy_fifo[3];
             }
             16 => self.z_fifo[0] = val as u16,
             17 => self.z_fifo[1] = val as u16,
