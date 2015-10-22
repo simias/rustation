@@ -823,6 +823,8 @@ impl Gpu {
 
         self.drawing_area_top = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_left = (val & 0x3ff) as u16;
+
+        self.update_drawing_area();
     }
 
     /// GP0(0xE4): Set Drawing Area bottom right
@@ -831,6 +833,16 @@ impl Gpu {
 
         self.drawing_area_bottom = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_right = (val & 0x3ff) as u16;
+
+        self.update_drawing_area();
+    }
+
+    // Called when the drawing area changes to notify the renderer
+    fn update_drawing_area(&mut self) {
+        self.renderer.set_drawing_area(self.drawing_area_left,
+                                       self.drawing_area_top,
+                                       self.drawing_area_right,
+                                       self.drawing_area_bottom);
     }
 
     /// GP0(0xE5): Set Drawing Offset

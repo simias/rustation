@@ -22,6 +22,10 @@ pub struct Renderer {
     /// OpenGL Context
     #[allow(dead_code)]
     gl_context: sdl2::video::GLContext,
+    /// Framebuffer horizontal resolution (native: 1024)
+    fb_x_res: u16,
+    /// Framebuffer vertical resolution (native: 512)
+    fb_y_res: u16,
     /// Vertex shader object
     vertex_shader: GLuint,
     /// Fragment shader object
@@ -43,6 +47,10 @@ pub struct Renderer {
 impl Renderer {
 
     pub fn new(sdl_context: &sdl2::Sdl) -> Renderer {
+        // Native PSX VRAM resolution
+        let fb_x_res = 1024u16;
+        let fb_y_res = 512u16;
+
         let video_subsystem = sdl_context.video().unwrap();
 
         let gl_attr = video_subsystem.gl_attr();
@@ -52,14 +60,19 @@ impl Renderer {
         // XXX Debug context is likely to be slower, we should make
         // that configurable at some point.
         gl_attr.set_context_flags().debug().set();
+        gl_attr.set_multisample_buffers(1);
+        gl_attr.set_multisample_samples(4);
 
-        let window = video_subsystem.window("PSX", 1024, 512)
-                                    .position_centered()
-                                    .opengl()
-                                    .build()
-                                    .ok().expect("Can't create SDL2 window");
+        let window =
+            video_subsystem.window("Rustation",
+                                   fb_x_res as u32, fb_y_res as u32)
+            .position_centered()
+            .opengl()
+            .build()
+            .ok().expect("Can't create SDL2 window");
 
-        let gl_context = window.gl_create_context()
+        let gl_context =
+            window.gl_create_context()
             .ok().expect("Can't create GL context");
 
         gl::load_with(|s| video_subsystem.gl_get_proc_address(s) );
@@ -68,6 +81,11 @@ impl Renderer {
         unsafe {
             gl::ClearColor(0., 0., 0., 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
+
+            // Enable scissor test
+            gl::Enable(gl::SCISSOR_TEST);
+            // Default to full screen
+            gl::Scissor(0, 0, fb_x_res as GLint, fb_y_res as GLint);
         }
         window.gl_swap_window();
 
@@ -142,6 +160,8 @@ impl Renderer {
         Renderer {
             window: window,
             gl_context: gl_context,
+            fb_x_res: fb_x_res,
+            fb_y_res: fb_y_res,
             vertex_shader: vertex_shader,
             fragment_shader: fragment_shader,
             program: program,
@@ -208,6 +228,48 @@ impl Renderer {
         // Update the uniform value
         unsafe {
             gl::Uniform2i(self.uniform_offset, x as GLint, y as GLint);
+        }
+    }
+
+    /// Set the drawing area. Coordinates are offsets in the
+    /// PlayStation VRAM
+    pub fn set_drawing_area(&mut self,
+                            left: u16, top: u16,
+                            right: u16, bottom: u16) {
+        // Render any pending primitives
+        self.draw();
+
+        let fb_x_res = self.fb_x_res as GLint;
+        let fb_y_res = self.fb_y_res as GLint;
+
+        // Scale PlayStation VRAM coordinates if our framebuffer is
+        // not at the native resolution
+        let left = (left as GLint * fb_x_res) / 1024;
+        let right = (right as GLint * fb_x_res) / 1024;
+
+        let top = (top as GLint * fb_y_res) / 512;
+        let bottom = (bottom as GLint * fb_y_res) / 512;
+
+        // Width and height are inclusive
+        let width = right - left + 1;
+        let height = bottom - top + 1;
+
+        // OpenGL has (0, 0) at the bottom left, the PSX at the top left
+        let bottom = fb_y_res - bottom - 1;
+
+        if width < 0 || height < 0 {
+            // XXX What should we do here?
+            println!("Unsupported drawing area: {}x{} [{}x{}->{}x{}]",
+                     width, height,
+                     left, top, right, bottom);
+            unsafe {
+                // Don't draw anything...
+                gl::Scissor(0, 0, 0, 0);
+            }
+        } else {
+            unsafe {
+                gl::Scissor(left, bottom, width, height);
+            }
         }
     }
 
