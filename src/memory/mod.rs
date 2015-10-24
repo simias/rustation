@@ -519,7 +519,10 @@ impl Interconnect {
 
                     match port {
                         Port::Gpu => self.gpu.gp0(src_word),
+                        // XXX ignore transfers to the MDEC for now
                         Port::MDecIn => (),
+                        // XXX ignre transfers to the SPU for now
+                        Port::Spu => (),
                         _ => panic!("Unhandled DMA destination port {:?}",
                                     port),
                     }
