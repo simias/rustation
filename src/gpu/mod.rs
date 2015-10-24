@@ -508,10 +508,10 @@ impl Gpu {
                         (5, Gpu::gp0_quad_mono_opaque),
                     0x2c =>
                         (9, Gpu::gp0_quad_texture_blend_opaque),
-                    0x2f =>
-                        (9, Gpu::gp0_quad_texture_blend_opaque),
                     0x2d =>
                         (9, Gpu::gp0_quad_texture_raw_opaque),
+                    0x2f =>
+                        (9, Gpu::gp0_quad_texture_raw_semi_transparent),
                     0x30 =>
                         (6, Gpu::gp0_triangle_shaded_opaque),
                     0x38 =>
@@ -576,7 +576,7 @@ impl Gpu {
 
     /// GP0(0x01): Clear Cache
     fn gp0_clear_cache(&mut self) {
-        // Not implemented
+        // XXX Not implemented
     }
 
     /// GP0(0x02): Fill Rectangle
@@ -588,10 +588,16 @@ impl Gpu {
         let color = Color::from_packed(self.gp0_command[0]);
 
         let vertices = [
-            Vertex::new(top_left, color),
-            Vertex::new(Position::new(top_left.x + size.x, top_left.y), color),
-            Vertex::new(Position::new(top_left.x, top_left.y + size.y), color),
-            Vertex::new(Position::new(top_left.x + size.x, top_left.y + size.y), color),
+            Vertex::opaque(top_left, color),
+            Vertex::opaque(Position::new(top_left.x + size.x,
+                                         top_left.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x,
+                                         top_left.y + size.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x + size.x,
+                                         top_left.y + size.y),
+                           color),
         ];
 
         self.renderer.push_quad(&vertices);
@@ -603,12 +609,12 @@ impl Gpu {
         let color = Color::from_packed(self.gp0_command[0]);
 
         let vertices = [
-            Vertex::new(Position::from_packed(self.gp0_command[1]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[2]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[3]),
-                        color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[1]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[2]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[3]),
+                           color),
         ];
 
         self.renderer.push_triangle(&vertices);
@@ -621,14 +627,14 @@ impl Gpu {
         let color = Color::from_packed(self.gp0_command[0]);
 
         let vertices = [
-            Vertex::new(Position::from_packed(self.gp0_command[1]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[2]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[3]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[4]),
-                        color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[1]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[2]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[3]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[4]),
+                           color),
         ];
 
         self.renderer.push_quad(&vertices);
@@ -641,14 +647,14 @@ impl Gpu {
         let color = Color::new(0x80, 0x00, 0x00);
 
         let vertices = [
-            Vertex::new(Position::from_packed(self.gp0_command[1]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[3]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[5]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[7]),
-                        color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[1]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[3]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[5]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[7]),
+                           color),
         ];
 
         self.renderer.push_quad(&vertices);
@@ -661,14 +667,34 @@ impl Gpu {
         let color = Color::new(0x80, 0x00, 0x00);
 
         let vertices = [
-            Vertex::new(Position::from_packed(self.gp0_command[1]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[3]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[5]),
-                        color),
-            Vertex::new(Position::from_packed(self.gp0_command[7]),
-                        color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[1]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[3]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[5]),
+                           color),
+            Vertex::opaque(Position::from_packed(self.gp0_command[7]),
+                           color),
+        ];
+
+        self.renderer.push_quad(&vertices);
+    }
+
+    /// GP0(0x2D): Raw Textured Opaque Quadrilateral
+    fn gp0_quad_texture_raw_semi_transparent(&mut self) {
+        // XXX We don't support textures for now, use a solid red
+        // color instead
+        let color = Color::new(0x80, 0x00, 0x00);
+
+        let vertices = [
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[1]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[3]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[5]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[7]),
+                                     color),
         ];
 
         self.renderer.push_quad(&vertices);
@@ -677,12 +703,12 @@ impl Gpu {
     /// GP0(0x30): Shaded Opaque Triangle
     fn gp0_triangle_shaded_opaque(&mut self) {
         let vertices = [
-            Vertex::new(Position::from_packed(self.gp0_command[1]),
-                        Color::from_packed(self.gp0_command[0])),
-            Vertex::new(Position::from_packed(self.gp0_command[3]),
-                        Color::from_packed(self.gp0_command[2])),
-            Vertex::new(Position::from_packed(self.gp0_command[5]),
-                        Color::from_packed(self.gp0_command[4])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[1]),
+                           Color::from_packed(self.gp0_command[0])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[3]),
+                           Color::from_packed(self.gp0_command[2])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[5]),
+                           Color::from_packed(self.gp0_command[4])),
         ];
 
         self.renderer.push_triangle(&vertices);
@@ -691,14 +717,14 @@ impl Gpu {
     /// GP0(0x38): Shaded Opaque Quadrilateral
     fn gp0_quad_shaded_opaque(&mut self) {
         let vertices = [
-            Vertex::new(Position::from_packed(self.gp0_command[1]),
-                        Color::from_packed(self.gp0_command[0])),
-            Vertex::new(Position::from_packed(self.gp0_command[3]),
-                        Color::from_packed(self.gp0_command[2])),
-            Vertex::new(Position::from_packed(self.gp0_command[5]),
-                        Color::from_packed(self.gp0_command[4])),
-            Vertex::new(Position::from_packed(self.gp0_command[7]),
-                        Color::from_packed(self.gp0_command[6])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[1]),
+                           Color::from_packed(self.gp0_command[0])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[3]),
+                           Color::from_packed(self.gp0_command[2])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[5]),
+                           Color::from_packed(self.gp0_command[4])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[7]),
+                           Color::from_packed(self.gp0_command[6])),
         ];
 
         self.renderer.push_quad(&vertices);
@@ -712,13 +738,16 @@ impl Gpu {
         let size = Position::from_packed(self.gp0_command[2]);
 
         let vertices = [
-            Vertex::new(top_left, color),
-            Vertex::new(Position::new(top_left.x + size.x, top_left.y),
-                        color),
-            Vertex::new(Position::new(top_left.x, top_left.y + size.y),
-                        color),
-            Vertex::new(Position::new(top_left.x + size.x, top_left.y + size.y),
-                        color),
+            Vertex::opaque(top_left, color),
+            Vertex::opaque(Position::new(top_left.x + size.x,
+                                         top_left.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x,
+                                         top_left.y + size.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x + size.x,
+                                         top_left.y + size.y),
+                           color),
         ];
 
 
@@ -733,13 +762,16 @@ impl Gpu {
         let size = Position::from_packed(self.gp0_command[3]);
 
         let vertices = [
-            Vertex::new(top_left, color),
-            Vertex::new(Position::new(top_left.x + size.x, top_left.y),
-                        color),
-            Vertex::new(Position::new(top_left.x, top_left.y + size.y),
-                        color),
-            Vertex::new(Position::new(top_left.x + size.x, top_left.y + size.y),
-                        color),
+            Vertex::opaque(top_left, color),
+            Vertex::opaque(Position::new(top_left.x + size.x,
+                                         top_left.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x,
+                                         top_left.y + size.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x + size.x,
+                                         top_left.y + size.y),
+                           color),
         ];
 
 
@@ -754,13 +786,16 @@ impl Gpu {
         let size = Position::from_packed(self.gp0_command[3]);
 
         let positions = [
-            Vertex::new(top_left, color),
-            Vertex::new(Position::new(top_left.x + size.x, top_left.y),
-                        color),
-            Vertex::new(Position::new(top_left.x, top_left.y + size.y),
-                        color),
-            Vertex::new(Position::new(top_left.x + size.x, top_left.y + size.y),
-                        color),
+            Vertex::opaque(top_left, color),
+            Vertex::opaque(Position::new(top_left.x + size.x,
+                                         top_left.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x,
+                                         top_left.y + size.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x + size.x,
+                                         top_left.y + size.y),
+                           color),
         ];
 
 

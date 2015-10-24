@@ -2,11 +2,12 @@
 
 in ivec2 position;
 in vec3 color;
+in float alpha;
 
 // Drawing offset
 uniform ivec2 offset;
 
-out vec3 v_color;
+out vec4 v_color;
 
 void main() {
   ivec2 pos = position + offset;
@@ -21,5 +22,5 @@ void main() {
   gl_Position.xyzw = vec4(xpos, ypos, 0.0, 1.0);
 
   // Glium doesn't support "normalized" for now
-  v_color = color/255;
+  v_color = vec4(color / 255, alpha);
 }

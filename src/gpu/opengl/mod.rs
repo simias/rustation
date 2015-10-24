@@ -3,7 +3,7 @@ use sdl2::video::GLProfile;
 
 use glium_sdl2;
 
-use glium::{Program, VertexBuffer, Frame, Surface, DrawParameters, Rect};
+use glium::{Program, VertexBuffer, Frame, Surface, DrawParameters, Rect, Blend};
 use glium::uniforms::{UniformsStorage, EmptyUniforms};
 
 /// Maximum number of vertex that can be stored in an attribute
@@ -12,17 +12,37 @@ const VERTEX_BUFFER_LEN: u32 = 64 * 1024;
 
 #[derive(Copy,Clone,Debug)]
 pub struct Vertex {
+    /// Position in PlayStation VRAM coordinates
     pub position: [i16; 2],
+    /// RGB color, 8bits per component
     pub color: [u8; 3],
+    /// Vertex alpha value, used for blending.
+    ///
+    /// XXX This is not accurate, we should implement blending
+    /// ourselves taking the current semi-transparency mode into
+    /// account. We should maybe store two variables, one with the
+    /// source factor and one with the destination factor.
+    pub alpha: f32,
 }
 
-implement_vertex!(Vertex, position, color);
+implement_vertex!(Vertex, position, color, alpha);
 
 impl Vertex {
-    pub fn new(pos: Position, color: Color) -> Vertex {
+    pub fn opaque(pos: Position,
+                  color: Color) -> Vertex {
         Vertex {
             position: [pos.x, pos.y],
             color: [color.r, color.g, color.b],
+            alpha: 1.0,
+        }
+    }
+
+    pub fn semi_transparent(pos: Position,
+                            color: Color) -> Vertex {
+        Vertex {
+            position: [pos.x, pos.y],
+            color: [color.r, color.g, color.b],
+            alpha: 0.5,
         }
     }
 }
@@ -139,10 +159,12 @@ impl Renderer {
         let vs_src = include_str!("vertex.glsl");
         let fs_src = include_str!("fragment.glsl");
 
-        let program = Program::from_source(&window, vs_src, fs_src, None).unwrap();
+        let program =
+            Program::from_source(&window, vs_src, fs_src, None).unwrap();
 
-        let vertex_buffer = VertexBuffer::empty_persistent(&window,
-                                                           VERTEX_BUFFER_LEN as usize).unwrap();
+        let vertex_buffer =
+            VertexBuffer::empty_persistent(&window,
+                                           VERTEX_BUFFER_LEN as usize).unwrap();
 
         let uniforms = uniform! {
             offset: [0; 2],
@@ -156,6 +178,9 @@ impl Renderer {
                 width: fb_x_res as u32,
                 height: fb_y_res as u32
             }),
+            // XXX temporary hack for semi-transparency, use basic
+            // alpha blending.
+            blend: Blend::alpha_blending(),
             ..Default::default()
         };
 
