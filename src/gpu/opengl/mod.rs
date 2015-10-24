@@ -5,6 +5,7 @@ use glium_sdl2;
 
 use glium::{Program, VertexBuffer, Frame, Surface, DrawParameters, Rect, Blend};
 use glium::uniforms::{UniformsStorage, EmptyUniforms};
+use glium::program::ProgramCreationInput;
 
 /// Maximum number of vertex that can be stored in an attribute
 /// buffers
@@ -151,9 +152,19 @@ impl Renderer {
         // compile-time thing.
         let vs_src = include_str!("vertex.glsl");
         let fs_src = include_str!("fragment.glsl");
+        let prog_input = ProgramCreationInput::SourceCode {
+            vertex_shader: &vs_src,
+            tessellation_control_shader: None,
+            tessellation_evaluation_shader: None,
+            geometry_shader: None,
+            fragment_shader: &fs_src,
+            transform_feedback_varyings: None,
+            // We do manual gamma correction
+            outputs_srgb: true,
+            uses_point_size: false,
+        };
 
-        let program =
-            Program::from_source(&window, vs_src, fs_src, None).unwrap();
+        let program = Program::new(&window, prog_input).unwrap();
 
         let vertex_buffer =
             VertexBuffer::empty_persistent(&window,
