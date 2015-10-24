@@ -283,3 +283,11 @@ impl Renderer {
         self.target = Some(self.window.draw());
     }
 }
+
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        if let Some(frame) = self.target.take() {
+            frame.finish().unwrap();
+        }
+    }
+}
