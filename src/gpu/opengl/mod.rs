@@ -80,13 +80,6 @@ pub struct Color {
 }
 
 impl Color {
-    pub fn new(r: u8, g: u8, b: u8) -> Color {
-        Color {
-            r: r,
-            g: g,
-            b: b
-        }
-    }
 
     pub fn from_packed(val: u32) -> Color {
         let r = val as u8;
@@ -215,11 +208,6 @@ impl Renderer {
 
     /// Add a quad to the draw buffer
     pub fn push_quad(&mut self, vertices: &[Vertex; 4]) {
-        // XXX Doesn't work, le slice retourne un [Vertex]
-        //// Push the first triangle
-        //self.push_triangle(&vertices[0..3]);
-        //// Push the 2nd triangle
-        //self.push_triangle(&vertices[1..4]);
         self.push_triangle(&[vertices[0], vertices[1], vertices[2]]);
         self.push_triangle(&[vertices[1], vertices[2], vertices[3]]);
     }

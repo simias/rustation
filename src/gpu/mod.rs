@@ -495,6 +495,11 @@ impl Gpu {
             let opcode = val >> 24;
 
             let (len, method): (u32, fn(&mut Gpu)) =
+                // XXX Many of those operations are simple variations
+                // of the same thing with and without
+                // semi-transparency, with raw texture or texture
+                // blending etc... We should probably factor all of
+                // that duplicated code.
                 match opcode {
                     0x00 =>
                         (1, Gpu::gp0_nop),
@@ -506,22 +511,36 @@ impl Gpu {
                         (4, Gpu::gp0_triangle_mono_opaque),
                     0x28 =>
                         (5, Gpu::gp0_quad_mono_opaque),
+                    0x2a =>
+                        (5, Gpu::gp0_quad_mono_semi_transparent),
                     0x2c =>
                         (9, Gpu::gp0_quad_texture_blend_opaque),
                     0x2d =>
                         (9, Gpu::gp0_quad_texture_raw_opaque),
+                    0x2e =>
+                        (9, Gpu::gp0_quad_texture_blend_semi_transparent),
                     0x2f =>
                         (9, Gpu::gp0_quad_texture_raw_semi_transparent),
                     0x30 =>
                         (6, Gpu::gp0_triangle_shaded_opaque),
+                    0x34 =>
+                        (9, Gpu::gp0_triangle_texture_blend_opaque),
+                    0x36 =>
+                        (9, Gpu::gp0_triangle_texture_blend_semi_transparent),
                     0x38 =>
                         (8, Gpu::gp0_quad_shaded_opaque),
+                    0x3c =>
+                        (12, Gpu::gp0_quad_shaded_texture_blend_opaque),
+                    0x3e =>
+                        (12, Gpu::gp0_shaded_quad_texture_blend_semi_transparent),
                     0x60 =>
                         (3, Gpu::gp0_rect_opaque),
                     0x64 =>
                         (4, Gpu::gp0_rect_texture_blend_opaque),
                     0x65 =>
                         (4, Gpu::gp0_rect_texture_raw_opaque),
+                    0x7c =>
+                        (3, Gpu::gp0_rect_texture_blend_opaque_16x16),
                     0xa0 =>
                         (3, Gpu::gp0_image_load),
                     0xc0 =>
@@ -569,17 +588,17 @@ impl Gpu {
         }
     }
 
-    /// GP0(0x00): No Operation
+    /// GP0(0x00): No operation
     fn gp0_nop(&mut self) {
         // NOP
     }
 
-    /// GP0(0x01): Clear Cache
+    /// GP0(0x01): Clear cache
     fn gp0_clear_cache(&mut self) {
         // XXX Not implemented
     }
 
-    /// GP0(0x02): Fill Rectangle
+    /// GP0(0x02): Fill rectangle
     fn gp0_fill_rect(&mut self) {
         // XXX Not affected by mask setting
         let top_left = Position::from_packed(self.gp0_command[1]);
@@ -603,7 +622,7 @@ impl Gpu {
         self.renderer.push_quad(&vertices);
     }
 
-    /// GP0(0x20): Monochrome Opaque Triangle
+    /// GP0(0x20): Monochrome opaque triangle
     fn gp0_triangle_mono_opaque(&mut self) {
         // Only one color repeated 3 times
         let color = Color::from_packed(self.gp0_command[0]);
@@ -621,7 +640,7 @@ impl Gpu {
     }
 
 
-    /// GP0(0x28): Monochrome Opaque Quadrilateral
+    /// GP0(0x28): Monochrome opaque quadrilateral
     fn gp0_quad_mono_opaque(&mut self) {
         // Only one color repeated 4 times
         let color = Color::from_packed(self.gp0_command[0]);
@@ -640,11 +659,27 @@ impl Gpu {
         self.renderer.push_quad(&vertices);
     }
 
-    /// GP0(0x2C): Texture-blended Opaque Quadrilateral
+    /// GP0(0x2a): Monochrome semi-transparent quadrilateral
+    fn gp0_quad_mono_semi_transparent(&mut self) {
+        let color = Color::from_packed(self.gp0_command[0]);
+
+        let vertices = [
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[1]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[2]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[3]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[4]),
+                                     color),
+        ];
+
+        self.renderer.push_quad(&vertices);
+    }
+
+    /// GP0(0x2C): Texture-blended opaque quadrilateral
     fn gp0_quad_texture_blend_opaque(&mut self) {
-        // XXX We don't support textures for now, use a solid red
-        // color instead
-        let color = Color::new(0x80, 0x00, 0x00);
+        let color = Color::from_packed(self.gp0_command[0]);
 
         let vertices = [
             Vertex::opaque(Position::from_packed(self.gp0_command[1]),
@@ -660,11 +695,9 @@ impl Gpu {
         self.renderer.push_quad(&vertices);
     }
 
-    /// GP0(0x2D): Raw Textured Opaque Quadrilateral
+    /// GP0(0x2D): Raw textured opaque quadrilateral
     fn gp0_quad_texture_raw_opaque(&mut self) {
-        // XXX We don't support textures for now, use a solid red
-        // color instead
-        let color = Color::new(0x80, 0x00, 0x00);
+        let color = Color::from_packed(self.gp0_command[0]);
 
         let vertices = [
             Vertex::opaque(Position::from_packed(self.gp0_command[1]),
@@ -680,11 +713,9 @@ impl Gpu {
         self.renderer.push_quad(&vertices);
     }
 
-    /// GP0(0x2D): Raw Textured Opaque Quadrilateral
-    fn gp0_quad_texture_raw_semi_transparent(&mut self) {
-        // XXX We don't support textures for now, use a solid red
-        // color instead
-        let color = Color::new(0x80, 0x00, 0x00);
+    /// GP0(0x2e): texture-blended semi-transparent quadrilateral
+    fn gp0_quad_texture_blend_semi_transparent(&mut self) {
+        let color = Color::from_packed(self.gp0_command[0]);
 
         let vertices = [
             Vertex::semi_transparent(Position::from_packed(self.gp0_command[1]),
@@ -700,7 +731,25 @@ impl Gpu {
         self.renderer.push_quad(&vertices);
     }
 
-    /// GP0(0x30): Shaded Opaque Triangle
+    /// GP0(0x2f): Raw textured semi-transparent quadrilateral
+    fn gp0_quad_texture_raw_semi_transparent(&mut self) {
+        let color = Color::from_packed(self.gp0_command[0]);
+
+        let vertices = [
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[1]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[3]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[5]),
+                                     color),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[7]),
+                                     color),
+        ];
+
+        self.renderer.push_quad(&vertices);
+    }
+
+    /// GP0(0x30): Shaded opaque triangle
     fn gp0_triangle_shaded_opaque(&mut self) {
         let vertices = [
             Vertex::opaque(Position::from_packed(self.gp0_command[1]),
@@ -714,7 +763,36 @@ impl Gpu {
         self.renderer.push_triangle(&vertices);
     }
 
-    /// GP0(0x38): Shaded Opaque Quadrilateral
+    // GP0(0x34): Shaded opaque triangle with texture blending
+    fn gp0_triangle_texture_blend_opaque(&mut self) {
+        let vertices = [
+            Vertex::opaque(Position::from_packed(self.gp0_command[1]),
+                           Color::from_packed(self.gp0_command[0])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[4]),
+                           Color::from_packed(self.gp0_command[3])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[7]),
+                           Color::from_packed(self.gp0_command[6])),
+        ];
+
+        self.renderer.push_triangle(&vertices);
+    }
+
+    // GP0(0x36): Shaded semi-transparent triangle with texture blending
+    fn gp0_triangle_texture_blend_semi_transparent(&mut self) {
+        let vertices = [
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[1]),
+                                     Color::from_packed(self.gp0_command[0])),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[4]),
+                                     Color::from_packed(self.gp0_command[3])),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[7]),
+                                     Color::from_packed(self.gp0_command[6])),
+        ];
+
+        self.renderer.push_triangle(&vertices);
+    }
+
+
+    /// GP0(0x38): Shaded opaque quadrilateral
     fn gp0_quad_shaded_opaque(&mut self) {
         let vertices = [
             Vertex::opaque(Position::from_packed(self.gp0_command[1]),
@@ -725,6 +803,38 @@ impl Gpu {
                            Color::from_packed(self.gp0_command[4])),
             Vertex::opaque(Position::from_packed(self.gp0_command[7]),
                            Color::from_packed(self.gp0_command[6])),
+        ];
+
+        self.renderer.push_quad(&vertices);
+    }
+
+    // GP0(0x3c): Shaded opaque quadrilateral with texture blending
+    fn gp0_quad_shaded_texture_blend_opaque(&mut self) {
+        let vertices = [
+            Vertex::opaque(Position::from_packed(self.gp0_command[1]),
+                           Color::from_packed(self.gp0_command[0])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[4]),
+                           Color::from_packed(self.gp0_command[3])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[7]),
+                           Color::from_packed(self.gp0_command[6])),
+            Vertex::opaque(Position::from_packed(self.gp0_command[10]),
+                           Color::from_packed(self.gp0_command[9])),
+        ];
+
+        self.renderer.push_quad(&vertices);
+    }
+
+    // GP0(0x3e): Shaded semi-transparent quadrilateral with texture blending
+    fn gp0_shaded_quad_texture_blend_semi_transparent(&mut self) {
+        let vertices = [
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[1]),
+                                     Color::from_packed(self.gp0_command[0])),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[4]),
+                                     Color::from_packed(self.gp0_command[3])),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[7]),
+                                     Color::from_packed(self.gp0_command[6])),
+            Vertex::semi_transparent(Position::from_packed(self.gp0_command[10]),
+                                     Color::from_packed(self.gp0_command[9])),
         ];
 
         self.renderer.push_quad(&vertices);
@@ -798,6 +908,28 @@ impl Gpu {
                            color),
         ];
 
+
+        self.renderer.push_quad(&positions);
+    }
+
+    /// GP0(0x7c): Opaque textured rectangle, 16x16, texture blending
+    fn gp0_rect_texture_blend_opaque_16x16(&mut self) {
+        let color = Color::from_packed(self.gp0_command[0]);
+
+        let top_left = Position::from_packed(self.gp0_command[1]);
+
+        let positions = [
+            Vertex::opaque(top_left, color),
+            Vertex::opaque(Position::new(top_left.x + 16,
+                                         top_left.y),
+                           color),
+            Vertex::opaque(Position::new(top_left.x,
+                                         top_left.y + 16),
+                           color),
+            Vertex::opaque(Position::new(top_left.x + 16,
+                                         top_left.y + 16),
+                           color),
+        ];
 
         self.renderer.push_quad(&positions);
     }
