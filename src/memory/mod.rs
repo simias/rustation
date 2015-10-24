@@ -43,6 +43,8 @@ pub struct Interconnect {
     /// Contents of the RAM_SIZE register which is probably a
     /// configuration register for the memory controller.
     ram_size: u32,
+    /// Memory control registers
+    mem_control: [u32; 9],
 }
 
 impl Interconnect {
@@ -60,6 +62,7 @@ impl Interconnect {
             cdrom: CdRom::new(disc),
             pad_memcard: PadMemCard::new(),
             ram_size: 0,
+            mem_control: [0; 9],
         }
     }
 
@@ -181,10 +184,22 @@ impl Interconnect {
             return Addressable::from_u32(!0);
         }
 
-
         if let Some(_) = map::RAM_SIZE.contains(abs_addr) {
             // We ignore writes at this address
             return Addressable::from_u32(self.ram_size);
+        }
+
+        if let Some(offset) = map::MEM_CONTROL.contains(abs_addr) {
+
+            if T::width() != AccessWidth::Word {
+                panic!("Unhandled MEM_CONTROL {:?} access", T::width());
+            }
+
+            let index = (offset >> 2) as usize;
+
+            let v = self.mem_control[index];
+
+            return Addressable::from_u32(v);
         }
 
         panic!("unhandled load at address {:08x}", addr);
@@ -273,6 +288,11 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::MEM_CONTROL.contains(abs_addr) {
+
+            if T::width() != AccessWidth::Word {
+                panic!("Unhandled MEM_CONTROL {:?} access", T::width());
+            }
+
             let val = val.as_u32();
 
             match offset {
@@ -289,6 +309,10 @@ impl Interconnect {
                               0x{:08x}",
                              offset, val),
             }
+
+            let index = (offset >> 2) as usize;
+
+            self.mem_control[index] = val;
 
             return;
         }
