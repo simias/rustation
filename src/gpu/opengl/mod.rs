@@ -29,68 +29,20 @@ pub struct Vertex {
 implement_vertex!(Vertex, position, color, alpha);
 
 impl Vertex {
-    pub fn opaque(pos: Position,
-                  color: Color) -> Vertex {
+    pub fn new(pos: [i16; 2],
+               color: [u8; 3],
+               semi_transparent: bool) -> Vertex {
+        let alpha =
+            if semi_transparent {
+                0.5
+            } else {
+                1.0
+            };
+
         Vertex {
-            position: [pos.x, pos.y],
-            color: [color.r, color.g, color.b],
-            alpha: 1.0,
-        }
-    }
-
-    pub fn semi_transparent(pos: Position,
-                            color: Color) -> Vertex {
-        Vertex {
-            position: [pos.x, pos.y],
-            color: [color.r, color.g, color.b],
-            alpha: 0.5,
-        }
-    }
-}
-
-#[derive(Copy,Clone,Default,Debug)]
-pub struct Position {
-    pub x: i16,
-    pub y: i16,
-}
-
-impl Position {
-    pub fn new(x: i16, y: i16) -> Position {
-        Position {
-            x: x,
-            y: y,
-        }
-    }
-
-    pub fn from_packed(val: u32) -> Position{
-        let x = val as i16;
-        let y = (val >> 16) as i16;
-
-        Position {
-            x: x,
-            y: y,
-        }
-    }
-}
-
-#[derive(Copy,Clone,Default,Debug)]
-pub struct Color {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-}
-
-impl Color {
-
-    pub fn from_packed(val: u32) -> Color {
-        let r = val as u8;
-        let g = (val >> 8) as u8;
-        let b = (val >> 16) as u8;
-
-        Color {
-            r: r,
-            g: g,
-            b: b,
+            position: pos,
+            color: color,
+            alpha: alpha,
         }
     }
 }
@@ -283,6 +235,7 @@ impl Renderer {
     /// Draw the buffered commands and reset the buffers
     pub fn draw(&mut self) {
         use glium::index;
+
         self.target
             .as_mut()
             .unwrap()
