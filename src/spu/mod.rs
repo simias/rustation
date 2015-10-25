@@ -129,6 +129,11 @@ impl Spu {
 
         let index = (offset >> 1) as usize;
 
+        if index >= 0x100 {
+            // XXX Support SPU internal registers
+            return Addressable::from_u32(0);
+        }
+
         let shadow = self.shadow_registers[index];
 
         // XXX This is a bit ugly but I use the match to "whitelist"
