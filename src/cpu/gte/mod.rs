@@ -106,6 +106,7 @@ impl Gte {
             0x01 => self.cmd_rtps(config),
             0x06 => self.cmd_nclip(),
             0x10 => self.cmd_dpcs(config),
+            0x11 => self.cmd_intpl(config),
             0x12 => self.cmd_mvmva(config),
             0x13 => self.cmd_ncds(config),
             0x2d => self.cmd_avsz3(),
@@ -655,18 +656,46 @@ impl Gte {
             let fc = (self.control_vectors[fc][i] as i64) << 12;
             let col = (col[i] as i64) << 4;
 
-            let product = fc - col;
+            let sub = fc - col;
 
-            let tmp = self.i64_to_i32_result(product) >> config.shift;
+            let tmp = (self.i64_to_i44(i as u8, sub) >> config.shift) as i32;
 
             let ir0 = self.ir[0] as i64;
 
-            let foo = self.i32_to_i16_saturate(CommandConfig::from_command(0),
+            let sat = self.i32_to_i16_saturate(CommandConfig::from_command(0),
                                                i as u8, tmp) as i64;
 
-            let res = self.i64_to_i32_result(col + ir0 * foo);
+            let res = self.i64_to_i44(i as u8, col + ir0 * sat);
 
-            self.mac[i + 1] = res >> config.shift;
+            self.mac[i + 1] = (res >> config.shift) as i32;
+        }
+
+        self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
+    }
+
+    /// Interpolate between a vector and the far color
+    fn cmd_intpl(&mut self, config: CommandConfig) {
+        let fc = ControlVector::FarColor.index();
+
+        // XXX this is very similar to the loop in DPCS above, we
+        // could probably factor that.
+        for i in 0..3 {
+            let fc = (self.control_vectors[fc][i] as i64) << 12;
+            let ir = (self.ir[i + 1] as i64) << 12;
+
+            let sub = fc - ir;
+
+            let tmp = (self.i64_to_i44(i as u8, sub) >> config.shift) as i32;
+
+            let ir0 = self.ir[0] as i64;
+
+            let sat = self.i32_to_i16_saturate(CommandConfig::from_command(0),
+                                               i as u8, tmp) as i64;
+
+            let res = self.i64_to_i44(i as u8, ir + ir0 * sat);
+
+            self.mac[i + 1] = (res >> config.shift) as i32;
         }
 
         self.mac_to_ir(config);
