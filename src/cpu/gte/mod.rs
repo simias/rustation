@@ -105,6 +105,7 @@ impl Gte {
         match opcode {
             0x01 => self.cmd_rtps(config),
             0x06 => self.cmd_nclip(),
+            0x0c => self.cmd_op(config),
             0x10 => self.cmd_dpcs(config),
             0x11 => self.cmd_intpl(config),
             0x12 => self.cmd_mvmva(config),
@@ -646,6 +647,27 @@ impl Gte {
         let sum = a as i64 + b as i64 + c as i64;
 
         self.mac[0] = self.i64_to_i32_result(sum);
+    }
+
+    /// Outer Product
+    fn cmd_op(&mut self, config: CommandConfig) {
+        let rm = Matrix::Rotation.index();
+
+        let ir1 = self.ir[1] as i32;
+        let ir2 = self.ir[2] as i32;
+        let ir3 = self.ir[3] as i32;
+
+        let r0 = self.matrices[rm][0][0] as i32;
+        let r1 = self.matrices[rm][1][1] as i32;
+        let r2 = self.matrices[rm][2][2] as i32;
+
+        let shift = config.shift;
+
+        self.mac[1] = (r1 * ir3 - r2 * ir2) >> shift;
+        self.mac[2] = (r2 * ir1 - r0 * ir3) >> shift;
+        self.mac[3] = (r0 * ir2 - r1 * ir1) >> shift;
+
+        self.mac_to_ir(config);
     }
 
     /// Depth Queue Single
