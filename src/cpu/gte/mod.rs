@@ -109,6 +109,7 @@ impl Gte {
             0x11 => self.cmd_intpl(config),
             0x12 => self.cmd_mvmva(config),
             0x13 => self.cmd_ncds(config),
+            0x1c => self.cmd_cc(config),
             0x28 => self.cmd_sqr(config),
             0x2d => self.cmd_avsz3(),
             0x30 => self.cmd_rtpt(config),
@@ -715,6 +716,33 @@ impl Gte {
     /// Normal color depth cue single vector
     fn cmd_ncds(&mut self, config: CommandConfig) {
         self.do_ncd(config, 0);
+    }
+
+    /// Color Color
+    fn cmd_cc(&mut self, config: CommandConfig) {
+        self.v[3][0] = self.ir[1];
+        self.v[3][1] = self.ir[2];
+        self.v[3][2] = self.ir[3];
+
+        self.multiply_matrix_by_vector(config,
+                                       Matrix::Color,
+                                       3,
+                                       ControlVector::BackgroundColor);
+
+
+        let (r, g, b, _) = self.rgb;
+
+        let col = [r, g, b];
+
+        for i in 0..3 {
+            let ir = self.ir[i + 1] as i32;
+            let col = (col[i] as i32) << 4;
+
+            self.mac[i + 1] = (ir * col) >> config.shift;
+        }
+
+        self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
     }
 
     /// Square vector
