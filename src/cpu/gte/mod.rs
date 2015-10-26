@@ -111,6 +111,7 @@ impl Gte {
             0x13 => self.cmd_ncds(config),
             0x2d => self.cmd_avsz3(),
             0x30 => self.cmd_rtpt(config),
+            0x3d => self.cmd_gpf(config),
             0x3f => self.cmd_ncct(config),
             _ => panic!("Unhandled GTE opcode {:02x}", opcode),
         }
@@ -746,6 +747,20 @@ impl Gte {
         let projection_factor = self.do_rtp(config, 2);
 
         self.depth_queuing(projection_factor);
+    }
+
+    /// General purpose interpolation
+    fn cmd_gpf(&mut self, config: CommandConfig) {
+        let ir0 = self.ir[0] as i32;
+
+        for i in 1..4 {
+            let ir = self.ir[i] as i32;
+
+            self.mac[i] = (ir * ir0) >> config.shift;
+        }
+
+        self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
     }
 
     /// Normal Color Color Triple. Operates on V0, V1 and V2
