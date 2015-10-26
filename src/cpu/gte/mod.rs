@@ -109,6 +109,7 @@ impl Gte {
             0x11 => self.cmd_intpl(config),
             0x12 => self.cmd_mvmva(config),
             0x13 => self.cmd_ncds(config),
+            0x28 => self.cmd_sqr(config),
             0x2d => self.cmd_avsz3(),
             0x30 => self.cmd_rtpt(config),
             0x3d => self.cmd_gpf(config),
@@ -714,6 +715,17 @@ impl Gte {
     /// Normal color depth cue single vector
     fn cmd_ncds(&mut self, config: CommandConfig) {
         self.do_ncd(config, 0);
+    }
+
+    /// Square vector
+    fn cmd_sqr(&mut self, config: CommandConfig) {
+        for i in 1..4 {
+            let ir = self.ir[i] as i32;
+
+            self.mac[i] = (ir * ir) >> config.shift;
+        }
+
+        self.mac_to_ir(config);
     }
 
     /// Average three Z values
