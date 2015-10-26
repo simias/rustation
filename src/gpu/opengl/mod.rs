@@ -85,8 +85,6 @@ impl Renderer {
         // XXX Debug context is likely to be slower, we should make
         // that configurable at some point.
         gl_attr.set_context_flags().debug().set();
-        gl_attr.set_multisample_buffers(1);
-        gl_attr.set_multisample_samples(4);
 
         let window =
             video_subsystem.window("Rustation",
