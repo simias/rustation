@@ -685,7 +685,7 @@ impl Gte {
         let col = [r, g, b];
         for i in 0..3 {
             let fc = (self.control_vectors[fc][i] as i64) << 12;
-            let col = (col[i] as i64) << 4;
+            let col = (col[i] as i64) << (4 + 12);
 
             let sub = fc - col;
 
