@@ -60,6 +60,8 @@ pub struct Gte {
     /// Contains the numbers of leading zeros in lzsc if it's positive
     /// (lzcs[31] is 0) or leading ones if it's negative (lzcs[31] is 1)
     lzcr: u8,
+    /// Register 23: 32bit read/write but not used for anything
+    reg_23: u32,
 }
 
 impl Gte {
@@ -90,6 +92,7 @@ impl Gte {
             // if lzcs is 0 then lzcr is 31. lzcr can never be equal
             // to 0.
             lzcr: 32,
+            reg_23: 0,
         }
     }
 
@@ -163,7 +166,7 @@ impl Gte {
             4 => {
                 let matrix = &self.matrices[Matrix::Rotation.index()];
 
-                matrix[2][2] as u16 as u32
+                matrix[2][2] as u32
             }
             5...7 => {
                 let index = ControlVector::Translation.index();
@@ -206,7 +209,7 @@ impl Gte {
             12 => {
                 let matrix = &self.matrices[Matrix::Light.index()];
 
-                matrix[2][2] as u16 as u32
+                matrix[2][2] as u32
             }
             13...15 => {
                 let index = ControlVector::BackgroundColor.index();
@@ -249,7 +252,7 @@ impl Gte {
             20 => {
                 let matrix = &self.matrices[Matrix::Color.index()];
 
-                matrix[2][2] as u16 as u32
+                matrix[2][2] as u32
             }
             21...23 => {
                 let index = ControlVector::FarColor.index();
@@ -499,11 +502,12 @@ impl Gte {
             20 => rgbx_to_u32(self.rgb_fifo[0]),
             21 => rgbx_to_u32(self.rgb_fifo[1]),
             22 => rgbx_to_u32(self.rgb_fifo[2]),
+            23 => self.reg_23,
             24 => self.mac[0] as u32,
             25 => self.mac[1] as u32,
             26 => self.mac[2] as u32,
             27 => self.mac[3] as u32,
-            28|29 => {
+            28 | 29 => {
                 let saturate = | v | {
                     if v < 0 {
                         0
@@ -520,6 +524,7 @@ impl Gte {
 
                 a | (b << 5) | (c << 10)
             }
+            30 => self.lzcs,
             31 => self.lzcr as u32,
             _  => panic!("Unhandled GTE data register {}", reg),
         }
@@ -596,6 +601,7 @@ impl Gte {
             20 => self.rgb_fifo[0] = val_to_rgbx(),
             21 => self.rgb_fifo[1] = val_to_rgbx(),
             22 => self.rgb_fifo[2] = val_to_rgbx(),
+            23 => self.reg_23 = val,
             24 => self.mac[0] = val as i32,
             25 => self.mac[1] = val as i32,
             26 => self.mac[2] = val as i32,
