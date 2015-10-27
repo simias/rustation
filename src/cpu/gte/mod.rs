@@ -37,8 +37,8 @@ pub struct Gte {
     flags: u32,
 
     // Data registers
-    /// Vectors (V0, V1, V2): 3x3 signed 4.12. The fourth vector is to
-    /// simplify the emulator's implementation in do_ncd
+    /// Vectors (V0, V1, V2): 3x3 signed 4.12. The fourth vector holds
+    /// IR[1..4] for commands where the config `vector_mul` is 3.
     v: [[i16; 3]; 4],
     /// Accumulators for intermediate results, 4 x signed word
     mac: [i32; 4],
@@ -736,6 +736,11 @@ impl Gte {
 
     /// Multiply vector by matrix and add vector
     fn cmd_mvmva(&mut self, config: CommandConfig) {
+        // The fourth vector holds IR values
+        self.v[3][0] = self.ir[1];
+        self.v[3][1] = self.ir[2];
+        self.v[3][2] = self.ir[3];
+
         self.multiply_matrix_by_vector(config,
                                        config.matrix,
                                        config.vector_mul,
@@ -869,10 +874,7 @@ impl Gte {
                                        vector_index,
                                        ControlVector::Zero);
 
-        // Use the custom 4th vector to store the intermediate
-        // values. This vector does not exist in the real hardware (at
-        // least not in the registers), it's just a hack to make the
-        // code simpler.
+        // Use the 4th vector to store the intermediate values
         self.v[3][0] = self.ir[1];
         self.v[3][1] = self.ir[2];
         self.v[3][2] = self.ir[3];
@@ -989,7 +991,7 @@ impl Gte {
 
                 // The operation is done using 44bit signed
                 // arithmetics.
-                res = self.i64_to_i44(c as u8, res + product as i64);
+                res = self.i64_to_i44(r as u8, res + product as i64);
             }
 
             // Store the result in the accumulator
