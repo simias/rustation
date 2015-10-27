@@ -118,6 +118,7 @@ impl Gte {
             0x2d => self.cmd_avsz3(),
             0x30 => self.cmd_rtpt(config),
             0x3d => self.cmd_gpf(config),
+            0x3e => self.cmd_gpl(config),
             0x3f => self.cmd_ncct(config),
             _ => panic!("Unhandled GTE opcode {:02x}", opcode),
         }
@@ -825,6 +826,28 @@ impl Gte {
             let ir = self.ir[i] as i32;
 
             self.mac[i] = (ir * ir0) >> config.shift;
+        }
+
+        self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
+    }
+
+    /// General purpose interpolation with base
+    fn cmd_gpl(&mut self, config: CommandConfig) {
+        let ir0 = self.ir[0] as i32;
+
+        let shift = config.shift;
+
+        for i in 1..4 {
+            let ir = self.ir[i] as i32;
+
+            let ir_prod = (ir * ir0) as i64;
+
+            let mac = (self.mac[i] as i64) << shift;
+
+            let sum = self.i64_to_i44((i - 1) as u8, mac + ir_prod);
+
+            self.mac[i] = (sum >> shift) as i32;
         }
 
         self.mac_to_ir(config);
