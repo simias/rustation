@@ -113,9 +113,11 @@ impl Gte {
             0x11 => self.cmd_intpl(config),
             0x12 => self.cmd_mvmva(config),
             0x13 => self.cmd_ncds(config),
+            0x16 => self.cmd_ncdt(config),
             0x1c => self.cmd_cc(config),
             0x28 => self.cmd_sqr(config),
             0x2d => self.cmd_avsz3(),
+            0x2e => self.cmd_avsz4(),
             0x30 => self.cmd_rtpt(config),
             0x3d => self.cmd_gpf(config),
             0x3e => self.cmd_gpl(config),
@@ -747,9 +749,16 @@ impl Gte {
                                        config.vector_add);
     }
 
-    /// Normal color depth cue single vector
+    /// Normal Color Depth Cue Single vector
     fn cmd_ncds(&mut self, config: CommandConfig) {
         self.do_ncd(config, 0);
+    }
+
+    /// Normal Color Depth Cue Triple
+    fn cmd_ncdt(&mut self, config: CommandConfig) {
+        self.do_ncd(config, 0);
+        self.do_ncd(config, 1);
+        self.do_ncd(config, 2);
     }
 
     /// Color Color
@@ -805,6 +814,27 @@ impl Gte {
         let zsf3 = self.zsf3 as i64;
 
         let average = zsf3 * sum as i64;
+
+        self.mac[0] = self.i64_to_i32_result(average);
+        self.otz = self.i64_to_otz(average);
+    }
+
+    /// Average four Z values
+    fn cmd_avsz4(&mut self) {
+        let z0 = self.z_fifo[0] as u32;
+        let z1 = self.z_fifo[1] as u32;
+        let z2 = self.z_fifo[2] as u32;
+        let z3 = self.z_fifo[3] as u32;
+
+        let sum = z0 + z1 + z2 + z3;
+
+        // The average factor should generally be set to 1/4 of the
+        // ordering table size. So for instance for a table of 1024
+        // entries it should be set at 256 to use the full table
+        // granularity.
+        let zsf4 = self.zsf4 as i64;
+
+        let average = zsf4 * sum as i64;
 
         self.mac[0] = self.i64_to_i32_result(average);
         self.otz = self.i64_to_otz(average);
