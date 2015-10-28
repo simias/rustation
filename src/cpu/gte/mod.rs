@@ -114,8 +114,10 @@ impl Gte {
             0x12 => self.cmd_mvmva(config),
             0x13 => self.cmd_ncds(config),
             0x16 => self.cmd_ncdt(config),
+            0x1b => self.cmd_nccs(config),
             0x1c => self.cmd_cc(config),
             0x28 => self.cmd_sqr(config),
+            0x2a => self.cmd_dpct(config),
             0x2d => self.cmd_avsz3(),
             0x2e => self.cmd_avsz4(),
             0x30 => self.cmd_rtpt(config),
@@ -708,6 +710,45 @@ impl Gte {
         self.mac_to_rgb_fifo();
     }
 
+    /// Depth Queue Triple
+    fn cmd_dpct(&mut self, config: CommandConfig) {
+        // Each call uses the oldest entry in the RGB FIFO and pushes
+        // the result at the top so the three calls will process and
+        // replace the entire contents of the FIFO
+        self.do_dpc(config);
+        self.do_dpc(config);
+        self.do_dpc(config);
+    }
+
+    fn do_dpc(&mut self, config: CommandConfig) {
+        let fc = ControlVector::FarColor.index();
+
+        let (r, g, b, _) = self.rgb_fifo[0];
+
+        let col = [r, g, b];
+
+        for i in 0..3 {
+            let fc = (self.control_vectors[fc][i] as i64) << 12;
+            let col = (col[i] as i64) << (4 + 12);
+
+            let sub = fc - col;
+
+            let tmp = (self.i64_to_i44(i as u8, sub) >> config.shift) as i32;
+
+            let ir0 = self.ir[0] as i64;
+
+            let sat = self.i32_to_i16_saturate(CommandConfig::from_command(0),
+                                               i as u8, tmp) as i64;
+
+            let res = self.i64_to_i44(i as u8, col + ir0 * sat);
+
+            self.mac[i + 1] = (res >> config.shift) as i32;
+        }
+
+        self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
+    }
+
     /// Interpolate between a vector and the far color
     fn cmd_intpl(&mut self, config: CommandConfig) {
         let fc = ControlVector::FarColor.index();
@@ -759,6 +800,11 @@ impl Gte {
         self.do_ncd(config, 0);
         self.do_ncd(config, 1);
         self.do_ncd(config, 2);
+    }
+
+    /// Normal Color Color Single. Operates on V0
+    fn cmd_nccs(&mut self, config: CommandConfig) {
+        self.do_ncc(config, 0);
     }
 
     /// Color Color
