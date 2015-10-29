@@ -752,20 +752,40 @@ impl Gpu {
 
         let color = gp0_color(self.gp0_command[0]);
 
-        let vertices = [
-            self.gp0_attributes.vertex(top_left, color),
-            self.gp0_attributes.vertex([top_left[0] + size[0],
-                                        top_left[1]],
-                                       color),
-            self.gp0_attributes.vertex([top_left[0],
-                                        top_left[1] + size[1]],
-                                       color),
-            self.gp0_attributes.vertex([top_left[0] + size[0],
-                                        top_left[1] + size[1]],
-                                       color),
-        ];
+        // Alignment constraints
+        let left = (top_left[0] & 0x3f0) as u16;
+        let top = (top_left[1] & 0x1ff) as u16;
 
-        self.renderer.push_quad(&vertices);
+        // width = 0x400 (ignoring higher bits) is the same as width =
+        // 0, however width = 0x3ff is rounded up to 0x400 (without
+        // wrapping to 0) so we need to special case 0x400
+        let width =
+            match size[0] & 0x7ff {
+                0x400 => 0,
+                // round up to the next multiple of 0x10
+                n => ((n + 0xf) & 0x3f0) as u16,
+            };
+
+        let height = (size[1] & 0x1ff) as u16;
+
+        let mut bottom = top + height;
+        let mut right = left + width;
+
+        // XXX Normally the fill rect wraps around: if the x or y
+        // coordinates overflow we should wrap around the image.
+        if right > 0x400 {
+            println!("Fill rect X overflow: {}", right);
+            right = 0x400;
+        }
+
+        if bottom > 0x200 {
+            println!("Fill rect Y overflow: {}", bottom);
+            bottom = 0x200;
+        }
+
+        self.renderer.fill_rect(color,
+                                top, left,
+                                bottom, right);
     }
 
     /// Draw an untextured unshaded triangle

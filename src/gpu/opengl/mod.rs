@@ -62,6 +62,8 @@ pub struct Renderer {
     vertex_buffer: VertexBuffer<Vertex>,
     /// GLSL uniforms
     uniforms: UniformsStorage<'static, [i32; 2], EmptyUniforms>,
+    /// Current draw offset
+    offset: (i16, i16),
     /// Glium draw parameters
     params: DrawParameters<'static>,
     /// Current number or vertices in the buffers
@@ -146,6 +148,7 @@ impl Renderer {
             program: program,
             vertex_buffer: vertex_buffer,
             uniforms: uniforms,
+            offset: (0, 0),
             params: params,
             nvertices: 0,
         }
@@ -173,10 +176,55 @@ impl Renderer {
         self.push_triangle(&[vertices[1], vertices[2], vertices[3]]);
     }
 
+    /// Fill a rectangle in memory with the given color. This method
+    /// ignores the mask bit, the drawing area and the drawing offset.
+    pub fn fill_rect(&mut self,
+                     color: [u8; 3],
+                     top: u16, left: u16,
+                     bottom: u16, right: u16) {
+        // Flush any pending draw commands
+        self.draw();
+
+        // Save the current value of the scissor
+        let scissor = self.params.scissor;
+
+        // Disable the scissor and offset
+        self.params.scissor = None;
+        self.uniforms = uniform! {
+            offset: [0; 2],
+        };
+
+        let top = top as i16;
+        let left = left as i16;
+        // Fill rect is inclusive
+        let bottom = bottom as i16;
+        let right = right as i16;
+
+        // Draw a quad to fill the rectangle
+        self.push_quad(&[
+            Vertex::new([left, top], color, false),
+            Vertex::new([right, top], color, false),
+            Vertex::new([left, bottom], color, false),
+            Vertex::new([right, bottom], color, false),
+            ]);
+
+        self.draw();
+
+        // Restore previous scissor box and offset
+        self.params.scissor = scissor;
+
+        let (x, y) = self.offset;
+        self.uniforms = uniform! {
+            offset: [x as i32, y as i32],
+        };
+    }
+
     /// Set the value of the uniform draw offset
     pub fn set_draw_offset(&mut self, x: i16, y: i16) {
         // Force draw for the primitives with the current offset
         self.draw();
+
+        self.offset = (x, y);
 
         self.uniforms = uniform! {
             offset : [x as i32, y as i32],
@@ -191,29 +239,14 @@ impl Renderer {
         // Render any pending primitives
         self.draw();
 
-        let fb_x_res = self.fb_x_res as i32;
-        let fb_y_res = self.fb_y_res as i32;
+        let (left, top) = self.scale_coords(left, top);
+        let (right, bottom) = self.scale_coords(right, bottom);
 
-        // Scale PlayStation VRAM coordinates if our framebuffer is
-        // not at the native resolution
-        let left = (left as i32 * fb_x_res) / 1024;
-        let right = (right as i32 * fb_x_res) / 1024;
-
-        let top = (top as i32 * fb_y_res) / 512;
-        let bottom = (bottom as i32 * fb_y_res) / 512;
-
-        // Width and height are inclusive
-        let width = right - left + 1;
-        let height = bottom - top + 1;
-
-        // OpenGL has (0, 0) at the bottom left, the PSX at the top left
-        let bottom = fb_y_res - bottom - 1;
-
-        if width < 0 || height < 0 {
-            // XXX What should we do here?
-            println!("Unsupported drawing area: {}x{} [{}x{}->{}x{}]",
-                     width, height,
-                     left, top, right, bottom);
+        if left > right || bottom > top {
+            // XXX What should we do here? This happens often because
+            // the drawing area is set in two successive calls to set
+            // the top_left and then bottom_right so the intermediate
+            // value is often wrong.
             self.params.scissor = Some(Rect {
                 left: 0,
                 bottom: 0,
@@ -221,11 +254,15 @@ impl Renderer {
                 height: 0,
             });
         } else {
+            // Width and height are inclusive
+            let width = right - left + 1;
+            let height = top - bottom + 1;
+
             self.params.scissor = Some(Rect {
-                left: left as u32,
-                bottom: bottom as u32,
-                width: width as u32,
-                height: height as u32,
+                left: left,
+                bottom: bottom,
+                width: width,
+                height: height,
             });
         }
     }
@@ -250,12 +287,28 @@ impl Renderer {
 
     /// Draw the buffered commands and display them
     pub fn display(&mut self) {
+        self.draw();
+
         {
             let target = self.target.take().unwrap();
             target.finish().unwrap();
         }
 
         self.target = Some(self.window.draw());
+    }
+
+    /// Convert coordinates in the PlayStation framebuffer to
+    /// coordinates in our potentially scaled OpenGL
+    /// framebuffer. Coordinates are rounded to the nearest pixel.
+    fn scale_coords(&self, x: u16, y: u16) -> (u32, u32) {
+        // OpenGL has (0, 0) at the bottom left, the PSX at the top
+        // left so we need to complement the y coordinate
+        let y = !y & 0x1ff;
+
+        let x = (x as u32 * self.fb_x_res as u32 + 512) / 1024;
+        let y = (y as u32 * self.fb_y_res as u32 + 256) / 512;
+
+        (x, y)
     }
 }
 
