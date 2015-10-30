@@ -20,15 +20,18 @@ emulator starts to become usable is to turn it into a libretro core so
 that it could be played in
 [RetroArch](https://github.com/libretro/RetroArch) for instance.
 
-For the time being it can only boot the BIOS (tested with SCPH1001)
-and display the main menu without textures.
+For the time being it can only boot a few games. Crash Bandicoot
+(Japanese version) is mostly playable, although I've had random
+crashes. Some other games (like Spyro) freeze after or during the
+intro.
 
-The GPU rendering is implemented using OpenGL, the idea is to allow
-things like increased internal resolution, texture replacement and
-other enhancements down the line. Using modern OpenGL it should be
-possible to write a flexible yet reasonably accurate renderer. At
-least that's the theory, there's quite a lot of work to do before it
-reaches a playable state.
+The GPU rendering is implemented using OpenGL through the [glium
+API](https://github.com/tomaka/glium), the idea is to allow things
+like increased internal resolution, texture replacement and other
+enhancements down the line. Using modern OpenGL it should be possible
+to write a flexible yet reasonably accurate renderer. At least that's
+the theory, there's quite a lot of work to do before it reaches a
+playable state.
 
 If you have any questions, in particular if something in the code is
 not clear or properly commented don't hesitate to fill an issue.
@@ -39,11 +42,14 @@ PlayStation. We'll see if this turns out to be a good idea...
 
 ## Currently implemented (even partially)
 
+![Crash Bandicoot (Japan)]
+(https://raw.githubusercontent.com/wiki/simias/rustation/images/crash_bandicoot-level1.png)
+
 * CPU
-* Basic GTE support (ported from mednafen, missing many commands)
+* Basic GTE support (ported from mednafen PSX)
 * Instruction cache
 * Interrupts
-* Very basic GPU (enough to display the BIOS without textures)
+* Very basic GPU (no textures)
 * Timers
 * DMA
 * Debugger
@@ -56,6 +62,7 @@ PlayStation. We'll see if this turns out to be a good idea...
 * MDEC
 * SPU
 * Memory card
+* CPU pipeline emulation
 * More accurate timings
 * Many, many other things...
 
@@ -81,6 +88,8 @@ If the build is succesful you can run the emulator using:
 ```
 cargo run --release /path/to/SCPH1001.BIN
 ```
+
+For Windows check issue [#12](https://github.com/simias/rustation/issues/12).
 
 Use the `Escape` key to exit the emulator, `Pause/Break` to "break" into the
 debugger, the emulator will then listen on TCP port `9001` for a GDB
