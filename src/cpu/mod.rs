@@ -132,6 +132,11 @@ impl Cpu {
 
         // Check for pending interrupts
         if self.cop0.irq_active(self.inter.irq_state()) {
+            if instruction.is_gte_op() {
+                // GTE instructions get executed even if an interrupt
+                // occurs
+                self.decode_and_execute(instruction, debugger);
+            }
             self.exception(Exception::Interrupt);
         } else {
             // No interrupt pending, run the current instruction
@@ -1537,6 +1542,14 @@ impl Instruction {
         let Instruction(op) = self;
 
         op & 0x3ffffff
+    }
+
+    /// Return true if the instruction contains a GTE/COP2 opcode
+    fn is_gte_op(self) -> bool {
+        // XXX This will match all GTE instructions including mfc/mtc
+        // and friends, do we only want to match GTE operations
+        // instead?
+        self.function() == 0b010001
     }
 }
 
