@@ -56,6 +56,14 @@ pub struct CdRom {
     read_whole_sector: bool,
     /// CDROM audio mixer connected to the SPU
     mixer: Mixer,
+    /// True if the ADPCM filter is enabled
+    filter_enabled: bool,
+    /// If ADPCM filtering is enabled only sectors with this file
+    /// number are processed
+    filter_file: u8,
+    /// If ADPCM filtering is enabled only sectors with this channel
+    /// number are processed
+    filter_channel: u8,
 }
 
 impl CdRom {
@@ -81,6 +89,9 @@ impl CdRom {
             rx_len: 0,
             read_whole_sector: true,
             mixer: Mixer::new(),
+            filter_enabled: false,
+            filter_file: 0,
+            filter_channel: 0,
         }
     }
 
@@ -516,6 +527,7 @@ impl CdRom {
                 0x09 => CdRom::cmd_pause,
                 0x0a => CdRom::cmd_init,
                 0x0c => CdRom::cmd_demute,
+                0x0d => CdRom::cmd_set_filter,
                 0x0e => CdRom::cmd_set_mode,
                 0x15 => CdRom::cmd_seek_l,
                 0x1a => CdRom::cmd_get_id,
@@ -702,6 +714,24 @@ impl CdRom {
                                     self.drive_status()]))
     }
 
+    /// Filter for ADPCM sectors
+    fn cmd_set_filter(&mut self) -> CommandState {
+        if self.params.len() != 2 {
+            // XXX: should trigger IRQ 5 with response 0x13, 0x20
+            panic!("CDROM: bad number of parameters for SetFilter: {:?}",
+                   self.params);
+        }
+
+        self.filter_file = self.params.pop();
+        self.filter_channel = self.params.pop();
+
+        CommandState::RxPending(34_000,
+                                34_000 + 5408,
+                                IrqCode::Ok,
+                                Fifo::from_bytes(&[
+                                    self.drive_status()]))
+    }
+
     /// Configure the behaviour of the CDROM drive
     fn cmd_set_mode(&mut self) -> CommandState {
         if self.params.len() != 1 {
@@ -714,8 +744,9 @@ impl CdRom {
 
         self.double_speed = (mode & 0x80) != 0;
         self.read_whole_sector = (mode & 0x20) != 0;
+        self.filter_enabled = (mode & 0x8) != 0;
 
-        if mode & 0x5f != 0 {
+        if mode & 0x17 != 0 {
             panic!("CDROM: unhandled mode: {:02x}", mode);
         }
 
