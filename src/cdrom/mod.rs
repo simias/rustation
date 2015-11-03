@@ -523,7 +523,8 @@ impl CdRom {
             match cmd {
                 0x01 => CdRom::cmd_get_stat,
                 0x02 => CdRom::cmd_set_loc,
-                0x06 => CdRom::cmd_read_n,
+                // ReadN
+                0x06 => CdRom::cmd_read,
                 0x09 => CdRom::cmd_pause,
                 0x0a => CdRom::cmd_init,
                 0x0c => CdRom::cmd_demute,
@@ -531,6 +532,8 @@ impl CdRom {
                 0x0e => CdRom::cmd_set_mode,
                 0x15 => CdRom::cmd_seek_l,
                 0x1a => CdRom::cmd_get_id,
+                // ReadS
+                0x1b => CdRom::cmd_read,
                 0x1e => CdRom::cmd_read_toc,
                 0x19 => CdRom::cmd_test,
                 _    => panic!("Unhandled CDROM command 0x{:02x} {:?}",
@@ -656,8 +659,13 @@ impl CdRom {
         }
     }
 
-    /// Start data read sequence, the controller will return sectors
-    fn cmd_read_n(&mut self) -> CommandState {
+    /// Start data read sequence. This is the implementation for both
+    /// ReadN and ReadS, apparently the only difference between the
+    /// two is that ReadN will retry in case of an error while ReadS
+    /// will continue to the next sector (useful for streaming
+    /// audio/movies). In our emulator we'll just pretend no error
+    /// ever occurs.
+    fn cmd_read(&mut self) -> CommandState {
         if !self.read_state.is_idle() {
             panic!("CDROM \"read n\" while we're already reading");
         }
