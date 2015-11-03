@@ -328,7 +328,7 @@ impl CdRom {
         // Make sure we don't end up in track1's pregap, I don't know
         // if it's ever useful? Needs special handling at least...
         if self.seek_target < Msf::from_bcd(0x00, 0x02, 0x00) {
-            panic!("Seek to track 1 pregap: {}", self.seek_target);
+            panic!("Seek to track. 1 pregap: {}", self.seek_target);
         }
 
         self.position = self.seek_target;
@@ -530,6 +530,7 @@ impl CdRom {
                 0x0c => CdRom::cmd_demute,
                 0x0d => CdRom::cmd_set_filter,
                 0x0e => CdRom::cmd_set_mode,
+                0x11 => CdRom::cmd_get_loc_p,
                 0x15 => CdRom::cmd_seek_l,
                 0x1a => CdRom::cmd_get_id,
                 // ReadS
@@ -764,6 +765,47 @@ impl CdRom {
                                 Fifo::from_bytes(&[
                                     self.drive_status()]))
     }
+
+    /// Get the current position of the drive head by returning the
+    /// contents of the Q subchannel
+    /// XXX handle libcrypt subchannel data
+    fn cmd_get_loc_p(&mut self) -> CommandState {
+        if self.position < Msf::from_bcd(0x00, 0x02, 0x00) {
+            // The values returned in the track 01 pregap are strange,
+            // The absolute MSF seems correct but the track MSF looks
+            // like garbage.
+            //
+            // For instance after seeking at 00:01:25 the track MSF
+            // returned by GetLocP is 00:00:49 with my PAL Spyro disc.
+            panic!("GetLocP while in track1 pregap");
+        }
+
+        // The position returned by get_loc_p seems to be ahead of the
+        // currently read sector *sometimes*. Probably because of the
+        // way the subchannel data is buffered?
+        let abs_msf = self.position.next();
+
+        // Position within the current track
+        // XXX For now only one track/index is supported, we just need
+        // to substract 2 seconds
+        let track_msf = self.position - Msf::from_bcd(0x00, 0x02, 0x00);
+
+        let track = 0x01;
+        let index = 0x01;
+
+        let (track_m, track_s, track_f) = track_msf.into_bcd();
+
+        let (abs_m, abs_s, abs_f) = abs_msf.into_bcd();
+
+        let response = Fifo::from_bytes(
+            &[track, index, track_m, track_s, track_f, abs_m, abs_s, abs_f]);
+
+        CommandState::RxPending(32_000,
+                                32_000 + 16816,
+                                IrqCode::Ok,
+                                response)
+    }
+
 
     /// Execute seek. Target is given by previous "set loc" command.
     fn cmd_seek_l(&mut self) -> CommandState {
