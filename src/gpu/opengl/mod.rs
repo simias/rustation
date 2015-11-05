@@ -128,6 +128,7 @@ impl Renderer {
                 height: fb_out_y_res,
             }),
             line_width: Some(scaling_factor),
+            //polygon_mode: PolygonMode::Line,
             ..Default::default()
         };
 
@@ -357,6 +358,10 @@ impl Renderer {
                 height: height,
             });
         }
+    }
+
+    pub fn clear(&mut self) {
+        //self.target.as_mut().unwrap().clear_color(0.0, 0.0, 0.0, 1.0);
     }
 
     /// Draw the buffered commands and reset the buffers

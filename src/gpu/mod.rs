@@ -680,7 +680,10 @@ impl Gpu {
                 0xe4 => (1,  Gpu::gp0_drawing_area_bottom_right, false),
                 0xe5 => (1,  Gpu::gp0_drawing_offset, false),
                 0xe6 => (1,  Gpu::gp0_mask_bit_setting, false),
-                _    => panic!("Unhandled GP0 command {:08x}", gp0),
+                _    => {
+                    println!("Unhandled GP0 command {:08x}", gp0);
+                    (1,  Gpu::gp0_nop, false)
+                },
             };
 
         let textured = opcode & 0x4 != 0;
@@ -728,6 +731,12 @@ impl Gpu {
         let size = gp0_position(self.gp0_command[2]);
 
         let color = gp0_color(self.gp0_command[0]);
+
+        println!("Fill rect ({} {}) ({} {})",
+                 top_left[0],
+                 top_left[1],
+                 size[0],
+                 size[1]);
 
         // Alignment constraints
         let left = (top_left[0] & 0x3f0) as u16;
@@ -1365,6 +1374,10 @@ impl Gpu {
         self.display_line_end   = ((val >> 10) & 0x3ff) as u16;
 
         self.sync(tk, irq_state);
+    }
+
+    pub fn clear(&mut self) {
+        self.renderer.clear();
     }
 
     /// Return various GPU state information in the GPUREAD register

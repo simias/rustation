@@ -115,6 +115,7 @@ fn main() {
             Action::None => {},
             Action::Quit => return,
             Action::Debug => debugger.debug(&mut cpu),
+            Action::Clear => cpu.clear(),
         }
     }
 }
@@ -123,6 +124,7 @@ enum Action {
     None,
     Quit,
     Debug,
+    Clear,
 }
 
 // Handle SDL events
@@ -137,8 +139,10 @@ fn handle_events(event_pump: &mut EventPump, cpu: &mut Cpu) -> Action {
             Event::Quit {..} => return Action::Quit,
             Event::KeyDown { keycode: Some(Keycode::Pause), .. } =>
                 return Action::Debug,
-            Event::KeyDown { keycode: k, .. } =>
-                handle_keyboard(pad, k, ButtonState::Pressed),
+            Event::KeyDown { keycode: k, .. } => {
+                handle_keyboard(pad, k, ButtonState::Pressed);
+                return Action::Clear;
+            }
             Event::KeyUp { keycode: k, .. } =>
                 handle_keyboard(pad, k, ButtonState::Released),
             Event::ControllerButtonDown { button: b, .. } =>

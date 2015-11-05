@@ -178,7 +178,7 @@ impl Spu {
                     regmap::CURRENT_VOLUME_RIGHT =>
                         // XXX return current value
                         shadow,
-                    _ => panic!("Unhandled SPU load {:x}", offset),
+                    _ => shadow,//panic!("Unhandled SPU load {:x}", offset),
                 }
             };
 

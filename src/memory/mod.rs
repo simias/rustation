@@ -82,6 +82,10 @@ impl Interconnect {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.gpu.clear();
+    }
+
     pub fn cache_control(&self) -> CacheControl {
         self.cache_control
     }
@@ -197,7 +201,8 @@ impl Interconnect {
             return self.mem_control[index];
         }
 
-        panic!("unhandled load at address {:08x}", addr);
+        println!("unhandled load at address {:08x}", addr);
+        0
     }
 
     /// Interconnect: store `val` into `addr`
@@ -327,7 +332,7 @@ impl Interconnect {
             return;
         }
 
-        panic!("unhandled store into address {:08x}: {:08x}",
+        println!("unhandled store into address {:08x}: {:08x}",
                addr, val);
     }
 
