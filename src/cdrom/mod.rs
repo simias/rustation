@@ -337,7 +337,8 @@ impl CdRom {
     /// Retreive a single byte from the RX buffer
     fn read_byte(&mut self) -> u8 {
         if self.rx_index >= self.rx_len {
-            panic!("Unhandled CDROM long read");
+            println!("Unhandled CDROM long read");
+            return 0;
         }
 
         let pos = self.rx_offset + self.rx_index;
@@ -368,7 +369,8 @@ impl CdRom {
         // Make sure we don't end up in track1's pregap, I don't know
         // if it's ever useful? Needs special handling at least...
         if self.seek_target < Msf::from_bcd(0x00, 0x02, 0x00) {
-            panic!("Seek to track. 1 pregap: {}", self.seek_target);
+            println!("Seek to track. 1 pregap: {}", self.seek_target);
+            return;
         }
 
         self.position = self.seek_target;
@@ -467,7 +469,7 @@ impl CdRom {
             // next interrupt will only become active once the
             // previous one is acked. How deep is the stack? Can it be
             // cleared?
-            panic!("Unsupported nested CDROM interrupt");
+            println!("Unsupported nested CDROM interrupt");
         }
 
         let prev_irq = self.irq();
@@ -488,7 +490,6 @@ impl CdRom {
         self.irq_flags &= !v;
 
         if self.irq_flags == 0 {
-
             // Certain commands have a 2nd phase after the first
             // interrupt is acknowledged
             let on_ack = self.on_ack;
@@ -572,6 +573,7 @@ impl CdRom {
             match cmd {
                 0x01 => CdRom::cmd_get_stat,
                 0x02 => CdRom::cmd_set_loc,
+                0x03 => CdRom::cmd_get_stat,
                 // ReadN
                 0x06 => CdRom::cmd_read,
                 0x09 => CdRom::cmd_pause,
@@ -579,13 +581,16 @@ impl CdRom {
                 0x0b => CdRom::cmd_mute,
                 0x0c => CdRom::cmd_demute,
                 0x0d => CdRom::cmd_set_filter,
+                0x12 => CdRom::cmd_demute,
                 0x0e => CdRom::cmd_set_mode,
                 0x0f => CdRom::cmd_get_param,
+                0x10 => CdRom::cmd_get_loc_l,
                 0x11 => CdRom::cmd_get_loc_p,
                 0x13 => CdRom::cmd_get_tn,
+                0x14 => CdRom::cmd_get_td,
                 0x15 => CdRom::cmd_seek_l,
+                0x16 => CdRom::cmd_seek_l,
                 0x1a => CdRom::cmd_get_id,
-                // ReadS
                 0x1b => CdRom::cmd_read,
                 0x1e => CdRom::cmd_read_toc,
                 0x19 => CdRom::cmd_test,
@@ -720,7 +725,8 @@ impl CdRom {
     /// ever occurs.
     fn cmd_read(&mut self) -> CommandState {
         if !self.read_state.is_idle() {
-            panic!("CDROM \"read n\" while we're already reading");
+            println!("CDROM \"read n\" while we're already reading");
+            
         }
 
         if self.seek_target_pending {
@@ -821,8 +827,7 @@ impl CdRom {
         self.autopause = (mode >> 1) & 1 != 0;
         self.cdda_mode = (mode >> 0) & 1 != 0;
 
-        if self.cdda_mode ||
-           self.autopause ||
+        if self.autopause ||
            self.report_interrupts ||
            self.sector_size_override {
             panic!("CDROM: unhandled mode: {:02x}", mode);
@@ -901,6 +906,28 @@ impl CdRom {
                                 response)
     }
 
+    /// Get the current position of the drive head by returning the
+    /// contents of the Q subchannel
+    /// XXX handle libcrypt subchannel data
+    fn cmd_get_loc_l(&mut self) -> CommandState {
+        let raw = self.rx_sector.data_bytes();
+
+        let response = Fifo::from_bytes(
+            &[raw[12],
+              raw[13],
+              raw[14],
+              raw[15],
+              raw[16],
+              raw[17],
+              raw[18],
+              raw[19],]);
+
+        CommandState::RxPending(32_000,
+                                32_000 + 16816,
+                                IrqCode::Ok,
+                                response)
+    }
+
     /// Get the first and last track number for the current session
     fn cmd_get_tn(&mut self) -> CommandState {
         // XXX For now only one track is supported. Values are BCD!
@@ -916,6 +943,17 @@ impl CdRom {
                                 response)
     }
 
+
+    /// Get the first and last track number for the current session
+    fn cmd_get_td(&mut self) -> CommandState {
+        let response = Fifo::from_bytes(
+            &[self.drive_status(), 0x00, 0x02]);
+
+        CommandState::RxPending(40_000,
+                                40_000 + 8289,
+                                IrqCode::Ok,
+                                response)
+    }
 
     /// Execute seek. Target is given by previous "set loc" command.
     fn cmd_seek_l(&mut self) -> CommandState {
@@ -977,6 +1015,8 @@ impl CdRom {
         }
 
         match self.params.pop() {
+            0x04 => self.cmd_get_stat(),
+            0x05 => self.test_scex_counter(),
             0x20 => self.test_version(),
             n    => panic!("Unhandled CDROM test subcommand 0x{:02x}", n),
         }
@@ -993,6 +1033,26 @@ impl CdRom {
             0x10,
             // Version
             0xc3]);
+
+        let rx_delay =
+            match self.disc {
+                /* Average measured delay with game disc */
+                Some(_) => 21_000,
+                /* Average measured delay with shell open */
+                None => 29_000,
+            };
+
+        CommandState::RxPending(rx_delay,
+                                rx_delay + 9_711,
+                                IrqCode::Ok,
+                                response)
+    }
+
+    fn test_scex_counter(&mut self) -> CommandState {
+        // Values returned by my PAL SCPH-7502:
+        let response = Fifo::from_bytes(&[
+            0x00,
+            0x00,]);
 
         let rx_delay =
             match self.disc {

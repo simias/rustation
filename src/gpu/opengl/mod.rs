@@ -216,6 +216,7 @@ impl Renderer {
             // XXX temporary hack for semi-transparency, use basic
             // alpha blending.
             blend: Blend::alpha_blending(),
+            //polygon_mode: PolygonMode::Line,
             ..Default::default()
         };
 
@@ -437,6 +438,10 @@ impl Renderer {
                 height: height,
             });
         }
+    }
+
+    pub fn clear(&mut self) {
+        //self.target.as_mut().unwrap().clear_color(0.0, 0.0, 0.0, 1.0);
     }
 
     /// Draw the buffered commands and reset the buffers
@@ -792,6 +797,7 @@ impl<'a> Texture2dDataSource<'a> for LoadBuffer {
 
 
 fn find_perspective_correction(vertices: &mut [CommandVertex; 4]) {
+
     // In order to find the right perspective correction factor we
     // need to figure out where the quad's diagonals intersect.
 
@@ -837,15 +843,6 @@ fn find_perspective_correction(vertices: &mut [CommandVertex; 4]) {
     let v1q = (v3x - v1x) / not_zero(ox - v3x);
     let v3q = (v3x - v1x) / not_zero(ox - v1x);
 
-    println!("QV {} {} {} {} {} {} {}",
-             ox,
-             da0,
-             da1,
-             v0q,
-             v1q,
-             v2q,
-             v3q);
-    
     vertices[0].texture_q = v0q.abs();
     vertices[1].texture_q = v1q.abs();
     vertices[2].texture_q = v2q.abs();

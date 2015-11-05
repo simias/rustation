@@ -13,7 +13,7 @@ impl Ram {
     /// Instantiate main RAM with garbage values
     pub fn new() -> Ram {
 
-        Ram { data: Box::new([0xca; RAM_SIZE]) }
+        Ram { data: Box::new([0x0; RAM_SIZE]) }
     }
 
 

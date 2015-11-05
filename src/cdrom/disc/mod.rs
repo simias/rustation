@@ -127,8 +127,9 @@ impl Disc {
         while nread < SECTOR_SIZE {
             nread +=
                 match try!(self.file.read(&mut sector.raw[nread..])) {
-                    0 => return Err(io::Error::new(io::ErrorKind::InvalidInput,
-                                                   "short sector read")),
+                    0 => //return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                        //"short sector read")),
+                        return Ok(sector),
                     n => n,
                 };
         }
@@ -158,7 +159,7 @@ impl XaSector {
     }
 
     /// Return the sector data as a byte slice
-    fn data_bytes(&self) -> &[u8] {
+    pub fn data_bytes(&self) -> &[u8] {
         &self.raw
     }
 

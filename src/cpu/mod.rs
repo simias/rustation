@@ -84,6 +84,10 @@ impl Cpu {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.inter.clear();
+    }
+
     /// Run a single CPU instruction and return
     pub fn run_next_instruction(&mut self, debugger: &mut Debugger) {
         // Synchronize the peripherals

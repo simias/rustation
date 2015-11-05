@@ -933,7 +933,10 @@ impl Gpu {
                 (1, Gp0Attributes::new(Gpu::gp0_drawing_offset)),
             0xe6 =>
                 (1, Gp0Attributes::new(Gpu::gp0_mask_bit_setting)),
-            _    => panic!("Unhandled GP0 command {:08x}", gp0),
+            _    => {
+                println!("Unhandled GP0 command {:08x}", gp0);
+                (1, Gp0Attributes::new(Gpu::gp0_nop))
+            }
         }
     }
 
@@ -954,6 +957,12 @@ impl Gpu {
         let size = gp0_position(self.gp0_command[2]);
 
         let color = gp0_color(self.gp0_command[0]);
+
+        println!("Fill rect ({} {}) ({} {})",
+                 top_left[0],
+                 top_left[1],
+                 size[0],
+                 size[1]);
 
         // Alignment constraints
         let left = (top_left[0] & 0x3f0) as u16;
@@ -1601,6 +1610,10 @@ impl Gpu {
         self.sync(tk, irq_state);
     }
 
+    pub fn clear(&mut self) {
+        self.renderer.clear();
+    }
+
     /// Return various GPU state information in the GPUREAD register
     fn gp1_get_info(&mut self, val: u32) {
         // XXX what happens if we're in the middle of a framebuffer
@@ -1964,7 +1977,10 @@ fn gp0_texture_page(gp0: u32) -> ([u16; 2], u16) {
             1 => 1,
             // 16bpp
             2 => 1,
-            _ => panic!("Invalid texture depth"),
+            _ => {
+                println!("Invalid texture depth");
+                1
+            }
         };
 
     ([x as u16, y as u16], shift)
