@@ -531,6 +531,7 @@ impl CdRom {
                 0x0d => CdRom::cmd_set_filter,
                 0x0e => CdRom::cmd_set_mode,
                 0x11 => CdRom::cmd_get_loc_p,
+                0x13 => CdRom::cmd_get_tn,
                 0x15 => CdRom::cmd_seek_l,
                 0x1a => CdRom::cmd_get_id,
                 // ReadS
@@ -802,6 +803,21 @@ impl CdRom {
 
         CommandState::RxPending(32_000,
                                 32_000 + 16816,
+                                IrqCode::Ok,
+                                response)
+    }
+
+    /// Get the first and last track number for the current session
+    fn cmd_get_tn(&mut self) -> CommandState {
+        // XXX For now only one track is supported. Values are BCD!
+        let first_bcd = 0x01;
+        let last_bcd = 0x01;
+
+        let response = Fifo::from_bytes(
+            &[self.drive_status(), first_bcd, last_bcd]);
+
+        CommandState::RxPending(40_000,
+                                40_000 + 8289,
                                 IrqCode::Ok,
                                 response)
     }
