@@ -182,8 +182,10 @@ impl Spu {
     }
 
     fn set_control(&mut self, ctrl: u16) {
-        if ctrl & 0x3f4a != 0 {
-            panic!("Unhandled SPU control {:04x}", ctrl);
+        // XXX if a game enables the SPU IRQ we're probably going to
+        // be in trouble
+        if ctrl & 0x40 != 0 {
+            panic!("Unhandled SPU IRQ");
         }
     }
 
