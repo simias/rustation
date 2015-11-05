@@ -1,4 +1,4 @@
-use memory::{Addressable, AccessWidth};
+use memory::Addressable;
 
 /// Sound Processing Unit
 pub struct Spu {
@@ -23,12 +23,12 @@ impl Spu {
         }
     }
 
-    pub fn store<T: Addressable>(&mut self, offset: u32, val: T) {
-        if T::width() != AccessWidth::HalfWord {
-            panic!("Unhandled {:?} SPU store", T::width());
+    pub fn store<T: Addressable>(&mut self, offset: u32, val: u32) {
+        if T::size() != 2 {
+            panic!("Unhandled SPU store ({})", T::size());
         }
 
-        let val = val.as_u16();
+        let val = val as u16;
 
         // Convert into a halfword index
         let index = (offset >> 1) as usize;
@@ -122,16 +122,16 @@ impl Spu {
         }
     }
 
-    pub fn load<T: Addressable>(&mut self, offset: u32) -> T {
-        if T::width() != AccessWidth::HalfWord {
-            panic!("Unhandled {:?} SPU load", T::width());
+    pub fn load<T: Addressable>(&mut self, offset: u32) -> u32 {
+        if T::size() != 2 {
+            panic!("Unhandled SPU load ({})", T::size());
         }
 
         let index = (offset >> 1) as usize;
 
         if index >= 0x100 {
             // XXX Support SPU internal registers
-            return Addressable::from_u32(0);
+            return 0;
         }
 
         let shadow = self.shadow_registers[index];
@@ -174,7 +174,7 @@ impl Spu {
                 }
             };
 
-        Addressable::from_u32(r as u32)
+        r as u32
     }
 
     fn control(&self) -> u16 {

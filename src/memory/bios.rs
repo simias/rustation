@@ -43,16 +43,16 @@ impl Bios {
     }
 
     /// Fetch the little endian value at `offset`
-    pub fn load<T: Addressable>(&self, offset: u32) -> T {
+    pub fn load<T: Addressable>(&self, offset: u32) -> u32 {
         let offset = offset as usize;
 
         let mut r = 0;
 
-        for i in 0..T::width() as usize {
+        for i in 0..T::size() as usize {
             r |= (self.data[offset + i] as u32) << (8 * i)
         }
 
-        Addressable::from_u32(r)
+        r
     }
 }
 

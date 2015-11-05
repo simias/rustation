@@ -97,15 +97,15 @@ impl Interconnect {
     /// Interconnect: load instruction at `PC`. Only the RAM and BIOS
     /// are supported, would it make sense to fetch instructions from
     /// anything else?
-    pub fn load_instruction<T: Addressable>(&self, pc: u32) -> T {
+    pub fn load_instruction(&self, pc: u32) -> u32 {
         let abs_addr = map::mask_region(pc);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
-            return self.ram.load(offset);
+            return self.ram.load::<Word>(offset);
         }
 
         if let Some(offset) = map::BIOS.contains(abs_addr) {
-            return self.bios.load(offset);
+            return self.bios.load::<Word>(offset);
         }
 
         panic!("unhandled instruction load at address {:08x}", pc);
@@ -114,7 +114,7 @@ impl Interconnect {
     /// Interconnect: load value at `addr`
     pub fn load<T: Addressable>(&mut self,
                                 tk: &mut TimeKeeper,
-                                addr: u32) -> T {
+                                addr: u32) -> u32 {
         // XXX Average RAM load delay, needs to do per-device tests
         // XXX This does not take the CPU pipelining into account so
         // it might be a little too slow in some cases actually.
@@ -123,7 +123,7 @@ impl Interconnect {
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
-            return self.ram.load(offset);
+            return self.ram.load::<T>(offset);
         }
 
         if let Some(offset) = map::SCRATCH_PAD.contains(abs_addr) {
@@ -131,75 +131,70 @@ impl Interconnect {
                 panic!("ScratchPad access through uncached memory");
             }
 
-            return self.scratch_pad.load(offset);
+            return self.scratch_pad.load::<T>(offset);
         }
 
         if let Some(offset) = map::BIOS.contains(abs_addr) {
-            return self.bios.load(offset);
+            return self.bios.load::<T>(offset);
         }
 
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
-            let v =
+            return
                 match offset {
-                    0 => Addressable::from_u32(self.irq_state.status() as u32),
-                    4 => Addressable::from_u32(self.irq_state.mask() as u32),
+                    0 => self.irq_state.status() as u32,
+                    4 => self.irq_state.mask() as u32,
                     _ => panic!("Unhandled IRQ load at address {:08x}", addr),
                 };
-
-            return v;
         }
 
         if let Some(offset) = map::DMA.contains(abs_addr) {
-            return self.dma_reg(offset);
+            return self.dma_reg::<T>(offset);
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.load(tk, &mut self.irq_state, offset);
+            return self.gpu.load::<T>(tk, &mut self.irq_state, offset);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            return self.timers.load(tk, &mut self.irq_state, offset);
+            return self.timers.load::<T>(tk, &mut self.irq_state, offset);
         }
 
         if let Some(offset) = map::CDROM.contains(abs_addr) {
-            return self.cdrom.load(tk, &mut self.irq_state, offset);
+            return self.cdrom.load::<T>(tk, &mut self.irq_state, offset);
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
             println!("Unhandled load from MDEC register {:x}", offset);
-            return Addressable::from_u32(0);
+            return 0;
         }
 
         if let Some(offset) = map::SPU.contains(abs_addr) {
-            return self.spu.load(offset);
+            return self.spu.load::<T>(offset);
         }
 
         if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
-            return self.pad_memcard.load(tk, &mut self.irq_state, offset);
+            return self.pad_memcard.load::<T>(tk, &mut self.irq_state, offset);
         }
 
         if let Some(_) = map::EXPANSION_1.contains(abs_addr) {
             // No expansion implemented. Returns full ones when no
             // expansion is present
-            return Addressable::from_u32(!0);
+            return !0;
         }
 
         if let Some(_) = map::RAM_SIZE.contains(abs_addr) {
-            // We ignore writes at this address
-            return Addressable::from_u32(self.ram_size);
+            return self.ram_size;
         }
 
         if let Some(offset) = map::MEM_CONTROL.contains(abs_addr) {
 
-            if T::width() != AccessWidth::Word {
-                panic!("Unhandled MEM_CONTROL {:?} access", T::width());
+            if T::size() != 4 {
+                panic!("Unhandled MEM_CONTROL access ({})", T::size());
             }
 
             let index = (offset >> 2) as usize;
 
-            let v = self.mem_control[index];
-
-            return Addressable::from_u32(v);
+            return self.mem_control[index];
         }
 
         panic!("unhandled load at address {:08x}", addr);
@@ -209,12 +204,12 @@ impl Interconnect {
     pub fn store<T: Addressable>(&mut self,
                                  tk: &mut TimeKeeper,
                                  addr: u32,
-                                 val: T) {
+                                 val: u32) {
 
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
-            self.ram.store(offset, val);
+            self.ram.store::<T>(offset, val);
             return;
         }
 
@@ -223,43 +218,43 @@ impl Interconnect {
                 panic!("ScratchPad access through uncached memory");
             }
 
-            return self.scratch_pad.store(offset, val);
+            return self.scratch_pad.store::<T>(offset, val);
         }
 
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
             match offset {
-                0 => self.irq_state.ack(val.as_u32() as u16),
-                4 => self.irq_state.set_mask(val.as_u32() as u16),
+                0 => self.irq_state.ack(val as u16),
+                4 => self.irq_state.set_mask(val as u16),
                 _ => panic!("Unhandled IRQ store at address {:08x}"),
             }
             return;
         }
 
         if let Some(offset) = map::DMA.contains(abs_addr) {
-            self.set_dma_reg(offset, val);
+            self.set_dma_reg::<T>(offset, val);
             return;
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            self.gpu.store(tk,
-                           &mut self.timers,
-                           &mut self.irq_state,
-                           offset,
-                           val);
+            self.gpu.store::<T>(tk,
+                                &mut self.timers,
+                                &mut self.irq_state,
+                                offset,
+                                val);
             return;
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            self.timers.store(tk,
-                              &mut self.irq_state,
-                              &mut self.gpu,
-                              offset,
-                              val);
+            self.timers.store::<T>(tk,
+                                   &mut self.irq_state,
+                                   &mut self.gpu,
+                                   offset,
+                                   val);
             return;
         }
 
         if let Some(offset) = map::CDROM.contains(abs_addr) {
-            return self.cdrom.store(tk, &mut self.irq_state, offset, val);
+            return self.cdrom.store::<T>(tk, &mut self.irq_state, offset, val);
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
@@ -268,32 +263,32 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::SPU.contains(abs_addr) {
-            self.spu.store(offset, val);
+            self.spu.store::<T>(offset, val);
             return;
         }
 
         if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
-            self.pad_memcard.store(tk, &mut self.irq_state, offset, val);
+            self.pad_memcard.store::<T>(tk, &mut self.irq_state, offset, val);
             return;
         }
 
         if let Some(_) = map::CACHE_CONTROL.contains(abs_addr) {
-            if T::width() != AccessWidth::Word {
+            if T::size() != 4 {
                 panic!("Unhandled cache control access");
             }
 
-            self.cache_control = CacheControl(val.as_u32());
+            self.cache_control = CacheControl(val);
 
             return;
         }
 
         if let Some(offset) = map::MEM_CONTROL.contains(abs_addr) {
 
-            if T::width() != AccessWidth::Word {
-                panic!("Unhandled MEM_CONTROL {:?} access", T::width());
+            if T::size() != 4 {
+                panic!("Unhandled MEM_CONTROL access ({})", T::size());
             }
 
-            let val = val.as_u32();
+            let val = val;
 
             match offset {
                 0 => // Expansion 1 base address
@@ -319,11 +314,11 @@ impl Interconnect {
 
         if let Some(_) = map::RAM_SIZE.contains(abs_addr) {
 
-            if T::width() != AccessWidth::Word {
+            if T::size() != 4 {
                 panic!("Unhandled RAM_SIZE access");
             }
 
-            self.ram_size = val.as_u32();
+            self.ram_size = val;
             return;
         }
 
@@ -333,11 +328,11 @@ impl Interconnect {
         }
 
         panic!("unhandled store into address {:08x}: {:08x}",
-               addr, val.as_u32());
+               addr, val);
     }
 
     /// DMA register read
-    fn dma_reg<T: Addressable>(&self, offset: u32) -> T {
+    fn dma_reg<T: Addressable>(&self, offset: u32) -> u32 {
 
         // The DMA uses 32bit registers
         let align = offset & 3;
@@ -369,16 +364,14 @@ impl Interconnect {
             };
 
         // Byte and halfword reads fetch only a portion of the register
-        Addressable::from_u32(res >> (align * 8))
+        res >> (align * 8)
     }
 
     /// DMA register write
-    fn set_dma_reg<T: Addressable>(&mut self, offset: u32, val: T) {
-        if T::width() != AccessWidth::Word {
-            panic!("Unhandled {:?} DMA store", T::width());
+    fn set_dma_reg<T: Addressable>(&mut self, offset: u32, val: u32) {
+        if T::size() != 4 {
+            panic!("Unhandled DMA store ({})", T::size());
         }
-
-        let val = val.as_u32();
 
         let major = (offset & 0x70) >> 4;
         let minor = offset & 0xf;
@@ -458,14 +451,14 @@ impl Interconnect {
             // In linked list mode, each entry starts with a "header"
             // word. The high byte contains the number of words in the
             // "packet" (not counting the header word)
-            let header = self.ram.load::<u32>(addr);
+            let header = self.ram.load::<Word>(addr);
 
             let mut remsz = header >> 24;
 
             while remsz > 0 {
                 addr = (addr + 4) & 0x1ffffc;
 
-                let command = self.ram.load::<u32>(addr);
+                let command = self.ram.load::<Word>(addr);
 
                 // Send command to the GPU
                 self.gpu.gp0(command);
@@ -516,7 +509,7 @@ impl Interconnect {
 
             match channel.direction() {
                 Direction::FromRam => {
-                    let src_word = self.ram.load::<u32>(cur_addr);
+                    let src_word = self.ram.load::<Word>(cur_addr);
 
                     match port {
                         Port::Gpu => self.gpu.gp0(src_word),
@@ -547,7 +540,7 @@ impl Interconnect {
                         _ => panic!("Unhandled DMA source port {:?}", port),
                     };
 
-                    self.ram.store(cur_addr, src_word);
+                    self.ram.store::<Word>(cur_addr, src_word);
                 }
             }
 
@@ -572,77 +565,36 @@ impl CacheControl {
     }
 }
 
-/// Types of access supported by the PlayStation architecture
-#[derive(PartialEq,Eq,Debug)]
-pub enum AccessWidth {
-    Byte = 1,
-    HalfWord = 2,
-    Word = 4,
-}
-
-/// rait representing the attributes of a primitive addressable
-/// memory location.
+/// Trait representing the attributes of a memory access
 pub trait Addressable {
-    /// Retreive the width of the access
-    fn width() -> AccessWidth;
-    /// Build an Addressable value from an u32. If the Addressable is 8
-    /// or 16bits wide the MSBs are discarded to fit.
-    fn from_u32(u32) -> Self;
-    /// Retreive the value of the Addressable as an u32. If the
-    /// Addressable is 8 or 16bits wide the MSBs are padded with 0s.
-    fn as_u32(&self) -> u32;
-    /// Retreive the value of the Addressable as an u16. If the
-    /// Addressable was 8 bit wide the MSBs are padded with 0s, if it
-    /// was 32bit wide the MSBs are truncated.
-    fn as_u16(&self) -> u16 {
-        self.as_u32() as u16
-    }
-    /// Retreive the value of the Addressable as an u8. If the
-    /// Addressable was 16 or 32bit wide the MSBs are truncated.
-    fn as_u8(&self) -> u8 {
-        self.as_u32() as u8
+    /// Retreive the size of the access in bytes
+    fn size() -> u8;
+}
+
+/// Marker for Byte (8bit) access
+pub struct Byte;
+
+impl Addressable for Byte {
+    fn size() -> u8 {
+        1
     }
 }
 
-impl Addressable for u8 {
-    fn width() -> AccessWidth {
-        AccessWidth::Byte
-    }
+/// Marker for Halfword (16bit) access
+pub struct HalfWord;
 
-    fn from_u32(v: u32) -> u8 {
-        v as u8
-    }
-
-    fn as_u32(&self) -> u32 {
-        *self as u32
+impl Addressable for HalfWord {
+    fn size() -> u8 {
+        2
     }
 }
 
-impl Addressable for u16 {
-    fn width() -> AccessWidth {
-        AccessWidth::HalfWord
-    }
+/// Marker for Word (32bit) access
+pub struct Word;
 
-    fn from_u32(v: u32) -> u16 {
-        v as u16
-    }
-
-    fn as_u32(&self) -> u32 {
-        *self as u32
-    }
-}
-
-impl Addressable for u32 {
-    fn width() -> AccessWidth {
-        AccessWidth::Word
-    }
-
-    fn from_u32(v: u32) -> u32 {
-        v
-    }
-
-    fn as_u32(&self) -> u32 {
-        *self
+impl Addressable for Word {
+    fn size() -> u8 {
+        4
     }
 }
 

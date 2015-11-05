@@ -1,4 +1,4 @@
-use memory::{Addressable, AccessWidth};
+use memory::Addressable;
 use timekeeper::{TimeKeeper, Peripheral, Cycles};
 use memory::interrupts::{Interrupt, InterruptState};
 
@@ -98,11 +98,11 @@ impl CdRom {
     pub fn load<T: Addressable>(&mut self,
                                 tk: &mut TimeKeeper,
                                 irq_state: &mut InterruptState,
-                                offset: u32) -> T {
+                                offset: u32) -> u32 {
         self.sync(tk, irq_state);
 
-        if T::width() != AccessWidth::Byte {
-            panic!("Unhandled {:?} CDROM load", T::width());
+        if T::size() != 1 {
+            panic!("Unhandled CDROM load ({})", T::size());
         }
 
         let index = self.index;
@@ -134,23 +134,23 @@ impl CdRom {
                 _ => unimplemented(),
             };
 
-        Addressable::from_u32(val as u32)
+        val as u32
     }
 
     pub fn store<T: Addressable>(&mut self,
                                  tk: &mut TimeKeeper,
                                  irq_state: &mut InterruptState,
                                  offset: u32,
-                                 val: T) {
+                                 val: u32) {
 
         self.sync(tk, irq_state);
 
-        if T::width() != AccessWidth::Byte {
-            panic!("Unhandled {:?} CDROM store", T::width());
+        if T::size() != 1 {
+            panic!("Unhandled CDROM store ({})", T::size());
         }
 
         // All writeable registers are 8bit wide
-        let val = val.as_u8();
+        let val = val as u8;
 
         let index = self.index;
 

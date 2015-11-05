@@ -1,5 +1,5 @@
 use self::opengl::{Renderer, Vertex};
-use memory::{Addressable, AccessWidth};
+use memory::Addressable;
 use memory::interrupts::{Interrupt, InterruptState};
 use memory::timers::Timers;
 use timekeeper::{TimeKeeper, Peripheral, Cycles, FracCycles};
@@ -381,10 +381,10 @@ impl Gpu {
     pub fn load<T: Addressable>(&mut self,
                                 tk: &mut TimeKeeper,
                                 irq_state: &mut InterruptState,
-                                offset: u32) -> T {
+                                offset: u32) -> u32 {
 
-        if T::width() != AccessWidth::Word {
-            panic!("Unhandled {:?} GPU load", T::width());
+        if T::size() != 4 {
+            panic!("Unhandled GPU load ({})", T::size());
         }
 
         self.sync(tk, irq_state);
@@ -396,7 +396,7 @@ impl Gpu {
                 _ => unreachable!(),
             };
 
-        Addressable::from_u32(r)
+        r
     }
 
     pub fn store<T: Addressable>(&mut self,
@@ -404,15 +404,13 @@ impl Gpu {
                                  timers: &mut Timers,
                                  irq_state: &mut InterruptState,
                                  offset: u32,
-                                 val: T) {
+                                 val: u32) {
 
-        if T::width() != AccessWidth::Word {
-            panic!("Unhandled {:?} GPU load", T::width());
+        if T::size() != 4 {
+            panic!("Unhandled GPU load ({})", T::size());
         }
 
         self.sync(tk, irq_state);
-
-        let val = val.as_u32();
 
         match offset {
             0 => self.gp0(val),

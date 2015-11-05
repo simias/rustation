@@ -18,29 +18,27 @@ impl Ram {
 
 
     /// Fetch the little endian value at `offset`
-    pub fn load<T: Addressable>(&self, offset: u32) -> T {
+    pub fn load<T: Addressable>(&self, offset: u32) -> u32 {
         // The two MSB are ignored, the 2MB RAM is mirorred four times
         // over the first 8MB of address space
         let offset = (offset & 0x1fffff) as usize;
 
         let mut v = 0;
 
-        for i in 0..T::width() as usize {
+        for i in 0..T::size() as usize {
             v |= (self.data[offset + i] as u32) << (i * 8)
         }
 
-        Addressable::from_u32(v)
+        v
     }
 
     /// Store the 32bit little endian word `val` into `offset`
-    pub fn store<T: Addressable>(&mut self, offset: u32, val: T) {
+    pub fn store<T: Addressable>(&mut self, offset: u32, val: u32) {
         // The two MSB are ignored, the 2MB RAM is mirorred four times
         // over the first 8MB of address space
         let offset = (offset & 0x1fffff) as usize;
 
-        let val = val.as_u32();
-
-        for i in 0..T::width() as usize {
+        for i in 0..T::size() as usize {
             self.data[offset + i] = (val >> (i * 8)) as u8;
         }
     }
@@ -59,25 +57,23 @@ impl ScratchPad {
     }
 
     /// Fetch the little endian value at `offset`
-    pub fn load<T: Addressable>(&self, offset: u32) -> T {
+    pub fn load<T: Addressable>(&self, offset: u32) -> u32 {
         let offset = offset as usize;
 
         let mut v = 0;
 
-        for i in 0..T::width() as usize {
+        for i in 0..T::size() as usize {
             v |= (self.data[offset + i] as u32) << (i * 8)
         }
 
-        Addressable::from_u32(v)
+        v
     }
 
     /// Store the 32bit little endian word `val` into `offset`
-    pub fn store<T: Addressable>(&mut self, offset: u32, val: T) {
+    pub fn store<T: Addressable>(&mut self, offset: u32, val: u32) {
         let offset = offset as usize;
 
-        let val = val.as_u32();
-
-        for i in 0..T::width() as usize {
+        for i in 0..T::size() as usize {
             self.data[offset + i] = (val >> (i * 8)) as u8;
         }
     }

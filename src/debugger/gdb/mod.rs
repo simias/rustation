@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 
 use debugger::Debugger;
 use cpu::Cpu;
+use memory::{Byte, HalfWord, Word};
 use self::reply::Reply;
 
 mod reply;
@@ -289,17 +290,17 @@ impl GdbRemote {
                     let count = ::std::cmp::min(len, 4 - align);
 
                     for i in 0..count {
-                        reply.push_u8(cpu.examine(addr + i));
+                        reply.push_u8(cpu.examine::<Byte>(addr + i) as u8);
                     }
                     count
                 }
                 2 => {
                     if len == 1 {
                         // Only one byte to read
-                        reply.push_u8(cpu.examine(addr));
+                        reply.push_u8(cpu.examine::<Byte>(addr) as u8);
                         1
                     } else {
-                        reply.push_u16(cpu.examine(addr));
+                        reply.push_u16(cpu.examine::<HalfWord>(addr) as u16);
                         2
                     }
                 }
@@ -317,7 +318,7 @@ impl GdbRemote {
         let nwords = len / 4;
 
         for i in 0..nwords {
-            reply.push_u32(cpu.examine(addr + i * 4));
+            reply.push_u32(cpu.examine::<Word>(addr + i * 4));
         }
 
         // See if we have anything remaining
@@ -327,11 +328,11 @@ impl GdbRemote {
         match rem {
             1|3 => {
                 for i in 0..rem {
-                    reply.push_u8(cpu.examine(addr + i));
+                    reply.push_u8(cpu.examine::<Byte>(addr + i) as u8);
                 }
             }
             2 => {
-                reply.push_u16(cpu.examine(addr));
+                reply.push_u16(cpu.examine::<HalfWord>(addr) as u16);
             }
             _ => ()
         }

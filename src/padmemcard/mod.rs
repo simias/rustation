@@ -1,6 +1,6 @@
 //! Gamepad and memory card controller emulation
 
-use memory::{Addressable, AccessWidth};
+use memory::Addressable;
 use memory::interrupts::{Interrupt, InterruptState};
 use timekeeper::{TimeKeeper, Peripheral, Cycles};
 use self::gamepad::GamePad;
@@ -81,46 +81,46 @@ impl PadMemCard {
                                  tk: &mut TimeKeeper,
                                  irq_state: &mut InterruptState,
                                  offset: u32,
-                                 val: T) {
+                                 val: u32) {
         self.sync(tk, irq_state);
 
         match offset {
             0  => {
-                if T::width() != AccessWidth::Byte {
-                    panic!("Unhandled gamepad TX access {:?}",
-                           T::width());
+                if T::size() != 1 {
+                    panic!("Unhandled gamepad TX access ({})",
+                           T::size());
                 }
 
-                self.send_command(tk, val.as_u8());
+                self.send_command(tk, val as u8);
             }
-            8  => self.set_mode(val.as_u8()),
+            8  => self.set_mode(val as u8),
             10 => {
-                if T::width() == AccessWidth::Byte {
+                if T::size() == 1 {
                     // Byte access behaves like a halfword
                     panic!("Unhandled byte gamepad control access");
                 }
-                self.set_control(irq_state, val.as_u16());
+                self.set_control(irq_state, val as u16);
             }
-            14 => self.baud_div = val.as_u16(),
+            14 => self.baud_div = val as u16,
             _ => panic!("Unhandled write to gamepad register {} {:04x}",
-                        offset, val.as_u16()),
+                        offset, val as u16),
         }
     }
 
     pub fn load<T: Addressable>(&mut self,
                                 tk: &mut TimeKeeper,
                                 irq_state: &mut InterruptState,
-                                offset: u32) -> T {
+                                offset: u32) -> u32 {
         self.sync(tk, irq_state);
 
         match offset {
             0 => {
-                if T::width() != AccessWidth::Byte {
-                    panic!("Unhandled gamepad RX access {:?}",
-                           T::width());
+                if T::size() != 1 {
+                    panic!("Unhandled gamepad RX access ({})",
+                           T::size());
                 }
 
-                let res = T::from_u32(self.response as u32);
+                let res = self.response as u32;
 
                 self.rx_not_empty = false;
                 self.response = 0xff;
@@ -128,12 +128,12 @@ impl PadMemCard {
                 res
             }
             4 => {
-                T::from_u32(self.stat())
+                self.stat()
             }
-            10 => T::from_u32(self.control() as u32),
-            14 => T::from_u32(self.baud_div as u32),
+            10 => self.control() as u32,
+            14 => self.baud_div as u32,
             _ => panic!("Unhandled gamepad read {:?} 0x{:x}",
-                        T::width(), offset),
+                        T::size(), offset),
         }
     }
 

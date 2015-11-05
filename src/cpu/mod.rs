@@ -5,7 +5,7 @@ use std::fmt::{Display, Formatter, Error};
 
 use self::cop0::{Cop0, Exception};
 use self::gte::Gte;
-use memory::{Interconnect, Addressable, AccessWidth};
+use memory::{Interconnect, Addressable, Byte, HalfWord, Word};
 use timekeeper::TimeKeeper;
 use debugger::Debugger;
 use padmemcard::gamepad;
@@ -220,34 +220,43 @@ impl Cpu {
     /// Memory read
     fn load<T: Addressable>(&mut self,
                             addr: u32,
-                            debugger: &mut Debugger) -> T {
+                            debugger: &mut Debugger) -> u32 {
         debugger.memory_read(self, addr);
 
-        self.inter.load(&mut self.tk, addr)
+        self.inter.load::<T>(&mut self.tk, addr)
     }
 
     /// Memory read with as little side-effect as possible. Used for
     /// debugging.
-    pub fn examine<T: Addressable>(&mut self, addr: u32) -> T {
-        self.inter.load(&mut self.tk, addr)
+    pub fn examine<T: Addressable>(&mut self, addr: u32) -> u32 {
+        self.inter.load::<T>(&mut self.tk, addr)
     }
 
     /// Memory write
+    ///
+    /// We always pass around 32bit values even for Byte and HalfWord
+    /// access because some devices ignore the requested width when
+    /// writing to their registers and might use more than what we
+    /// expect.
+    ///
+    /// On the real console the CPU always puts the entire 32bit register
+    /// value on the bus so those devices might end up using all the
+    /// bytes in the Word even for smaller widths.
     fn store<T: Addressable>(&mut self,
                              addr: u32,
-                             val: T,
+                             val: u32,
                              debugger: &mut Debugger) {
         debugger.memory_write(self, addr);
 
         if self.cop0.cache_isolated() {
-            self.cache_maintenance(addr, val);
+            self.cache_maintenance::<T>(addr, val);
         } else {
-            self.inter.store(&mut self.tk, addr, val);
+            self.inter.store::<T>(&mut self.tk, addr, val);
         }
     }
 
     /// Handle writes when the cache is isolated
-    pub fn cache_maintenance<T: Addressable>(&mut self, addr: u32, val: T) {
+    pub fn cache_maintenance<T: Addressable>(&mut self, addr: u32, val: u32) {
         // Implementing full cache emulation requires handling many
         // corner cases. For now I'm just going to add support for
         // cache invalidation which is the only use case for cache
@@ -259,9 +268,9 @@ impl Cpu {
             panic!("Cache maintenance while instruction cache is disabled");
         }
 
-        if T::width() != AccessWidth::Word || val.as_u32() != 0 {
+        if T::size() != 4 || val != 0 {
             panic!("Unsupported write while cache is isolated: {:08x}",
-                   val.as_u32());
+                   val);
         }
 
         let line = (addr >> 4) & 0xff;
@@ -277,7 +286,7 @@ impl Cpu {
             // Otherwise the write ends up directly in the cache.
             let index = (addr >> 2) & 3;
 
-            let instruction = Instruction(val.as_u32());
+            let instruction = Instruction(val);
 
             line.set_instruction(index, instruction);
         }
@@ -1122,7 +1131,7 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         // Cast as i8 to force sign extension
-        let v = self.load::<u8>(addr, debugger) as i8;
+        let v = self.load::<Byte>(addr, debugger) as i8;
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
@@ -1140,7 +1149,7 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         // Cast as i16 to force sign extension
-        let v = self.load::<u16>(addr, debugger) as i16;
+        let v = self.load::<HalfWord>(addr, debugger) as i16;
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
@@ -1165,7 +1174,7 @@ impl Cpu {
         // Next we load the *aligned* word containing the first
         // addressed byte
         let aligned_addr = addr & !3;
-        let aligned_word = self.load::<u32>(aligned_addr, debugger);
+        let aligned_word = self.load::<Word>(aligned_addr, debugger);
 
         // Depending on the address alignment we fetch the 1, 2, 3 or
         // 4 *most* significant bytes and put them in the target
@@ -1195,7 +1204,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            let v = self.load(addr, debugger);
+            let v = self.load::<Word>(addr, debugger);
 
             // Put the load in the delay slot
             self.load = (t, v);
@@ -1215,7 +1224,7 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
-        let v = self.load::<u8>(addr, debugger);
+        let v = self.load::<Byte>(addr, debugger);
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
@@ -1234,7 +1243,7 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            let v = self.load::<u16>(addr, debugger);
+            let v = self.load::<HalfWord>(addr, debugger);
 
             // Put the load in the delay slot
             self.load = (t, v as u32);
@@ -1262,7 +1271,7 @@ impl Cpu {
         // Next we load the *aligned* word containing the first
         // addressed byte
         let aligned_addr = addr & !3;
-        let aligned_word = self.load::<u32>(aligned_addr, debugger);
+        let aligned_word = self.load::<Word>(aligned_addr, debugger);
 
         // Depending on the address alignment we fetch the 1, 2, 3 or
         // 4 *least* significant bytes and put them in the target
@@ -1291,7 +1300,7 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v    = self.reg(t);
 
-        self.store(addr, v as u8, debugger);
+        self.store::<Byte>(addr, v, debugger);
     }
 
     /// Store Halfword
@@ -1308,7 +1317,7 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            self.store(addr, v as u16, debugger);
+            self.store::<HalfWord>(addr, v, debugger);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1329,17 +1338,18 @@ impl Cpu {
         let aligned_addr = addr & !3;
         // Load the current value for the aligned word at the target
         // address
-        let cur_mem = self.load::<u32>(aligned_addr, debugger);
+        let cur_mem = self.load::<Word>(aligned_addr, debugger);
 
-        let mem = match addr & 3 {
-            0 => (cur_mem & 0xffffff00) | (v >> 24),
-            1 => (cur_mem & 0xffff0000) | (v >> 16),
-            2 => (cur_mem & 0xff000000) | (v >> 8),
-            3 => (cur_mem & 0x00000000) | (v >> 0),
-            _ => unreachable!(),
-        };
+        let mem =
+            match addr & 3 {
+                0 => (cur_mem & 0xffffff00) | (v >> 24),
+                1 => (cur_mem & 0xffff0000) | (v >> 16),
+                2 => (cur_mem & 0xff000000) | (v >> 8),
+                3 => (cur_mem & 0x00000000) | (v >> 0),
+                _ => unreachable!(),
+            };
 
-        self.store(addr, mem, debugger);
+        self.store::<Word>(addr, mem, debugger);
     }
 
     /// Store Word
@@ -1356,7 +1366,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            self.store(addr, v, debugger);
+            self.store::<Word>(addr, v, debugger);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1377,17 +1387,18 @@ impl Cpu {
         let aligned_addr = addr & !3;
         // Load the current value for the aligned word at the target
         // address
-        let cur_mem = self.load::<u32>(aligned_addr, debugger);
+        let cur_mem = self.load::<Word>(aligned_addr, debugger);
 
-        let mem = match addr & 3 {
-            0 => (cur_mem & 0x00000000) | (v << 0),
-            1 => (cur_mem & 0x000000ff) | (v << 8),
-            2 => (cur_mem & 0x0000ffff) | (v << 16),
-            3 => (cur_mem & 0x00ffffff) | (v << 24),
-            _ => unreachable!(),
+        let mem =
+            match addr & 3 {
+                0 => (cur_mem & 0x00000000) | (v << 0),
+                1 => (cur_mem & 0x000000ff) | (v << 8),
+                2 => (cur_mem & 0x0000ffff) | (v << 16),
+                3 => (cur_mem & 0x00ffffff) | (v << 24),
+                _ => unreachable!(),
         };
 
-        self.store(addr, mem, debugger);
+        self.store::<Word>(addr, mem, debugger);
     }
 
     /// Load Word in Coprocessor 0
@@ -1414,7 +1425,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            let v = self.load(addr, debugger);
+            let v = self.load::<Word>(addr, debugger);
 
             // Send to coprocessor
             self.gte.set_data(cop_r, v);
@@ -1454,7 +1465,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            self.store(addr, v, debugger);
+            self.store::<Word>(addr, v, debugger);
         } else {
             self.exception(Exception::LoadAddressError);
         }

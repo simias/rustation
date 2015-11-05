@@ -1,6 +1,6 @@
 use timekeeper::{TimeKeeper, Cycles, FracCycles, Peripheral};
 use gpu::Gpu;
-use super::{Addressable, AccessWidth};
+use super::Addressable;
 use super::interrupts::{InterruptState, Interrupt};
 
 #[derive(Debug)]
@@ -31,14 +31,13 @@ impl Timers {
                                  irq_state: &mut InterruptState,
                                  gpu: &mut Gpu,
                                  offset: u32,
-                                 val: T) {
+                                 val: u32) {
 
-        if T::width() != AccessWidth::Word &&
-           T::width() != AccessWidth::HalfWord {
-            panic!("Unhandled {:?} timer store", T::width());
+        if T::size() == 1 {
+            panic!("Unhandled byte timer store");
         }
 
-        let val = val.as_u16();
+        let val = val as u16;
 
         let instance = offset >> 4;
 
@@ -63,11 +62,10 @@ impl Timers {
     pub fn load<T: Addressable>(&mut self,
                                 tk: &mut TimeKeeper,
                                 irq_state: &mut InterruptState,
-                                offset: u32) -> T {
+                                offset: u32) -> u32 {
 
-        if T::width() != AccessWidth::Word &&
-           T::width() != AccessWidth::HalfWord {
-            panic!("Unhandled {:?} timer load", T::width());
+        if T::size() == 1 {
+            panic!("Unhandled byte timer load");
         }
 
         let instance = offset >> 4;
@@ -83,7 +81,7 @@ impl Timers {
             n => panic!("Unhandled timer register {}", n),
         };
 
-        T::from_u32(val as u32)
+        val as u32
     }
 
     /// Called by the GPU when the video timings change since it can
