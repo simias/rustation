@@ -339,9 +339,9 @@ impl Interconnect {
     /// DMA register read
     fn dma_reg<T: Addressable>(&self, offset: u32) -> T {
 
-        if T::width() != AccessWidth::Word {
-            panic!("Unhandled {:?} DMA load", T::width());
-        }
+        // The DMA uses 32bit registers
+        let align = offset & 3;
+        let offset = offset & !3;
 
         let major = (offset & 0x70) >> 4;
         let minor = offset & 0xf;
@@ -368,7 +368,8 @@ impl Interconnect {
                 _ => panic!("Unhandled DMA read at {:x}", offset)
             };
 
-        Addressable::from_u32(res)
+        // Byte and halfword reads fetch only a portion of the register
+        Addressable::from_u32(res >> (align * 8))
     }
 
     /// DMA register write
