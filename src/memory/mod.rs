@@ -369,9 +369,11 @@ impl Interconnect {
 
     /// DMA register write
     fn set_dma_reg<T: Addressable>(&mut self, offset: u32, val: u32) {
-        if T::size() != 4 {
-            panic!("Unhandled DMA store ({})", T::size());
-        }
+        // Byte and Halfword writes are treated like word writes with
+        // the *entire* Word value shifted by the alignment.
+        let align = offset & 3;
+        let val = val << (align * 8);
+        let offset = offset & !3;
 
         let major = (offset & 0x70) >> 4;
         let minor = offset & 0xf;
