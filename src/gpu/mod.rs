@@ -688,6 +688,30 @@ impl Gpu {
                     semi_transparent: true,
                     texture: TextureMethod::Raw,
                 }),
+            0x74 =>
+                (3, Gp0Attributes {
+                    callback: Gpu::gp0_textured_rect_8x8,
+                    semi_transparent: false,
+                    texture: TextureMethod::Blended,
+                }),
+            0x75 =>
+                (3, Gp0Attributes {
+                    callback: Gpu::gp0_textured_rect_8x8,
+                    semi_transparent: false,
+                    texture: TextureMethod::Raw,
+                }),
+            0x76 =>
+                (3, Gp0Attributes {
+                    callback: Gpu::gp0_textured_rect_8x8,
+                    semi_transparent: true,
+                    texture: TextureMethod::Blended,
+                }),
+            0x77 =>
+                (3, Gp0Attributes {
+                    callback: Gpu::gp0_textured_rect_8x8,
+                    semi_transparent: true,
+                    texture: TextureMethod::Raw,
+                }),
             0x7c =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_16x16,
@@ -914,23 +938,22 @@ impl Gpu {
         self.renderer.push_quad(&vertices);
     }
 
-    /// Draw an untextured rectangle
-    fn gp0_monochrome_rect(&mut self) {
+    /// Helper function for drawing rectangles
+    fn gp0_rect_sized(&mut self, width: i16, height: i16) {
         let top_left = gp0_position(self.gp0_command[1]);
-        let size = gp0_position(self.gp0_command[2]);
 
         let color = gp0_color(self.gp0_command[0]);
 
         let vertices = [
             self.gp0_attributes.vertex(top_left, color),
-            self.gp0_attributes.vertex([top_left[0] + size[0],
+            self.gp0_attributes.vertex([top_left[0] + width,
                                         top_left[1]],
                                        color),
             self.gp0_attributes.vertex([top_left[0],
-                                        top_left[1] + size[1]],
+                                        top_left[1] + height],
                                        color),
-            self.gp0_attributes.vertex([top_left[0] + size[0],
-                                        top_left[1] + size[1]],
+            self.gp0_attributes.vertex([top_left[0] + width,
+                                        top_left[1] + height],
                                        color),
         ];
 
@@ -939,47 +962,26 @@ impl Gpu {
 
     /// Draw a textured rectangle
     fn gp0_textured_rect(&mut self) {
-        let top_left = gp0_position(self.gp0_command[1]);
         let size = gp0_position(self.gp0_command[3]);
 
-        let color = gp0_color(self.gp0_command[0]);
+        self.gp0_rect_sized(size[0], size[1]);
+    }
 
-        let vertices = [
-            self.gp0_attributes.vertex(top_left, color),
-            self.gp0_attributes.vertex([top_left[0] + size[0],
-                                        top_left[1]],
-                                       color),
-            self.gp0_attributes.vertex([top_left[0],
-                                        top_left[1] + size[1]],
-                                       color),
-            self.gp0_attributes.vertex([top_left[0] + size[0],
-                                        top_left[1] + size[1]],
-                                       color),
-        ];
+    /// Draw a monochrome rectangle
+    fn gp0_monochrome_rect(&mut self) {
+        let size = gp0_position(self.gp0_command[2]);
 
-        self.renderer.push_quad(&vertices);
+        self.gp0_rect_sized(size[0], size[1]);
+    }
+
+    /// Draw a 8x8 textured rectangle
+    fn gp0_textured_rect_8x8(&mut self) {
+        self.gp0_rect_sized(8, 8);
     }
 
     /// Draw a 16x16 textured rectangle
     fn gp0_textured_rect_16x16(&mut self) {
-        let top_left = gp0_position(self.gp0_command[1]);
-
-        let color = gp0_color(self.gp0_command[0]);
-
-        let vertices = [
-            self.gp0_attributes.vertex(top_left, color),
-            self.gp0_attributes.vertex([top_left[0] + 16,
-                                        top_left[1]],
-                                       color),
-            self.gp0_attributes.vertex([top_left[0],
-                                        top_left[1] + 16],
-                                       color),
-            self.gp0_attributes.vertex([top_left[0] + 16,
-                                        top_left[1] + 16],
-                                       color),
-        ];
-
-        self.renderer.push_quad(&vertices);
+        self.gp0_rect_sized(16, 16);
     }
 
     /// GP0(0xA0): Image Load
