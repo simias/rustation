@@ -64,6 +64,9 @@ pub struct CdRom {
     /// If ADPCM filtering is enabled only sectors with this channel
     /// number are processed
     filter_channel: u8,
+    /// Buffer holding an asynchronous event while we're waiting for
+    /// the interrupt to be acknowledged
+    pending_async_event: Option<(IrqCode, Fifo)>,
 }
 
 impl CdRom {
@@ -92,6 +95,7 @@ impl CdRom {
             filter_enabled: false,
             filter_file: 0,
             filter_channel: 0,
+            pending_async_event: None,
         }
     }
 
@@ -197,12 +201,50 @@ impl CdRom {
                 },
             _ => unimplemented(),
         }
+
+        self.check_async_event(irq_state);
     }
 
     pub fn sync(&mut self,
                 tk: &mut TimeKeeper,
                 irq_state: &mut InterruptState) {
         let delta = tk.sync(Peripheral::CdRom);
+
+        // Command processing is stalled if an interrupt is active
+        // XXX mednafen's code also adds a delay *after* the interrupt
+        // is acknowledged before the processing restarts
+        if self.irq_flags == 0 {
+            self.sync_commands(tk, irq_state, delta);
+        }
+
+        // See if have a read pending
+        if let ReadState::Reading(delay) = self.read_state {
+            let next_sync =
+                if delay as Cycles > delta {
+                    // Not yet there
+                    delay - delta as u32
+                } else {
+                    println!("[{}] CDROM read sector {}", tk, self.position);
+
+                    // A sector has been read from the disc
+                    self.sector_read(irq_state);
+
+                    // Prepare for the next one
+                    self.cycles_per_sector()
+                };
+
+            self.read_state = ReadState::Reading(next_sync);
+
+            tk.set_next_sync_delta_if_closer(Peripheral::CdRom,
+                                             next_sync as Cycles);
+        }
+    }
+
+    /// Synchronize the command processing state machine
+    fn sync_commands(&mut self,
+                     tk: &mut TimeKeeper,
+                     irq_state: &mut InterruptState,
+                     delta: Cycles) {
 
         let new_command_state =
             match self.command_state {
@@ -272,26 +314,6 @@ impl CdRom {
             };
 
         self.command_state = new_command_state;
-
-        // See if have a read pending
-        if let ReadState::Reading(delay) = self.read_state {
-            let next_sync =
-                if delay as Cycles > delta {
-                    // Not yet there
-                    delay - delta as u32
-                } else {
-                    // A sector has been read from the disc
-                    self.sector_read(irq_state);
-
-                    // Prepare for the next one
-                    self.cycles_per_sector()
-                };
-
-            self.read_state = ReadState::Reading(next_sync);
-
-            tk.set_next_sync_delta_if_closer(Peripheral::CdRom,
-                                             next_sync as Cycles);
-        }
     }
 
     /// Retreive a single byte from the RX buffer
@@ -346,9 +368,12 @@ impl CdRom {
 
     /// Called when a new sector has been read.
     fn sector_read(&mut self, irq_state: &mut InterruptState) {
-        let position = self.position;
+        if self.pending_async_event.is_some() {
+            // XXX I think it should replace the current pending event
+            panic!("Sector read while an async event is pending");
+        }
 
-        println!("CDROM: read sector {}", position);
+        let position = self.position;
 
         self.rx_sector =
             match self.disc_or_die().read_data_sector(position) {
@@ -366,20 +391,30 @@ impl CdRom {
             self.rx_len = 2048;
         }
 
-        // XXX in reality this should happen roughly 1969 cycles
-        // later
-        if self.irq_flags == 0 {
-            // XXX does the response stack with the previous one if
-            // there's already an interrupt pending?
-            self.response = Fifo::from_bytes(&[self.drive_status()]);
+        // XXX in reality the interrupt should happen roughly 1969
+        // cycles later
+        self.pending_async_event =
+            Some((IrqCode::SectorReady,
+                  Fifo::from_bytes(&[self.drive_status()])));
 
-            // Trigger interrupt
-            self.trigger_irq(irq_state, IrqCode::SectorReady);
-        }
+        self.check_async_event(irq_state);
 
         // Move on to the next segment.
         // XXX what happens when we're at the last one?
         self.position = self.position.next();
+    }
+
+    fn check_async_event(&mut self,
+                         irq_state: &mut InterruptState) {
+        if let Some((code, response)) = self.pending_async_event {
+            if self.irq_flags == 0 {
+                // Trigger async interrupt
+                self.response = response;
+                self.trigger_irq(irq_state, code);
+
+                self.pending_async_event = None;
+            }
+        }
     }
 
     fn status(&mut self) -> u8 {
@@ -435,10 +470,6 @@ impl CdRom {
         self.irq_flags &= !v;
 
         if self.irq_flags == 0 {
-            if !self.command_state.is_idle() {
-                panic!("CDROM IRQ ack while controller is busy: {:?}",
-                       self.command_state);
-            }
 
             // Certain commands have a 2nd phase after the first
             // interrupt is acknowledged

@@ -3,6 +3,8 @@
 //! point representations shifting things around it's probably going
 //! to be a problem sooner or later.
 
+use std::{fmt};
+
 /// List of all peripherals requiring a TimeSheet. The value of the
 /// enum is used as the index in the timesheet table
 #[derive(Clone, Copy, Debug)]
@@ -98,6 +100,19 @@ impl TimeKeeper {
             self.timesheets.iter().map(|t| t.next_sync).min().unwrap();
     }
 }
+
+impl fmt::Display for TimeKeeper {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let now = self.now;
+        let cpu_freq = ::cpu::CPU_FREQ_HZ as Cycles;
+
+        let seconds = now / cpu_freq;
+        let rem = now % cpu_freq;
+
+        write!(fmt, "{}s+{:08}", seconds, rem)
+    }
+}
+
 
 #[derive(Clone, Copy, Debug)]
 /// Struct used to keep track of individual peripherals
