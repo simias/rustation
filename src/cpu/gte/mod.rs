@@ -117,6 +117,7 @@ impl Gte {
             0x1b => self.cmd_nccs(config),
             0x1c => self.cmd_cc(config),
             0x28 => self.cmd_sqr(config),
+            0x29 => self.cmd_dcpl(config),
             0x2a => self.cmd_dpct(config),
             0x2d => self.cmd_avsz3(),
             0x2e => self.cmd_avsz4(),
@@ -710,6 +711,38 @@ impl Gte {
         self.mac_to_rgb_fifo();
     }
 
+    /// Depth Cue Color Light
+    fn cmd_dcpl(&mut self, config: CommandConfig) {
+        let fc = ControlVector::FarColor.index();
+
+        let (r, g, b, _) = self.rgb;
+
+        let col = [r, g, b];
+        for i in 0..3 {
+            let fc = (self.control_vectors[fc][i] as i64) << 12;
+            let ir = self.ir[i + 1] as i32;
+            let col = (col[i] as i32) << 4;
+
+            let shading = (col * ir) as i64;
+
+            let product = fc - shading;
+
+            let tmp = self.i64_to_i32_result(product) >> config.shift;
+
+            let ir0 = self.ir[0] as i64;
+
+            let res = self.i32_to_i16_saturate(CommandConfig::from_command(0),
+                                               i as u8, tmp) as i64;
+
+            let res = self.i64_to_i32_result(shading + ir0 * res);
+
+            self.mac[i + 1] = res >> config.shift;
+        }
+
+        self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
+    }
+
     /// Depth Queue Triple
     fn cmd_dpct(&mut self, config: CommandConfig) {
         // Each call uses the oldest entry in the RGB FIFO and pushes
@@ -996,36 +1029,7 @@ impl Gte {
                                        3,
                                        ControlVector::BackgroundColor);
 
-        let fc = ControlVector::FarColor.index();
-
-        let (r, g, b, _) = self.rgb;
-
-        let col = [r, g, b];
-        for i in 0..3 {
-            let fc = (self.control_vectors[fc][i] as i64) << 12;
-            let ir = self.ir[i + 1] as i32;
-            let col = (col[i] as i32) << 4;
-
-            let shading = (col * ir) as i64;
-
-            let product = fc - shading;
-
-            let tmp = self.i64_to_i32_result(product) >> config.shift;
-
-            let ir0 = self.ir[0] as i64;
-
-            let foo = self.i32_to_i16_saturate(CommandConfig::from_command(0),
-                                               i as u8, tmp) as i64;
-
-
-
-            let res = self.i64_to_i32_result(shading + ir0 * foo);
-
-            self.mac[i + 1] = res >> config.shift;
-        }
-
-        self.mac_to_ir(config);
-        self.mac_to_rgb_fifo();
+        self.cmd_dcpl(config);
     }
 
     fn multiply_matrix_by_vector(&mut self,
