@@ -688,6 +688,18 @@ impl Gpu {
                     semi_transparent: true,
                     texture: TextureMethod::Raw,
                 }),
+            0x68 =>
+                (2, Gp0Attributes {
+                    callback: Gpu::gp0_monochrome_rect_1x1,
+                    semi_transparent: false,
+                    texture: TextureMethod::None,
+                }),
+            0x6a =>
+                (2, Gp0Attributes {
+                    callback: Gpu::gp0_monochrome_rect_1x1,
+                    semi_transparent: true,
+                    texture: TextureMethod::None,
+                }),
             0x74 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_8x8,
@@ -972,6 +984,11 @@ impl Gpu {
         let size = gp0_position(self.gp0_command[2]);
 
         self.gp0_rect_sized(size[0], size[1]);
+    }
+
+    /// Draw a 1x1 monochrome rectangle (point)
+    fn gp0_monochrome_rect_1x1(&mut self) {
+        self.gp0_rect_sized(1, 1);
     }
 
     /// Draw a 8x8 textured rectangle
