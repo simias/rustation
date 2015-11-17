@@ -658,7 +658,9 @@ impl Gte {
         // Compute the sum in 64bits to detect overflows
         let sum = a as i64 + b as i64 + c as i64;
 
-        self.mac[0] = self.i64_to_i32_result(sum);
+        self.check_mac_overflow(sum);
+
+        self.mac[0] = sum as i32;
     }
 
     /// Outer Product
@@ -725,18 +727,18 @@ impl Gte {
 
             let shading = (col * ir) as i64;
 
-            let product = fc - shading;
+            let tmp = fc - shading;
 
-            let tmp = self.i64_to_i32_result(product) >> config.shift;
+            let tmp = (self.i64_to_i44(i as u8, tmp) >> config.shift) as i32;
 
             let ir0 = self.ir[0] as i64;
 
             let res = self.i32_to_i16_saturate(CommandConfig::from_command(0),
                                                i as u8, tmp) as i64;
 
-            let res = self.i64_to_i32_result(shading + ir0 * res);
+            let res = self.i64_to_i44(i as u8, shading + ir0 * res);
 
-            self.mac[i + 1] = res >> config.shift;
+            self.mac[i + 1] = (res >> config.shift) as i32;
         }
 
         self.mac_to_ir(config);
@@ -894,7 +896,9 @@ impl Gte {
 
         let average = zsf3 * sum as i64;
 
-        self.mac[0] = self.i64_to_i32_result(average);
+        self.check_mac_overflow(average);
+
+        self.mac[0] = average as i32;
         self.otz = self.i64_to_otz(average);
     }
 
@@ -915,7 +919,9 @@ impl Gte {
 
         let average = zsf4 * sum as i64;
 
-        self.mac[0] = self.i64_to_i32_result(average);
+        self.check_mac_overflow(average);
+
+        self.mac[0] = average as i32;
         self.otz = self.i64_to_otz(average);
     }
 
@@ -1254,8 +1260,14 @@ impl Gte {
         let ofy = self.ofy as i64;
 
         // Project X and Y onto the plane
-        let screen_x = self.i64_to_i32_result(x * factor + ofx) >> 16;
-        let screen_y = self.i64_to_i32_result(y * factor + ofy) >> 16;
+        let screen_x = x * factor + ofx;
+        let screen_y = y * factor + ofy;
+
+        self.check_mac_overflow(screen_x);
+        self.check_mac_overflow(screen_y);
+
+        let screen_x = (screen_x >> 16) as i32;
+        let screen_y = (screen_y >> 16) as i32;
 
         // Push onto the XY FIFO
         self.xy_fifo[3] = (self.i32_to_i11_saturate(0, screen_x),
@@ -1279,7 +1291,9 @@ impl Gte {
 
         let depth = dqb + dqa * factor;
 
-        self.mac[0] = self.i64_to_i32_result(depth);
+        self.check_mac_overflow(depth);
+
+        self.mac[0] = depth as i32;
 
         // Compute 16bit IR value
         let depth = depth >> 12;
@@ -1356,16 +1370,13 @@ impl Gte {
         }
     }
 
-    /// Convert i64 to i32, in case of a truncation set the result
-    /// overflow flags (but don't saturate the result)
-    fn i64_to_i32_result(&mut self, val: i64) -> i32 {
+    /// Check for 32bit overflow in the accumulator
+    fn check_mac_overflow(&mut self, val: i64) {
         if val < -0x80000000 {
             self.set_flag(15);
         } else if val > 0x7fffffff {
             self.set_flag(16);
         }
-
-        val as i32
     }
 
     /// Convert a 64bit signed average value to an unsigned halfword
