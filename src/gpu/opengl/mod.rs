@@ -4,6 +4,7 @@ use sdl2::video::GLProfile;
 use glium_sdl2;
 
 use glium::{Program, VertexBuffer, Frame, Surface, DrawParameters, Rect, Blend};
+use glium::index;
 use glium::uniforms::{UniformsStorage, EmptyUniforms};
 use glium::program::ProgramCreationInput;
 
@@ -60,6 +61,13 @@ pub struct Renderer {
     program: Program,
     /// Permanent vertex buffer
     vertex_buffer: VertexBuffer<Vertex>,
+    /// List of queued draw commands. Each command contains a
+    /// primitive type (triangle or line) and a number of *vertices*
+    /// to be drawn from the `vertex_buffer`.
+    command_queue: Vec<(index::PrimitiveType, u32)>,
+    /// Current draw command. Will be pushed onto the `command_queue`
+    /// if a new command needs to be started.
+    current_command: (index::PrimitiveType, u32),
     /// GLSL uniforms
     uniforms: UniformsStorage<'static, [i32; 2], EmptyUniforms>,
     /// Current draw offset
@@ -126,6 +134,15 @@ impl Renderer {
             offset: [0; 2],
         };
 
+        // In order to have the line size scale with the internal
+        // resolution upscale we need to compute the upscaling ratio.
+        //
+        // XXX I only use the y scaling factor since I assume that
+        // both dimensions are scaled by the same ratio. Otherwise
+        // we'd have to change the line thickness depending on its
+        // angle and that would be tricky.
+        let scaling_factor = fb_y_res as f32 / 512.;
+
         let params = DrawParameters {
             // Default to full screen
             scissor: Some(Rect {
@@ -134,6 +151,7 @@ impl Renderer {
                 width: fb_x_res as u32,
                 height: fb_y_res as u32
             }),
+            line_width: Some(scaling_factor),
             // XXX temporary hack for semi-transparency, use basic
             // alpha blending.
             blend: Blend::alpha_blending(),
@@ -147,6 +165,8 @@ impl Renderer {
             fb_y_res: fb_y_res,
             program: program,
             vertex_buffer: vertex_buffer,
+            command_queue: Vec::new(),
+            current_command: (index::PrimitiveType::TrianglesList, 0),
             uniforms: uniforms,
             offset: (0, 0),
             params: params,
@@ -156,24 +176,58 @@ impl Renderer {
 
     /// Add a triangle to the draw buffer
     pub fn push_triangle(&mut self, vertices: &[Vertex; 3]) {
-        // Make sure we have enough room left to queue the vertex. We
-        // need to push two triangles to draw a quad, so 6 vertex
-        if self.nvertices + 3 > VERTEX_BUFFER_LEN {
-            // The vertex attribute buffers are full, force an early
-            // draw
-            self.draw();
-        }
-
-        let slice = self.vertex_buffer.slice(self.nvertices as usize..
-                                             (self.nvertices + 3) as usize).unwrap();
-        slice.write(vertices);
-        self.nvertices += 3;
+        self.push_primitive(index::PrimitiveType::TrianglesList,
+                            vertices);
     }
 
     /// Add a quad to the draw buffer
     pub fn push_quad(&mut self, vertices: &[Vertex; 4]) {
         self.push_triangle(&[vertices[0], vertices[1], vertices[2]]);
         self.push_triangle(&[vertices[1], vertices[2], vertices[3]]);
+    }
+
+    /// Add a line to the draw buffer
+    pub fn push_line(&mut self, vertices: &[Vertex; 2]) {
+        self.push_primitive(index::PrimitiveType::LinesList,
+                            vertices);
+    }
+
+    /// Add a primitive to the draw buffer
+    fn push_primitive(&mut self,
+                      primitive_type: index::PrimitiveType,
+                      vertices: &[Vertex]) {
+        let primitive_vertices = vertices.len() as u32;
+
+        // Make sure we have enough room left to queue the vertex. We
+        // need to push two triangles to draw a quad, so 6 vertex
+        if self.nvertices + primitive_vertices > VERTEX_BUFFER_LEN {
+            // The vertex attribute buffers are full, force an early
+            // draw
+            self.draw();
+        }
+
+        let (mut cmd_type, mut cmd_len) = self.current_command;
+
+        if primitive_type != cmd_type {
+            // We have to change the primitive type. Push the current
+            // command onto the queue and start a new one.
+            if cmd_len > 0 {
+                self.command_queue.push(self.current_command);
+            }
+
+            cmd_type = primitive_type;
+            cmd_len = 0;
+        }
+
+        // Copy the vertices into the vertex buffer
+        let start = self.nvertices as usize;
+        let end = start + primitive_vertices as usize;
+
+        let slice = self.vertex_buffer.slice(start..end).unwrap();
+        slice.write(vertices);
+
+        self.nvertices += primitive_vertices;
+        self.current_command = (cmd_type, cmd_len + primitive_vertices);
     }
 
     /// Fill a rectangle in memory with the given color. This method
@@ -269,20 +323,37 @@ impl Renderer {
 
     /// Draw the buffered commands and reset the buffers
     pub fn draw(&mut self) {
-        use glium::index;
+        let target = self.target.as_mut().unwrap();
 
-        self.target
-            .as_mut()
-            .unwrap()
-            .draw(self.vertex_buffer.slice(0..self.nvertices as usize).unwrap(),
-                  &index::NoIndices(index::PrimitiveType::TrianglesList),
-                  &self.program,
-                  &self.uniforms,
-                  &self.params)
-            .unwrap();
+        // Push the last pending command if needed
+        let (_, cmd_len) = self.current_command;
+
+        if cmd_len > 0 {
+            self.command_queue.push(self.current_command);
+        }
+
+        let mut vertex_pos = 0;
+
+        for &(cmd_type, cmd_len) in &self.command_queue {
+            let start = vertex_pos;
+            let end = start + cmd_len as usize;
+
+            let vertices = self.vertex_buffer.slice(start..end).unwrap();
+
+            target.draw(vertices,
+                        &index::NoIndices(cmd_type),
+                        &self.program,
+                        &self.uniforms,
+                        &self.params)
+                .unwrap();
+
+            vertex_pos = end;
+        }
 
         // Reset the buffers
         self.nvertices = 0;
+        self.command_queue.clear();
+        self.current_command = (index::PrimitiveType::TrianglesList, 0);
     }
 
     /// Draw the buffered commands and display them

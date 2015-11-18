@@ -652,6 +652,30 @@ impl Gpu {
                     semi_transparent: true,
                     texture: TextureMethod::Blended,
                 }),
+            0x40 =>
+                (3, Gp0Attributes {
+                    callback: Gpu::gp0_monochrome_line,
+                    semi_transparent: false,
+                    texture: TextureMethod::None,
+                }),
+            0x42 =>
+                (3, Gp0Attributes {
+                    callback: Gpu::gp0_monochrome_line,
+                    semi_transparent: true,
+                    texture: TextureMethod::None,
+                }),
+            0x50 =>
+                (4, Gp0Attributes {
+                    callback: Gpu::gp0_shaded_line,
+                    semi_transparent: false,
+                    texture: TextureMethod::None,
+                }),
+            0x52 =>
+                (4, Gp0Attributes {
+                    callback: Gpu::gp0_shaded_line,
+                    semi_transparent: true,
+                    texture: TextureMethod::None,
+                }),
             0x60 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_rect,
@@ -856,6 +880,18 @@ impl Gpu {
         self.renderer.push_quad(&vertices);
     }
 
+    /// Draw a monochrome line
+    fn gp0_monochrome_line(&mut self) {
+        let vertices = [
+            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
+                                       gp0_color(self.gp0_command[0])),
+            self.gp0_attributes.vertex(gp0_position(self.gp0_command[2]),
+                                       gp0_color(self.gp0_command[0])),
+            ];
+
+        self.renderer.push_line(&vertices);
+    }
+
     /// Draw a textured unshaded triangle
     fn gp0_textured_triangle(&mut self) {
         let color = gp0_color(self.gp0_command[0]);
@@ -918,6 +954,18 @@ impl Gpu {
             ];
 
         self.renderer.push_quad(&vertices);
+    }
+
+    /// Draw a shaded line
+    fn gp0_shaded_line(&mut self) {
+        let vertices = [
+            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
+                                       gp0_color(self.gp0_command[0])),
+            self.gp0_attributes.vertex(gp0_position(self.gp0_command[3]),
+                                       gp0_color(self.gp0_command[2])),
+            ];
+
+        self.renderer.push_line(&vertices);
     }
 
     /// Draw a textured shaded triangle
