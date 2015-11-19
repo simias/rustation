@@ -152,6 +152,8 @@ impl Spu {
                 }
             } else {
                 match (offset >> 1) as usize {
+                    regmap::MAIN_VOLUME_LEFT => shadow,
+                    regmap::MAIN_VOLUME_RIGHT => shadow,
                     regmap::VOICE_ON_LOW => shadow,
                     regmap::VOICE_ON_HIGH => shadow,
                     regmap::VOICE_OFF_LOW => shadow,
@@ -166,6 +168,10 @@ impl Spu {
                     regmap::CONTROL => shadow,
                     regmap::TRANSFER_CONTROL => shadow,
                     regmap::STATUS => self.status(),
+                    regmap::CD_VOLUME_LEFT => shadow,
+                    regmap::CD_VOLUME_RIGHT => shadow,
+                    regmap::EXT_VOLUME_LEFT => shadow,
+                    regmap::EXT_VOLUME_RIGHT => shadow,
                     regmap::CURRENT_VOLUME_LEFT =>
                         // XXX return current value
                         shadow,
