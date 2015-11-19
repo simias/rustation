@@ -533,6 +533,8 @@ impl Interconnect {
                             // Pointer to the previous entry
                             _ => addr.wrapping_sub(4) & 0x1fffff,
                         },
+                        // XXX to be implemented
+                        Port::MDecOut => 0,
                         Port::Gpu => {
                             // XXX to be implemented
                             println!("DMA GPU READ");
