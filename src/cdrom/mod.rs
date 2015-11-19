@@ -558,6 +558,7 @@ impl CdRom {
                 0x06 => CdRom::cmd_read,
                 0x09 => CdRom::cmd_pause,
                 0x0a => CdRom::cmd_init,
+                0x0b => CdRom::cmd_mute,
                 0x0c => CdRom::cmd_demute,
                 0x0d => CdRom::cmd_set_filter,
                 0x0e => CdRom::cmd_set_mode,
@@ -741,6 +742,15 @@ impl CdRom {
 
         CommandState::RxPending(58_000,
                                 58_000 + 5401,
+                                IrqCode::Ok,
+                                Fifo::from_bytes(&[
+                                    self.drive_status()]))
+    }
+
+    /// Mute CDROM audio playback
+    fn cmd_mute(&mut self) -> CommandState {
+        CommandState::RxPending(23_000,
+                                23_000 + 5401,
                                 IrqCode::Ok,
                                 Fifo::from_bytes(&[
                                     self.drive_status()]))
