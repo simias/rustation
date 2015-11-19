@@ -772,6 +772,8 @@ impl Gpu {
                     semi_transparent: true,
                     texture: TextureMethod::Raw,
                 }),
+            0x80 =>
+                (4, Gp0Attributes::new(Gpu::gp0_copy_rect)),
             0xa0 =>
                 (3, Gp0Attributes::new(Gpu::gp0_image_load)),
             0xc0 =>
@@ -844,6 +846,17 @@ impl Gpu {
         self.renderer.fill_rect(color,
                                 top, left,
                                 bottom, right);
+    }
+
+    /// Gp0(0x80): Copy rectangle
+    fn gp0_copy_rect(&mut self) {
+        let size = gp0_position(self.gp0_command[3]);
+        let src_top_left = gp0_position(self.gp0_command[1]);
+        let dst_top_left = gp0_position(self.gp0_command[2]);
+
+        // XXX Implement me
+        println!("Copy Rectangle {:?} {:?} {:?}",
+                 size, src_top_left, dst_top_left);
     }
 
     /// Draw an untextured unshaded triangle
