@@ -156,6 +156,8 @@ impl Spu {
                     regmap::VOICE_ON_HIGH => shadow,
                     regmap::VOICE_OFF_LOW => shadow,
                     regmap::VOICE_OFF_HIGH => shadow,
+                    regmap::VOICE_NOISE_EN_HIGH => shadow,
+                    regmap::VOICE_NOISE_EN_LOW => shadow,
                     regmap::VOICE_REVERB_EN_LOW => shadow,
                     regmap::VOICE_REVERB_EN_HIGH => shadow,
                     regmap::VOICE_STATUS_LOW => shadow,
