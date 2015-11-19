@@ -724,7 +724,7 @@ impl CdRom {
     /// disc
     fn cmd_pause(&mut self) -> CommandState {
         if self.read_state.is_idle() {
-            panic!("Pause when we're not reading");
+            println!("Pause when we're not reading");
         }
 
         self.on_ack = CdRom::ack_pause;
