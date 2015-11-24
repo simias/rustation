@@ -84,6 +84,8 @@ impl Disc {
                     => Region::Japan,
                 "LicensedbySonyComputerEntertainmentAmerica"
                     => Region::NorthAmerica,
+                "LicensedbySonyComputerEntertainmentofAmerica"
+                    => Region::NorthAmerica,
                 "LicensedbySonyComputerEntertainmentEurope"
                     => Region::Europe,
                 _ => {
