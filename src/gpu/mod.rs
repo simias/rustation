@@ -84,14 +84,14 @@ pub struct Gpu {
     display_line_end: u16,
     /// DMA request direction
     dma_direction: DmaDirection,
+    /// Handler function for GP0 writes
+    gp0_handler: fn (&mut Gpu, val: u32),
     /// Buffer containing the current GP0 command
     gp0_command: CommandBuffer,
     /// Remaining number of words to fetch for the current GP0 command
     gp0_words_remaining: u32,
     /// Current GP0 command attributes
     gp0_attributes: Gp0Attributes,
-    /// Current mode of the GP0 register
-    gp0_mode: Gp0Mode,
     /// True when the GP0 interrupt has been requested
     gp0_interrupt: bool,
     /// True when the VBLANK interrupt is high
@@ -108,6 +108,9 @@ pub struct Gpu {
     hardware: HardwareType,
     /// Next word returned by the GPUREAD command
     read_word: u32,
+    /// When drawing polylines we must keep track of the previous
+    /// vertex position and color
+    polyline_prev: ([i16; 2], [u8; 3]),
 }
 
 impl Gpu {
@@ -148,10 +151,10 @@ impl Gpu {
             display_line_start: 0x10,
             display_line_end: 0x100,
             dma_direction: DmaDirection::Off,
+            gp0_handler: Gpu::gp0_handle_command,
             gp0_command: CommandBuffer::new(),
             gp0_words_remaining: 0,
             gp0_attributes: Gp0Attributes::new(Gpu::gp0_nop),
-            gp0_mode: Gp0Mode::Command,
             gp0_interrupt: false,
             vblank_interrupt: false,
             gpu_clock_phase: 0,
@@ -159,6 +162,7 @@ impl Gpu {
             display_line_tick: 0,
             hardware: hardware,
             read_word: 0,
+            polyline_prev: ([0; 2], [0; 3]),
         }
     }
 
@@ -419,6 +423,11 @@ impl Gpu {
         }
     }
 
+    /// Dispatch to the current GP0 handler method
+    pub fn gp0(&mut self, val: u32) {
+        (self.gp0_handler)(self, val);
+    }
+
     /// Retrieve value of the status register
     fn status(&self) -> u32 {
         let mut r = 0u32;
@@ -486,43 +495,119 @@ impl Gpu {
         self.read_word
     }
 
-    /// Handle writes to the GP0 command register
-    pub fn gp0(&mut self, val: u32) {
-        if self.gp0_words_remaining == 0 {
-            // We start a new GP0 command
+    /// GP0 handler method: handle a command word
+    fn gp0_handle_command(&mut self, val: u32) {
+        let (len, attributes) = self.gp0_parse_command(val);
 
-            let (len, attributes) = self.gp0_command(val);
+        self.gp0_words_remaining = len;
+        self.gp0_attributes = attributes;
+        self.gp0_command.clear();
 
-            self.gp0_words_remaining = len;
-            self.gp0_attributes = attributes;
+        self.gp0_handler = Gpu::gp0_handle_parameter;
 
-            self.gp0_command.clear();
-        }
+        // Call the parameter handling function for the current word
+        self.gp0_handle_parameter(val);
+    }
 
+    /// GP0 handler method: handle a command parameter
+    fn gp0_handle_parameter(&mut self, val: u32) {
+        self.gp0_command.push_word(val);
         self.gp0_words_remaining -= 1;
 
-        match self.gp0_mode {
-            Gp0Mode::Command => {
-                self.gp0_command.push_word(val);
+        if self.gp0_words_remaining == 0 {
+            // Command is complete and ready to run
+            //
+            // XXX certain commands (like quad drawing) actually start
+            // drawing the first triangle before the last vertex is
+            // received by the GPU
 
-                if self.gp0_words_remaining == 0 {
-                    // We have all the parameters, we can run the command
-                    (self.gp0_attributes.callback)(self);
-                }
-            }
-            Gp0Mode::ImageLoad => {
-                // XXX Should copy pixel data to VRAM
-
-                if self.gp0_words_remaining == 0 {
-                    // Load done, switch back to command mode
-                    self.gp0_mode = Gp0Mode::Command;
-                }
-            }
+            // Reset GP0 handler. Can be overriden by the callback in
+            // certain cases, for instance for image load commands.
+            self.gp0_handler = Gpu::gp0_handle_command;
+            (self.gp0_attributes.callback)(self);
         }
     }
 
+    /// GP0 handler method: handle image load
+    fn gp0_handle_image_load(&mut self, _: u32) {
+        // XXX Should copy pixel data to VRAM
+
+        self.gp0_words_remaining -= 1;
+
+        if self.gp0_words_remaining == 0 {
+            // We're done, wait for the next command
+            self.gp0_handler = Gpu::gp0_handle_command;
+        }
+    }
+
+    /// GP0 handler method: handle shaded polyline color word
+    fn gp0_handle_shaded_polyline_color(&mut self, val: u32) {
+        self.gp0_handler =
+            if is_polyline_end_marker(val) {
+                // We found the end-of-polyline marker, we're done.
+                Gpu::gp0_handle_command
+            } else {
+                // Store the color and wait for the position in the
+                // next word
+                self.gp0_command.clear();
+                self.gp0_command.push_word(val);
+                Gpu::gp0_handle_shaded_polyline_vertex
+            };
+    }
+
+    /// GP0 handler method: handle shaded polyline vertex word
+    fn gp0_handle_shaded_polyline_vertex(&mut self, val: u32) {
+        // We don't test for the end-of-polyline marker here because
+        // it only works in color words for shaded polylines.
+
+        // The line starts at the end of the previous segment
+        let (start_pos, start_color) = self.polyline_prev;
+
+        // Retrieve color stored in `gp0_handle_shaded_polyline_color`
+        let end_color = gp0_color(self.gp0_command[0]);
+        let end_pos = gp0_position(val);
+
+        let vertices = [
+            self.gp0_attributes.vertex(start_pos, start_color),
+            self.gp0_attributes.vertex(end_pos, end_color),
+            ];
+
+        self.renderer.push_line(&vertices);
+
+        // Store the new ending position for the next segment (if any)
+        self.polyline_prev = (end_pos, end_color);
+
+        // We expect the color of the next segment
+        self.gp0_handler = Gpu::gp0_handle_shaded_polyline_color;
+    }
+
+    /// GP0 handler method: handle monochrome polyline position word
+    fn gp0_handle_monochrome_polyline_vertex(&mut self, val: u32) {
+        if is_polyline_end_marker(val) {
+            // We found the end-of-polyline marker, we're done.
+            self.gp0_handler = Gpu::gp0_handle_command;
+            return;
+        }
+
+        // The line starts at the end of the previous segment
+        let (start_pos, color) = self.polyline_prev;
+
+        let end_pos = gp0_position(val);
+
+        let vertices = [
+            self.gp0_attributes.vertex(start_pos, color),
+            self.gp0_attributes.vertex(end_pos, color),
+            ];
+
+        self.renderer.push_line(&vertices);
+
+        // Store the new ending position for the next segment (if any)
+        self.polyline_prev = (end_pos, color);
+    }
+
+
     /// Parse GP0 command and return its length in words and attributes
-    fn gp0_command(&self, gp0: u32) -> (u32, Gp0Attributes) {
+    fn gp0_parse_command(&self, gp0: u32) -> (u32, Gp0Attributes) {
         let opcode = gp0 >> 24;
 
         match opcode {
@@ -664,6 +749,18 @@ impl Gpu {
                     semi_transparent: true,
                     texture: TextureMethod::None,
                 }),
+            0x48 =>
+                (3, Gp0Attributes {
+                    callback: Gpu::gp0_monochrome_polyline,
+                    semi_transparent: false,
+                    texture: TextureMethod::None,
+                }),
+            0x4a =>
+                (3, Gp0Attributes {
+                    callback: Gpu::gp0_monochrome_polyline,
+                    semi_transparent: true,
+                    texture: TextureMethod::None,
+                }),
             0x50 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_shaded_line,
@@ -673,6 +770,18 @@ impl Gpu {
             0x52 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_shaded_line,
+                    semi_transparent: true,
+                    texture: TextureMethod::None,
+                }),
+            0x58 =>
+                (4, Gp0Attributes {
+                    callback: Gpu::gp0_shaded_polyline,
+                    semi_transparent: false,
+                    texture: TextureMethod::None,
+                }),
+            0x5a =>
+                (4, Gp0Attributes {
+                    callback: Gpu::gp0_shaded_polyline,
                     semi_transparent: true,
                     texture: TextureMethod::None,
                 }),
@@ -917,6 +1026,31 @@ impl Gpu {
         self.renderer.push_line(&vertices);
     }
 
+    /// Draw a monochrome polyline
+    fn gp0_monochrome_polyline(&mut self) {
+        // Start with the first segment. The end-of-polyline marker is
+        // ignored for the first two vertices.
+
+        let color = gp0_color(self.gp0_command[0]);
+        let start_pos = gp0_position(self.gp0_command[1]);
+
+        let end_pos = gp0_position(self.gp0_command[2]);
+
+        let vertices = [
+            self.gp0_attributes.vertex(start_pos, color),
+            self.gp0_attributes.vertex(end_pos, color),
+            ];
+
+        self.renderer.push_line(&vertices);
+
+        // Store the end point to continue the polyline when we get
+        // the next vertex
+        self.polyline_prev = (end_pos, color);
+
+        self.gp0_handler = Gpu::gp0_handle_monochrome_polyline_vertex;
+    }
+
+
     /// Draw a textured unshaded triangle
     fn gp0_textured_triangle(&mut self) {
         let color = gp0_color(self.gp0_command[0]);
@@ -991,6 +1125,34 @@ impl Gpu {
             ];
 
         self.renderer.push_line(&vertices);
+    }
+
+    /// Draw a shaded polyline
+    fn gp0_shaded_polyline(&mut self) {
+        // Start with the first segment. We cannot have an
+        // end-of-polyline marker in any of these vertice's color code
+        // (if you put the marker in the 2nd vertex color word it's
+        // ignored, it only works starting from the third vertex
+        // onwards)
+
+        let start_color = gp0_color(self.gp0_command[0]);
+        let start_pos = gp0_position(self.gp0_command[1]);
+
+        let end_color = gp0_color(self.gp0_command[2]);
+        let end_pos = gp0_position(self.gp0_command[3]);
+
+        let vertices = [
+            self.gp0_attributes.vertex(start_pos, start_color),
+            self.gp0_attributes.vertex(end_pos, end_color),
+            ];
+
+        self.renderer.push_line(&vertices);
+
+        // Store the end point to continue the polyline when we get
+        // the next vertex
+        self.polyline_prev = (end_pos, end_color);
+
+        self.gp0_handler = Gpu::gp0_handle_shaded_polyline_color;
     }
 
     /// Draw a textured shaded triangle
@@ -1096,11 +1258,16 @@ impl Gpu {
         // in the last word.
         let imgsize = (imgsize + 1) & !1;
 
-        // Store number of words expected for this image
+        // Store number of 32bit words expected for this image
         self.gp0_words_remaining = imgsize / 2;
 
-        // Put the GP0 state machine in ImageLoad mode
-        self.gp0_mode = Gp0Mode::ImageLoad;
+        if self.gp0_words_remaining > 0 {
+            // Use a custom GP0 handler to handle the GP0 image load
+            self.gp0_handler = Gpu::gp0_handle_image_load;
+        } else {
+            println!("GPU: 0-sized image load");
+        }
+
     }
 
     /// GP0(0xC0): Image Store
@@ -1285,7 +1452,7 @@ impl Gpu {
     fn gp1_reset_command_buffer(&mut self) {
         self.gp0_command.clear();
         self.gp0_words_remaining = 0;
-        self.gp0_mode = Gp0Mode::Command;
+        self.gp0_handler = Gpu::gp0_handle_command;
         // XXX should also clear the command FIFO when we implement it
     }
 
@@ -1406,14 +1573,6 @@ impl Gpu {
 
         self.sync(tk, irq_state);
     }
-}
-
-/// Possible states for the GP0 command register
-enum Gp0Mode {
-    /// Default mode: handling commands
-    Command,
-    /// Loading an image into VRAM
-    ImageLoad,
 }
 
 /// Depth of the pixel values in a texture page
@@ -1627,4 +1786,11 @@ fn gp0_color(col: u32) -> [u8; 3] {
     let b = (col >> 16) as u8;
 
     [r, g, b]
+}
+
+/// Return true if the word is a polyline end maker. Most games use
+/// `0x55555555` but the GPU only tests for `0x5XXX5XXX` (so
+/// `0x51235abc` would be a valid marker for instance).
+fn is_polyline_end_marker(val: u32) -> bool {
+    val & 0xf000f000 == 0x50005000
 }
