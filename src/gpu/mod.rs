@@ -748,6 +748,18 @@ impl Gpu {
                     semi_transparent: true,
                     texture: TextureMethod::Raw,
                 }),
+            0x78 =>
+                (2, Gp0Attributes {
+                    callback: Gpu::gp0_monochrome_rect_16x16,
+                    semi_transparent: false,
+                    texture: TextureMethod::None,
+                }),
+            0x7a =>
+                (2, Gp0Attributes {
+                    callback: Gpu::gp0_monochrome_rect_16x16,
+                    semi_transparent: true,
+                    texture: TextureMethod::None,
+                }),
             0x7c =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_16x16,
@@ -1051,6 +1063,12 @@ impl Gpu {
     fn gp0_monochrome_rect_1x1(&mut self) {
         self.gp0_rect_sized(1, 1);
     }
+
+    /// Draw a 16x16 monochrome rectangle
+    fn gp0_monochrome_rect_16x16(&mut self) {
+        self.gp0_rect_sized(16, 16);
+    }
+
 
     /// Draw a 8x8 textured rectangle
     fn gp0_textured_rect_8x8(&mut self) {
