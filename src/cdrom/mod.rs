@@ -35,10 +35,12 @@ pub struct CdRom {
     seek_target_pending: bool,
     /// Current read position
     position: Msf,
-    /// True if the drive is in double speed mode (2x, 150 sectors per
+    /// If true the drive is in double speed mode (2x, 150 sectors per
     /// second), otherwise we're in the default 1x (75 sectors per
     /// second).
     double_speed: bool,
+    /// If true Send ADPCM samples to the SPU
+    xa_adpcm_to_spu: bool,
     /// Sector in the RX buffer
     rx_sector: XaSector,
     /// When this bit is set the data RX buffer is active, otherwise
@@ -54,6 +56,14 @@ pub struct CdRom {
     /// If true we read the whole sector except for the sync bytes
     /// (0x924 bytes), otherwise it only reads 0x800 bytes.
     read_whole_sector: bool,
+    /// Not sure what this does exactly, apparently it overrides the
+    /// normal sector size. Needs to run more tests to see what it
+    /// does exactly.
+    sector_size_override: bool,
+    /// Enable CD-DA mode to play Redbook Audio tracks
+    cdda_mode: bool,
+    /// If true automatically pause at the end of the track
+    autopause: bool,
     /// CDROM audio mixer connected to the SPU
     mixer: Mixer,
     /// True if the ADPCM filter is enabled
@@ -67,6 +77,9 @@ pub struct CdRom {
     /// Buffer holding an asynchronous event while we're waiting for
     /// the interrupt to be acknowledged
     pending_async_event: Option<(IrqCode, Fifo)>,
+    /// XXX Not sure what this does exactly, No$ says "Enable
+    /// Report-Interrupts for Audio Play"
+    report_interrupts: bool,
 }
 
 impl CdRom {
@@ -85,17 +98,22 @@ impl CdRom {
             seek_target_pending: false,
             position: Msf::zero(),
             double_speed: false,
+            xa_adpcm_to_spu: false,
             rx_sector: XaSector::new(),
             rx_active: false,
             rx_index: 0,
             rx_offset: 0,
             rx_len: 0,
             read_whole_sector: true,
+            sector_size_override: false,
+            cdda_mode: false,
+            autopause: false,
             mixer: Mixer::new(),
             filter_enabled: false,
             filter_file: 0,
             filter_channel: 0,
             pending_async_event: None,
+            report_interrupts: true,
         }
     }
 
@@ -562,6 +580,7 @@ impl CdRom {
                 0x0c => CdRom::cmd_demute,
                 0x0d => CdRom::cmd_set_filter,
                 0x0e => CdRom::cmd_set_mode,
+                0x0f => CdRom::cmd_get_param,
                 0x11 => CdRom::cmd_get_loc_p,
                 0x13 => CdRom::cmd_get_tn,
                 0x15 => CdRom::cmd_seek_l,
@@ -793,11 +812,19 @@ impl CdRom {
 
         let mode = self.params.pop();
 
-        self.double_speed = (mode & 0x80) != 0;
-        self.read_whole_sector = (mode & 0x20) != 0;
-        self.filter_enabled = (mode & 0x8) != 0;
+        self.double_speed = (mode >> 7) & 1 != 0;
+        self.xa_adpcm_to_spu = (mode >> 6) & 1 != 0;
+        self.read_whole_sector = (mode >> 5) & 1 != 0;
+        self.sector_size_override = (mode >> 4) & 1 != 0;
+        self.filter_enabled = (mode >> 3) & 1 != 0;
+        self.report_interrupts = (mode >> 2) & 1 != 0;
+        self.autopause = (mode >> 1) & 1 != 0;
+        self.cdda_mode = (mode >> 0) & 1 != 0;
 
-        if mode & 0x17 != 0 {
+        if self.cdda_mode ||
+           self.autopause ||
+           self.report_interrupts ||
+           self.sector_size_override {
             panic!("CDROM: unhandled mode: {:02x}", mode);
         }
 
@@ -806,6 +833,32 @@ impl CdRom {
                                 IrqCode::Ok,
                                 Fifo::from_bytes(&[
                                     self.drive_status()]))
+    }
+
+    /// Return various parameters of the CDROM controller
+    fn cmd_get_param(&mut self) -> CommandState {
+        let mut mode = 0u8;
+
+        mode |= (self.double_speed as u8) << 7;
+        mode |= (self.xa_adpcm_to_spu as u8) << 6;
+        mode |= (self.read_whole_sector as u8) << 5;
+        mode |= (self.sector_size_override as u8) << 4;
+        mode |= (self.filter_enabled as u8) << 3;
+        mode |= (self.report_interrupts as u8) << 2;
+        mode |= (self.autopause as u8) << 1;
+        mode |= (self.cdda_mode as u8) << 0;
+
+        let response =
+            Fifo::from_bytes(&[self.drive_status(),
+                               mode,
+                               0, // Apparently always 0
+                               self.filter_file,
+                               self.filter_channel]);
+
+        CommandState::RxPending(26_000,
+                                26_000 + 11_980,
+                                IrqCode::Ok,
+                                response)
     }
 
     /// Get the current position of the drive head by returning the
@@ -1052,7 +1105,13 @@ impl CdRom {
         self.seek_target = Msf::zero();
         self.read_state = ReadState::Idle;
         self.double_speed = false;
+        self.xa_adpcm_to_spu = false;
         self.read_whole_sector = true;
+        self.sector_size_override = false;
+        self.filter_enabled = false;
+        self.report_interrupts = false;
+        self.autopause = false;
+        self.cdda_mode = false;
 
         CommandState::RxPending(2_000_000,
                                 2_000_000 + 1870,
