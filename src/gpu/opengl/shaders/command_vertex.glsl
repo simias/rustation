@@ -1,5 +1,7 @@
 #version 330 core
 
+// Vertex shader for rendering GPU draw commands in the framebuffer
+
 in ivec2 position;
 in vec3 color;
 in float alpha;

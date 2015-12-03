@@ -1,4 +1,4 @@
-use self::opengl::{Renderer, Vertex};
+use self::opengl::{Renderer, CommandVertex};
 use memory::Addressable;
 use memory::interrupts::{Interrupt, InterruptState};
 use memory::timers::Timers;
@@ -299,7 +299,7 @@ impl Gpu {
         if self.vblank_interrupt && !vblank_interrupt {
             // End of vertical blanking, probably as a good place as
             // any to update the display
-            self.renderer.display();
+            self.display();
         }
 
         self.vblank_interrupt = vblank_interrupt;
@@ -361,6 +361,15 @@ impl Gpu {
         delta = (delta + ratio - 1) / ratio;
 
         tk.set_next_sync_delta(Peripheral::Gpu, delta);
+    }
+
+    /// Called when we want to display a new frame. Refreshes the
+    /// video output.
+    fn display(&mut self) {
+        self.renderer.display(self.display_vram_x_start,
+                              self.display_vram_y_start,
+                              self.hres.width(),
+                              self.vres.height());
     }
 
     /// Return true if we're currently in the video blanking period
@@ -1648,6 +1657,27 @@ impl HorizontalRes {
             }
         }
     }
+
+    /// Return the *approximate* width of the displayed portion of the
+    /// framebuffer. The actual visible width depends on the TV
+    /// screen.
+    fn width(self) -> u16 {
+        let hr1 = (self.0 >> 1) & 0x3;
+        let hr2 = self.0 & 1 != 0;
+
+        // See `dotclock_divider`'s comments for more details
+        if hr2 {
+            368
+        } else {
+            match hr1 {
+                0 => 256,
+                1 => 320,
+                2 => 512,
+                3 => 640,
+                _ => unreachable!(),
+            }
+        }
+    }
 }
 
 /// Video output vertical resolution
@@ -1657,6 +1687,15 @@ enum VerticalRes {
     Y240Lines = 0,
     /// 480 lines (only available for interlaced output)
     Y480Lines = 1,
+}
+
+impl VerticalRes {
+    fn height(self) -> u16 {
+        match self {
+            VerticalRes::Y240Lines => 240,
+            VerticalRes::Y480Lines => 480,
+        }
+    }
 }
 
 /// Video Modes
@@ -1753,9 +1792,9 @@ impl Gp0Attributes {
     }
 
     /// Build a vertex using the current attributes
-    fn vertex(&self, position: [i16; 2], color: [u8; 3]) -> Vertex {
+    fn vertex(&self, position: [i16; 2], color: [u8; 3]) -> CommandVertex {
         // XXX handle texturing
-        Vertex::new(position, color, self.semi_transparent)
+        CommandVertex::new(position, color, self.semi_transparent)
     }
 }
 
