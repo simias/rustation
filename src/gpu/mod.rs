@@ -1,4 +1,4 @@
-use self::opengl::{Renderer, CommandVertex};
+use self::opengl::{Renderer, CommandVertex, LoadBuffer};
 use memory::Addressable;
 use memory::interrupts::{Interrupt, InterruptState};
 use memory::timers::Timers;
@@ -111,6 +111,9 @@ pub struct Gpu {
     /// When drawing polylines we must keep track of the previous
     /// vertex position and color
     polyline_prev: ([i16; 2], [u8; 3]),
+    /// Buffer holding the textures when they are being loaded through
+    /// GP0
+    load_buffer: LoadBuffer,
 }
 
 impl Gpu {
@@ -163,6 +166,7 @@ impl Gpu {
             hardware: hardware,
             read_word: 0,
             polyline_prev: ([0; 2], [0; 3]),
+            load_buffer: LoadBuffer::null(),
         }
     }
 
@@ -538,12 +542,21 @@ impl Gpu {
     }
 
     /// GP0 handler method: handle image load
-    fn gp0_handle_image_load(&mut self, _: u32) {
-        // XXX Should copy pixel data to VRAM
+    fn gp0_handle_image_load(&mut self, word: u32) {
+        self.load_buffer.push_word(word);
 
         self.gp0_words_remaining -= 1;
 
         if self.gp0_words_remaining == 0 {
+            let mut load_buffer = LoadBuffer::null();
+
+            // We are going to consume the LoadBuffer, we need to move
+            // out of `self`
+            ::std::mem::swap(&mut self.load_buffer,
+                             &mut load_buffer);
+
+            self.renderer.load_image(load_buffer);
+
             // We're done, wait for the next command
             self.gp0_handler = Gpu::gp0_handle_command;
         }
@@ -1253,6 +1266,13 @@ impl Gpu {
 
     /// GP0(0xA0): Image Load
     fn gp0_image_load(&mut self) {
+        // Parameter 1 contains the location of the target location's
+        // top-left corner in VRAM
+        let pos = self.gp0_command[1];
+
+        let x = pos as u16;
+        let y = (pos >> 16) as u16;
+
         // Parameter 2 contains the image resolution
         let res = self.gp0_command[2];
 
@@ -1271,6 +1291,9 @@ impl Gpu {
         self.gp0_words_remaining = imgsize / 2;
 
         if self.gp0_words_remaining > 0 {
+            self.load_buffer = LoadBuffer::new(x, y,
+                                               width as u16, height as u16);
+
             // Use a custom GP0 handler to handle the GP0 image load
             self.gp0_handler = Gpu::gp0_handle_image_load;
         } else {

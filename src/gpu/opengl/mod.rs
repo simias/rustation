@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use sdl2;
 use sdl2::video::GLProfile;
 
@@ -6,8 +8,10 @@ use glium_sdl2;
 use glium::{Program, VertexBuffer, Surface, DrawParameters, Rect, Blend};
 use glium::index;
 use glium::uniforms::{UniformsStorage, EmptyUniforms};
+use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter};
 use glium::program::ProgramCreationInput;
 use glium::texture::{Texture2d, UncompressedFloatFormat, MipmapsOption};
+use glium::texture::{Texture2dDataSource, RawImage2d, ClientFormat};
 
 /// Maximum number of vertex that can be stored in an attribute
 /// buffers
@@ -81,6 +85,8 @@ pub struct Renderer {
     command_params: DrawParameters<'static>,
     /// Program used to display the visible part of the framebuffer
     output_program: Program,
+    /// Program used to upload new textures into the framebuffer
+    image_load_program: Program,
 }
 
 impl Renderer {
@@ -195,10 +201,24 @@ impl Renderer {
                              geometry_shader: None,
                              fragment_shader: &output_fs_src,
                              transform_feedback_varyings: None,
-                             // Don't mess with the color correction.
-                             // XXX We should probably do manual color
-                             // correction to match the real console's
-                             // output colors
+                             outputs_srgb: true,
+                             uses_point_size: false,
+                         }).unwrap();
+
+        // Build the program used to upload textures to the
+        // framebuffer
+        let load_vs_src = include_str!("shaders/image_load_vertex.glsl");
+        let load_fs_src = include_str!("shaders/image_load_fragment.glsl");
+
+        let image_load_program =
+            Program::new(&window,
+                         ProgramCreationInput::SourceCode {
+                             vertex_shader: &load_vs_src,
+                             tessellation_control_shader: None,
+                             tessellation_evaluation_shader: None,
+                             geometry_shader: None,
+                             fragment_shader: &load_fs_src,
+                             transform_feedback_varyings: None,
                              outputs_srgb: true,
                              uses_point_size: false,
                          }).unwrap();
@@ -217,6 +237,7 @@ impl Renderer {
             offset: (0, 0),
             command_params: command_params,
             output_program: output_program,
+            image_load_program: image_load_program,
         }
     }
 
@@ -423,7 +444,6 @@ impl Renderer {
 
         let mut frame = self.window.draw();
 
-
         // We sample `fb_out` onto the screen
         let uniforms = uniform! {
             fb: &self.fb_out,
@@ -469,7 +489,6 @@ impl Renderer {
                    &uniforms,
                    &params).unwrap();
 
-
         // Draw the full framebuffer at the bottom right transparently
         // We sample `fb_out` onto the screen
         let vertices =
@@ -486,7 +505,7 @@ impl Renderer {
 
         let uniforms = uniform! {
             fb: &self.fb_out,
-            alpha: 0.5f32,
+            alpha: 0.7f32,
         };
 
         frame.draw(&vertices,
@@ -511,5 +530,180 @@ impl Renderer {
         let y = (y as u32 * self.fb_y_res as u32 + 256) / 512;
 
         (x, y)
+    }
+
+    /// Load an image (texture, palette, ...) into the VRAM
+    pub fn load_image(&mut self, load_buffer: LoadBuffer) {
+        // XXX must take Mask bit into account. Should also change the
+        // alpha mode to conserve the source alpha only (no blending).
+
+        // First we must run any pending command
+        self.draw();
+
+        let mut surface = self.fb_out.as_surface();
+
+        // Target coordinates in VRAM
+        let (x, y) = load_buffer.top_left();
+        let width = load_buffer.width();
+        let height = load_buffer.height();
+
+        let image = load_buffer.into_texture(&self.window);
+
+        let params = DrawParameters {
+            ..Default::default()
+        };
+
+        /// Vertex definition for the video output program
+        #[derive(Copy, Clone)]
+        struct Vertex {
+            /// Vertex position in VRAM
+            position: [u16; 2],
+            /// Coordinate in the loaded image
+            image_coord: [f32; 2],
+        }
+
+        implement_vertex!(Vertex, position, image_coord);
+
+        // We cannot filter the texture here because it can contain
+        // paletted textures or palette data
+        let sampler =
+            image.sampled()
+            .magnify_filter(MagnifySamplerFilter::Nearest)
+            .minify_filter(MinifySamplerFilter::Nearest);
+
+        let uniforms = uniform! {
+            image: sampler,
+        };
+
+        let x_start = x;
+        let x_end = x + width;
+        let y_start = y;
+        let y_end = y + height;
+
+        // We render a single quad containing the image into the
+        // framebuffer
+        let vertices =
+            VertexBuffer::new(&self.window,
+                              &[Vertex { position: [x_start, y_start],
+                                         image_coord: [0.0, 0.0] },
+                                Vertex { position: [x_end, y_start],
+                                         image_coord: [1.0, 0.0] },
+                                Vertex { position: [x_start, y_end],
+                                         image_coord: [0.0, 1.0] },
+                                Vertex { position: [x_end, y_end],
+                                         image_coord: [1.0, 1.0] }])
+            .unwrap();
+
+        surface.draw(&vertices,
+                     &index::NoIndices(index::PrimitiveType::TriangleStrip),
+                     &self.image_load_program,
+                     &uniforms,
+                     &params).unwrap();
+    }
+}
+
+/// Buffer used to store images while they're loaded into the GPU
+/// word-by-word through GP0
+pub struct LoadBuffer {
+    /// Buffer containing the individual pixels, top-left to
+    /// bottom-right
+    buf: Vec<u16>,
+    /// Width in pixels
+    width: u16,
+    /// Height
+    height: u16,
+    /// Coordinate of the top-left corner of target
+    /// location in VRAM
+    top_left: (u16, u16),
+}
+
+impl LoadBuffer {
+    pub fn new(x: u16, y: u16, width: u16, height: u16) -> LoadBuffer {
+        let size = (width as usize) * (height as usize);
+
+        // Round capacity up to the next even value since we always
+        // upload two pixels at a time
+        let size = (size + 1) & !1;
+
+        LoadBuffer {
+            buf: Vec::with_capacity(size),
+            width: width,
+            height: height,
+            top_left: (x, y),
+        }
+    }
+
+    /// Build an empty LoadBuffer expecting no data
+    pub fn null() -> LoadBuffer {
+        LoadBuffer {
+            buf: Vec::new(),
+            width: 0,
+            height: 0,
+            top_left: (0, 0),
+        }
+    }
+
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+
+    pub fn top_left(&self) -> (u16, u16) {
+        self.top_left
+    }
+
+    /// Called a when a new word is received in GP0. Extract the two
+    /// pixels and store them in the buffer
+    pub fn push_word(&mut self, word: u32) {
+        // Unfortunately OpenGL puts the color components the other
+        // way around: it uses BGRA 5551 while the PSX uses MRGB 1555
+        // so we have to shuffle the components around
+        fn shuffle_components(color: u16) -> u16 {
+            let alpha = color >> 15;
+            let r = (color >> 10) & 0x1f;
+            let g = (color >> 5) & 0x1f;
+            let b = color & 0x1f;
+
+            alpha | (r << 1) | (g << 6) | (b << 11)
+        }
+
+        let p0 = shuffle_components(word as u16);
+        let p1 = shuffle_components((word >> 16) as u16);
+
+        self.buf.push(p0);
+        self.buf.push(p1);
+    }
+
+    pub fn into_texture(self, window: &glium_sdl2::SDL2Facade) -> Texture2d {
+        Texture2d::with_format(window,
+                               self,
+                               UncompressedFloatFormat::U5U5U5U1,
+                               MipmapsOption::NoMipmap).unwrap()
+    }
+}
+
+impl<'a> Texture2dDataSource<'a> for LoadBuffer {
+    type Data = u16;
+
+    fn into_raw(self) -> RawImage2d<'a, u16> {
+        let width = self.width as u32;
+        let height = self.height as u32;
+
+        let mut data = self.buf;
+
+        // We might have one pixel too many because of the padding to
+        // 32bits during the upload. Glium will panic if `data` is
+        // bigger than expected.
+        data.truncate((width * height) as usize);
+
+        RawImage2d {
+            data: Cow::Owned(data),
+            width: width,
+            height: height,
+            format: ClientFormat::U5U5U5U1,
+        }
     }
 }
