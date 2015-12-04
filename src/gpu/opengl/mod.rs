@@ -94,11 +94,11 @@ impl Renderer {
     pub fn new(sdl_context: &sdl2::Sdl) -> Renderer {
         use glium_sdl2::DisplayBuild;
         // Native PSX VRAM resolution
-        let fb_x_res = 1024u32;
-        let fb_y_res = 512u32;
+        let fb_x_res = 1024u32 * 4;
+        let fb_y_res = 512u32 * 4;
         // Internal format for the framebuffer. The real console uses
         // RGB 555 + one "mask" bit which we store as alpha.
-        let fb_format = UncompressedFloatFormat::U5U5U5U1;
+        let fb_format = UncompressedFloatFormat::U8U8U8U8;
 
 
         // Video output resolution ("TV screen" size). It's not
@@ -494,17 +494,25 @@ impl Renderer {
         let vertices =
             VertexBuffer::new(&self.window,
                               &[Vertex { position: [0., -1.0],
-                                         fb_coord: [0, 511] },
+                                         fb_coord: [0, 512] },
                                 Vertex { position: [1.0, -1.0],
-                                         fb_coord: [1024, 511] },
+                                         fb_coord: [1024, 512] },
                                 Vertex { position: [0., -0.5],
                                          fb_coord: [0, 0] },
                                 Vertex { position: [1.0, -0.5],
                                          fb_coord: [1024, 0] }])
             .unwrap();
 
+        // Let's use nearest neighbour interpolation for the VRAM
+        // dump, doesn't make a lot of sense to interpolate linearly
+        // here
+        let sampler =
+            self.fb_out.sampled()
+            .magnify_filter(MagnifySamplerFilter::Nearest)
+            .minify_filter(MinifySamplerFilter::Nearest);
+
         let uniforms = uniform! {
-            fb: &self.fb_out,
+            fb: sampler,
             alpha: 0.7f32,
         };
 
