@@ -632,6 +632,8 @@ impl Gpu {
     fn gp0_parse_command(&self, gp0: u32) -> (u32, Gp0Attributes) {
         let opcode = gp0 >> 24;
 
+        println!("GP0 command {:02x}", opcode);
+
         match opcode {
             0x00 =>
                 (1, Gp0Attributes::new(Gpu::gp0_nop)),
@@ -643,277 +645,277 @@ impl Gpu {
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_triangle,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x22 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_triangle,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x24 =>
                 (7, Gp0Attributes {
                     callback: Gpu::gp0_textured_triangle,
                     semi_transparent: false,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x25 =>
                 (7, Gp0Attributes {
                     callback: Gpu::gp0_textured_triangle,
                     semi_transparent: false,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x26 =>
                 (7, Gp0Attributes {
                     callback: Gpu::gp0_textured_triangle,
                     semi_transparent: true,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x27 =>
                 (7, Gp0Attributes {
                     callback: Gpu::gp0_textured_triangle,
                     semi_transparent: true,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x28 =>
                 (5, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_quad,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x2a =>
                 (5, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_quad,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x2c =>
                 (9, Gp0Attributes {
                     callback: Gpu::gp0_textured_quad,
                     semi_transparent: false,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x2d =>
                 (9, Gp0Attributes {
                     callback: Gpu::gp0_textured_quad,
                     semi_transparent: false,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x2e =>
                 (9, Gp0Attributes {
                     callback: Gpu::gp0_textured_quad,
                     semi_transparent: true,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x2f =>
                 (9, Gp0Attributes {
                     callback: Gpu::gp0_textured_quad,
                     semi_transparent: true,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x30 =>
                 (6, Gp0Attributes {
                     callback: Gpu::gp0_shaded_triangle,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x32 =>
                 (6, Gp0Attributes {
                     callback: Gpu::gp0_shaded_triangle,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x34 =>
                 (9, Gp0Attributes {
                     callback: Gpu::gp0_textured_shaded_triangle,
                     semi_transparent: false,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x36 =>
                 (9, Gp0Attributes {
                     callback: Gpu::gp0_textured_shaded_triangle,
                     semi_transparent: true,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x38 =>
                 (8, Gp0Attributes {
                     callback: Gpu::gp0_shaded_quad,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x3a =>
                 (8, Gp0Attributes {
                     callback: Gpu::gp0_shaded_quad,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x3c =>
                 (12, Gp0Attributes {
                     callback: Gpu::gp0_textured_shaded_quad,
                     semi_transparent: false,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x3e =>
                 (12, Gp0Attributes {
                     callback: Gpu::gp0_textured_shaded_quad,
                     semi_transparent: true,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x40 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_line,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x42 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_line,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x48 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_polyline,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x4a =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_polyline,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x50 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_shaded_line,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x52 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_shaded_line,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x58 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_shaded_polyline,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x5a =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_shaded_polyline,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x60 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_rect,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x62 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_rect,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x64 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect,
                     semi_transparent: false,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x65 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect,
                     semi_transparent: false,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x66 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect,
                     semi_transparent: true,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x67 =>
                 (4, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect,
                     semi_transparent: true,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x68 =>
                 (2, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_rect_1x1,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x6a =>
                 (2, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_rect_1x1,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x74 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_8x8,
                     semi_transparent: false,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x75 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_8x8,
                     semi_transparent: false,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x76 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_8x8,
                     semi_transparent: true,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x77 =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_8x8,
                     semi_transparent: true,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x78 =>
                 (2, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_rect_16x16,
                     semi_transparent: false,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x7a =>
                 (2, Gp0Attributes {
                     callback: Gpu::gp0_monochrome_rect_16x16,
                     semi_transparent: true,
-                    texture: TextureMethod::None,
+                    texture_method: TextureMethod::None,
                 }),
             0x7c =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_16x16,
                     semi_transparent: false,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x7d =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_16x16,
                     semi_transparent: false,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x7e =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_16x16,
                     semi_transparent: true,
-                    texture: TextureMethod::Blended,
+                    texture_method: TextureMethod::Blended,
                 }),
             0x7f =>
                 (3, Gp0Attributes {
                     callback: Gpu::gp0_textured_rect_16x16,
                     semi_transparent: true,
-                    texture: TextureMethod::Raw,
+                    texture_method: TextureMethod::Raw,
                 }),
             0x80 =>
                 (4, Gp0Attributes::new(Gpu::gp0_copy_rect)),
@@ -1093,15 +1095,34 @@ impl Gpu {
     fn gp0_textured_quad(&mut self) {
         let color = gp0_color(self.gp0_command[0]);
 
+        let clut = gp0_clut(self.gp0_command[2]);
+        let texpage = gp0_texture_page(self.gp0_command[4]);
+
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[3]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[5]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[7]),
-                                       color),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[1]),
+                color,
+                gp0_texture_coordinates(self.gp0_command[2]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[3]),
+                color,
+                gp0_texture_coordinates(self.gp0_command[4]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[5]),
+                color,
+                gp0_texture_coordinates(self.gp0_command[6]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[7]),
+                color,
+                gp0_texture_coordinates(self.gp0_command[8]),
+                clut,
+                texpage),
             ];
 
         self.renderer.push_quad(&vertices);
@@ -1193,16 +1214,47 @@ impl Gpu {
 
     /// Draw a textured shaded quad
     fn gp0_textured_shaded_quad(&mut self) {
+        let clut = gp0_clut(self.gp0_command[2]);
+        let texpage = gp0_texture_page(self.gp0_command[5]);
+
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       gp0_color(self.gp0_command[0])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[4]),
-                                       gp0_color(self.gp0_command[3])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[7]),
-                                       gp0_color(self.gp0_command[6])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[10]),
-                                       gp0_color(self.gp0_command[9])),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[1]),
+                gp0_color(self.gp0_command[0]),
+                gp0_texture_coordinates(self.gp0_command[2]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[4]),
+                gp0_color(self.gp0_command[3]),
+                gp0_texture_coordinates(self.gp0_command[5]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[7]),
+                gp0_color(self.gp0_command[6]),
+                gp0_texture_coordinates(self.gp0_command[8]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[10]),
+                gp0_color(self.gp0_command[9]),
+                gp0_texture_coordinates(self.gp0_command[11]),
+                clut,
+                texpage),
             ];
+
+
+        // let vertices = [
+        //     self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
+        //                                gp0_color(self.gp0_command[0])),
+        //     self.gp0_attributes.vertex(gp0_position(self.gp0_command[4]),
+        //                                gp0_color(self.gp0_command[3])),
+        //     self.gp0_attributes.vertex(gp0_position(self.gp0_command[7]),
+        //                                gp0_color(self.gp0_command[6])),
+        //     self.gp0_attributes.vertex(gp0_position(self.gp0_command[10]),
+        //                                gp0_color(self.gp0_command[9])),
+        //     ];
 
         self.renderer.push_quad(&vertices);
     }
@@ -1798,9 +1850,8 @@ struct Gp0Attributes {
     callback: fn(&mut Gpu),
     /// True for semi-transparent primitives
     semi_transparent: bool,
-    /// True for textured primitives
-    #[allow(dead_code)]
-    texture: TextureMethod,
+    /// Texturing method
+    texture_method: TextureMethod,
 }
 
 impl Gp0Attributes {
@@ -1810,19 +1861,39 @@ impl Gp0Attributes {
         Gp0Attributes {
             callback: callback,
             semi_transparent: false,
-            texture: TextureMethod::None,
+            texture_method: TextureMethod::None,
         }
     }
 
     /// Build a vertex using the current attributes
     fn vertex(&self, position: [i16; 2], color: [u8; 3]) -> CommandVertex {
-        // XXX handle texturing
         CommandVertex::new(position, color, self.semi_transparent)
     }
+
+    /// Build a vertex using the current attributes
+    fn vertex_textured(&self,
+                       position: [i16; 2],
+                       color: [u8; 3],
+                       texture_coord: [u16; 2],
+                       clut: [u16; 2],
+                       texture_page: [u16; 2]) -> CommandVertex {
+
+        println!("clut: {} {}", clut[0], clut[1]);
+
+        CommandVertex::new_textured(position,
+                                    color,
+                                    self.semi_transparent,
+                                    self.texture_method,
+                                    texture_page,
+                                    texture_coord,
+                                    clut)
+    }
+                       
 }
 
 /// Primitive texturing methods
-enum TextureMethod {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TextureMethod {
     /// No texture
     None,
     /// Raw texture
@@ -1850,9 +1921,45 @@ fn gp0_color(col: u32) -> [u8; 3] {
     [r, g, b]
 }
 
+/// Parse a CLUT (palette) coordinates written in the GP0 register
+fn gp0_clut(gp0: u32) -> [u16; 2] {
+    let clut = gp0 >> 16;
+
+    let x = (clut & 0x3f) << 4;
+    let y = (clut >> 6) & 0x1ff;
+
+    [x as u16, y as u16]
+}
+
+/// Parse a texture page coordinates written in the GP0 register
+fn gp0_texture_page(gp0: u32) -> [u16; 2] {
+    let texpage = gp0 >> 16;
+
+    let x = (texpage & 0xf) << 6;
+    // Y coord is either 0 or 256
+    let y = ((texpage >> 4) & 1) << 8;
+
+    [x as u16, y as u16]
+}
+
+/// Parse a texture coordinate coordinates written in the GP0
+/// register. Values are offset within the current texture page.
+fn gp0_texture_coordinates(gp0: u32) -> [u16; 2] {
+    let x = gp0 & 0xff;
+    // Y coord is either 0 or 256
+    let y = (gp0 >> 8) & 0xff;
+
+    [x as u16, y as u16]
+}
+
 /// Return true if the word is a polyline end maker. Most games use
 /// `0x55555555` but the GPU only tests for `0x5XXX5XXX` (so
 /// `0x51235abc` would be a valid marker for instance).
 fn is_polyline_end_marker(val: u32) -> bool {
     val & 0xf000f000 == 0x50005000
 }
+
+// Width of the VRAM in 16bit pixels
+const VRAM_WIDTH_PIXELS: u16 = 1024;
+// Height of the VRAM in lines
+const VRAM_HEIGHT: u16 = 512;
