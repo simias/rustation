@@ -632,8 +632,6 @@ impl Gpu {
     fn gp0_parse_command(&self, gp0: u32) -> (u32, Gp0Attributes) {
         let opcode = gp0 >> 24;
 
-        println!("GP0 command {:02x}", opcode);
-
         match opcode {
             0x00 =>
                 (1, Gp0Attributes::new(Gpu::gp0_nop)),
@@ -1079,13 +1077,28 @@ impl Gpu {
     fn gp0_textured_triangle(&mut self) {
         let color = gp0_color(self.gp0_command[0]);
 
+        let clut = gp0_clut(self.gp0_command[2]);
+        let texpage = gp0_texture_page(self.gp0_command[4]);
+
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[3]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[5]),
-                                       color),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[1]),
+                color,
+                gp0_texture_coordinates(self.gp0_command[2]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[3]),
+                color,
+                gp0_texture_coordinates(self.gp0_command[4]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[5]),
+                color,
+                gp0_texture_coordinates(self.gp0_command[6]),
+                clut,
+                texpage),
             ];
 
         self.renderer.push_triangle(&vertices);
@@ -1200,13 +1213,28 @@ impl Gpu {
 
     /// Draw a textured shaded triangle
     fn gp0_textured_shaded_triangle(&mut self) {
+        let clut = gp0_clut(self.gp0_command[2]);
+        let texpage = gp0_texture_page(self.gp0_command[5]);
+
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       gp0_color(self.gp0_command[0])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[4]),
-                                       gp0_color(self.gp0_command[3])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[7]),
-                                       gp0_color(self.gp0_command[6])),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[1]),
+                gp0_color(self.gp0_command[0]),
+                gp0_texture_coordinates(self.gp0_command[2]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[4]),
+                gp0_color(self.gp0_command[3]),
+                gp0_texture_coordinates(self.gp0_command[5]),
+                clut,
+                texpage),
+            self.gp0_attributes.vertex_textured(
+                gp0_position(self.gp0_command[7]),
+                gp0_color(self.gp0_command[6]),
+                gp0_texture_coordinates(self.gp0_command[8]),
+                clut,
+                texpage),
             ];
 
         self.renderer.push_triangle(&vertices);
@@ -1243,18 +1271,6 @@ impl Gpu {
                 clut,
                 texpage),
             ];
-
-
-        // let vertices = [
-        //     self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-        //                                gp0_color(self.gp0_command[0])),
-        //     self.gp0_attributes.vertex(gp0_position(self.gp0_command[4]),
-        //                                gp0_color(self.gp0_command[3])),
-        //     self.gp0_attributes.vertex(gp0_position(self.gp0_command[7]),
-        //                                gp0_color(self.gp0_command[6])),
-        //     self.gp0_attributes.vertex(gp0_position(self.gp0_command[10]),
-        //                                gp0_color(self.gp0_command[9])),
-        //     ];
 
         self.renderer.push_quad(&vertices);
     }
@@ -1876,9 +1892,9 @@ impl Gp0Attributes {
                        color: [u8; 3],
                        texture_coord: [u16; 2],
                        clut: [u16; 2],
-                       texture_page: [u16; 2]) -> CommandVertex {
+                       texture_page: ([u16; 2], u16)) -> CommandVertex {
 
-        println!("clut: {} {}", clut[0], clut[1]);
+        let (texture_page, depth) = texture_page;
 
         CommandVertex::new_textured(position,
                                     color,
@@ -1886,7 +1902,8 @@ impl Gp0Attributes {
                                     self.texture_method,
                                     texture_page,
                                     texture_coord,
-                                    clut)
+                                    clut,
+                                    depth)
     }
                        
 }
@@ -1932,14 +1949,25 @@ fn gp0_clut(gp0: u32) -> [u16; 2] {
 }
 
 /// Parse a texture page coordinates written in the GP0 register
-fn gp0_texture_page(gp0: u32) -> [u16; 2] {
+fn gp0_texture_page(gp0: u32) -> ([u16; 2], u16) {
     let texpage = gp0 >> 16;
 
     let x = (texpage & 0xf) << 6;
     // Y coord is either 0 or 256
     let y = ((texpage >> 4) & 1) << 8;
 
-    [x as u16, y as u16]
+    let shift =
+        match (texpage >> 7) & 3 {
+            // 4bpp
+            0 => 2,
+            // 8bpp
+            1 => 1,
+            // 16bpp
+            2 => 1,
+            _ => panic!("Invalid texture depth"),
+        };
+
+    ([x as u16, y as u16], shift)
 }
 
 /// Parse a texture coordinate coordinates written in the GP0

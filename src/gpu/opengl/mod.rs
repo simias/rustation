@@ -40,9 +40,13 @@ pub struct CommandVertex {
     pub clut: [u16; 2],
     /// Blending factor
     pub texture_blend: f32,
+    /// 1 for 8bpp textures, 2 for 4bpp textures
+    pub palette_shift: u16,
 }
 
-implement_vertex!(CommandVertex, position, color, alpha, texture_page, texture_coord, clut, texture_blend);
+implement_vertex!(CommandVertex, position, color, alpha,
+                  texture_page, texture_coord, clut, texture_blend,
+                  palette_shift);
 
 impl CommandVertex {
     pub fn new_textured(pos: [i16; 2],
@@ -51,7 +55,8 @@ impl CommandVertex {
                         texture_method: TextureMethod,
                         texture_page: [u16; 2],
                         texture_coord: [u16; 2],
-                        clut: [u16; 2]) -> CommandVertex {
+                        clut: [u16; 2],
+                        palette_shift: u16) -> CommandVertex {
         let alpha =
             if semi_transparent {
                 0.5
@@ -64,7 +69,7 @@ impl CommandVertex {
                 TextureMethod::None => 0.0,
                 TextureMethod::Raw => 1.0,
                 // XXX Or...?
-                TextureMethod::Blended => 0.5,
+                TextureMethod::Blended => 1.0,
             };
 
         CommandVertex {
@@ -75,6 +80,7 @@ impl CommandVertex {
             texture_coord: texture_coord,
             texture_blend: blend,
             clut: clut,
+            palette_shift: palette_shift,
         }
     }
 
@@ -87,7 +93,8 @@ impl CommandVertex {
                                     TextureMethod::None,
                                     [0; 2],
                                     [0; 2],
-                                    [0; 2])
+                                    [0; 2],
+                                    1)
     }
 }
 
@@ -132,11 +139,11 @@ impl Renderer {
         use glium_sdl2::DisplayBuild;
         // Size of the framebuffer emulating the Playstation VRAM for
         // draw commands. Can be increased.
-        let fb_out_x_res = VRAM_WIDTH_PIXELS as u32;
-        let fb_out_y_res = VRAM_HEIGHT as u32;
+        let fb_out_x_res = (VRAM_WIDTH_PIXELS * 4) as u32;
+        let fb_out_y_res = (VRAM_HEIGHT * 4) as u32;
         // Internal format for the framebuffer. The real console uses
         // RGB 555 + one "mask" bit which we store as alpha.
-        let fb_out_format = UncompressedFloatFormat::U5U5U5U1;
+        let fb_out_format = UncompressedFloatFormat::U8U8U8U8;
 
         // Video output resolution ("TV screen" size). It's not
         // directly related to the internal framebuffer resolution.
@@ -144,7 +151,7 @@ impl Renderer {
         // displayed at any given moment, several display modes are
         // supported by the console.
         let output_width = 1024;
-        let output_height = 512;
+        let output_height = 768;
 
         let video_subsystem = sdl_context.video().unwrap();
 
@@ -537,13 +544,13 @@ impl Renderer {
         // We sample `fb_out` onto the screen
         let vertices =
             VertexBuffer::new(&self.window,
-                              &[Vertex { position: [-1.0, -1.0],
+                              &[Vertex { position: [0., -1.0],
                                          fb_coord: [0, 512] },
                                 Vertex { position: [1.0, -1.0],
                                          fb_coord: [1024, 512] },
-                                Vertex { position: [-1.0, 1.0],
+                                Vertex { position: [0.0, -0.5],
                                          fb_coord: [0, 0] },
-                                Vertex { position: [1.0, 1.0],
+                                Vertex { position: [1.0, -0.5],
                                          fb_coord: [1024, 0] }])
             .unwrap();
 
@@ -557,7 +564,7 @@ impl Renderer {
 
         let uniforms = uniform! {
             fb: sampler,
-            alpha: 1.0f32,
+            alpha: 0.7f32,
         };
 
         frame.draw(&vertices,
@@ -596,8 +603,6 @@ impl Renderer {
         let (x, y) = load_buffer.top_left();
         let width = load_buffer.width();
         let height = load_buffer.height();
-
-        println!("LOAD IMAGE @ {}x{} ({}x{})", x, y, width, height);
 
         let image = load_buffer.into_texture(&self.window);
 

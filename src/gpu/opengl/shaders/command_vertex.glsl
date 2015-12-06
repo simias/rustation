@@ -9,6 +9,7 @@ in uvec2 texture_page;
 in uvec2 texture_coord;
 in uvec2 clut;
 in float texture_blend;
+in int palette_shift;
 
 // Drawing offset
 uniform ivec2 offset;
@@ -18,6 +19,7 @@ flat out uvec2 frag_texture_page;
 out vec2 frag_texture_coord;
 flat out uvec2 frag_clut;
 flat out float frag_texture_blend;
+flat out int frag_palette_shift;
 
 void main() {
   ivec2 pos = position + offset;
@@ -42,4 +44,6 @@ void main() {
   frag_clut = clut;
 
   frag_texture_blend = texture_blend;
+
+  frag_palette_shift = palette_shift;
 }
