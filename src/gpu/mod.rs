@@ -1015,7 +1015,7 @@ impl Gpu {
                                        color),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        self.renderer.push_triangle(vertices);
     }
 
     /// Draw an untextured unshaded quad
@@ -1033,7 +1033,7 @@ impl Gpu {
                                        color),
             ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Draw a monochrome line
@@ -1101,7 +1101,7 @@ impl Gpu {
                 texpage),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        self.renderer.push_triangle(vertices);
     }
 
     /// Draw a textured unshaded quad
@@ -1138,7 +1138,7 @@ impl Gpu {
                 texpage),
             ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Draw an untextured shaded triangle
@@ -1152,7 +1152,7 @@ impl Gpu {
                                        gp0_color(self.gp0_command[4])),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        self.renderer.push_triangle(vertices);
     }
 
     /// Draw an untextured shaded quad
@@ -1168,7 +1168,7 @@ impl Gpu {
                                        gp0_color(self.gp0_command[6])),
             ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Draw a shaded line
@@ -1237,7 +1237,7 @@ impl Gpu {
                 texpage),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        self.renderer.push_triangle(vertices);
     }
 
     /// Draw a textured shaded quad
@@ -1272,7 +1272,7 @@ impl Gpu {
                 texpage),
             ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Helper function for drawing rectangles
@@ -1294,7 +1294,7 @@ impl Gpu {
                                        color),
         ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Draw a textured rectangle

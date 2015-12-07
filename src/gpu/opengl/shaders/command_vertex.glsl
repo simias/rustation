@@ -10,13 +10,14 @@ in uvec2 texture_coord;
 in uvec2 clut;
 in int texture_blend_mode;
 in int palette_shift;
+in float texture_q;
 
 // Drawing offset
 uniform ivec2 offset;
 
 out vec4 frag_shading_color;
 flat out uvec2 frag_texture_page;
-out vec2 frag_texture_coord;
+out vec3 frag_texture_coord;
 flat out uvec2 frag_clut;
 flat out int frag_texture_blend_mode;
 flat out int frag_palette_shift;
@@ -39,7 +40,7 @@ void main() {
   frag_texture_page = texture_page;
 
   // Let OpenGL interpolate the texel position
-  frag_texture_coord = vec2(texture_coord);
+  frag_texture_coord = vec3(vec2(texture_coord) * texture_q, texture_q);
 
   frag_clut = clut;
 

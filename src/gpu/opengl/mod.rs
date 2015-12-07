@@ -42,11 +42,12 @@ pub struct CommandVertex {
     pub texture_blend_mode: u16,
     /// 1 for 8bpp textures, 2 for 4bpp textures
     pub palette_shift: u16,
+    pub texture_q: f32,
 }
 
 implement_vertex!(CommandVertex, position, color, alpha,
                   texture_page, texture_coord, clut, texture_blend_mode,
-                  palette_shift);
+                  palette_shift, texture_q);
 
 impl CommandVertex {
     pub fn new_textured(pos: [i16; 2],
@@ -81,6 +82,7 @@ impl CommandVertex {
             texture_blend_mode: blend_mode,
             clut: clut,
             palette_shift: palette_shift,
+            texture_q: 1.0,
         }
     }
 
@@ -295,15 +297,18 @@ impl Renderer {
     }
 
     /// Add a triangle to the draw buffer
-    pub fn push_triangle(&mut self, vertices: &[CommandVertex; 3]) {
+    pub fn push_triangle(&mut self, vertices: [CommandVertex; 3]) {
         self.push_primitive(index::PrimitiveType::TrianglesList,
-                            vertices);
+                            &vertices);
     }
 
     /// Add a quad to the draw buffer
-    pub fn push_quad(&mut self, vertices: &[CommandVertex; 4]) {
-        self.push_triangle(&[vertices[0], vertices[1], vertices[2]]);
-        self.push_triangle(&[vertices[1], vertices[2], vertices[3]]);
+    pub fn push_quad(&mut self, mut vertices: [CommandVertex; 4]) {
+
+        find_perspective_correction(&mut vertices);
+
+        self.push_triangle([vertices[0], vertices[1], vertices[2]]);
+        self.push_triangle([vertices[1], vertices[2], vertices[3]]);
     }
 
     /// Add a line to the draw buffer
@@ -375,7 +380,7 @@ impl Renderer {
         let right = right as i16;
 
         // Draw a quad to fill the rectangle
-        self.push_quad(&[
+        self.push_quad([
             CommandVertex::new([left, top], color, false),
             CommandVertex::new([right, top], color, false),
             CommandVertex::new([left, bottom], color, false),
@@ -783,4 +788,76 @@ impl<'a> Texture2dDataSource<'a> for LoadBuffer {
             format: ClientFormat::U5U5U5U1,
         }
     }
+}
+
+
+fn find_perspective_correction(vertices: &mut [CommandVertex; 4]) {
+    // In order to find the right perspective correction factor we
+    // need to figure out where the quad's diagonals intersect.
+
+    let v0x = vertices[0].position[0] as f32;
+    let v0y = vertices[0].position[1] as f32;
+
+    let v1x = vertices[1].position[0] as f32;
+    let v1y = vertices[1].position[1] as f32;
+
+    let v2x = vertices[3].position[0] as f32;
+    let v2y = vertices[3].position[1] as f32;
+
+    let v3x = vertices[2].position[0] as f32;
+    let v3y = vertices[2].position[1] as f32;
+
+    // First we need to figure out the equation of the diagonals
+    // The equation has the form `y = da * x + db`
+
+    fn not_zero(v: f32) -> f32 {
+        if v.abs() < 0.001 {
+            0.001
+        } else {
+            v
+        }
+    }
+
+    let da0 = (v2y - v0y) / not_zero(v2x - v0x);
+    let da1 = (v3y - v1y) / not_zero(v3x - v1x);
+
+    let db0 = v0y - (v0x * da0);
+    let db1 = v1y - (v1x * da1);
+
+    // We can now find the value `ox` where `da0 * ox + db0 = da1 * ox + db1`
+    let ox = (db1 - db0) / not_zero(da0 - da1);
+
+    // We can now compute the perspective correction factor for each
+    // vertex by using the relative distance to the diagonals'
+    // intersection point for opposite vertices.
+
+    let v0q = (v2x - v0x) / not_zero(ox - v2x);
+    let v2q = (v2x - v0x) / not_zero(ox - v0x);
+
+    let v1q = (v3x - v1x) / not_zero(ox - v3x);
+    let v3q = (v3x - v1x) / not_zero(ox - v1x);
+
+    println!("QV {} {} {} {} {} {} {}",
+             ox,
+             da0,
+             da1,
+             v0q,
+             v1q,
+             v2q,
+             v3q);
+    
+    vertices[0].texture_q = v0q.abs();
+    vertices[1].texture_q = v1q.abs();
+    vertices[2].texture_q = v2q.abs();
+    vertices[3].texture_q = v3q.abs();
+
+    // let scale0 = (da0 * da0 + 1).sqrt();
+    // let scale1 = (da1 * da1 + 1).sqrt();
+
+
+    // let d0 = (v0x - ox).abs() * scale0;
+    // let d2 = (v2x - ox).abs() * scale0;
+
+    // let d1 = (v1x - ox).abs() * scale1;
+    // let d3 = (v3x - ox).abs() * scale1;
 }
