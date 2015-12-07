@@ -6,7 +6,8 @@ in vec4 frag_shading_color;
 flat in uvec2 frag_texture_page;
 in vec2 frag_texture_coord;
 flat in uvec2 frag_clut;
-flat in float frag_texture_blend;
+// 0: no texture, 1: raw-texture, 2: blended
+flat in int frag_texture_blend_mode;
 flat in int frag_palette_shift;
 
 out vec4 frag_color;
@@ -25,44 +26,54 @@ bool is_transparent(vec4 color) {
 }
 
 void main() {
-  int bpp = 16 >> frag_palette_shift;
 
-  int pix_per_hw = 1 << frag_palette_shift;
+  vec4 color;
 
-  float tex_x_float = frag_texture_coord.x / float(pix_per_hw);
+  if (frag_texture_blend_mode == 0) {
+      // Untextured primitive
+      color = frag_shading_color;
+  } else {
+    // Look up texture
 
-  int align = int(fract(tex_x_float) * pix_per_hw);
+    int bpp = 16 >> frag_palette_shift;
 
-  int tex_x = int(frag_texture_page.x) + int(tex_x_float);
-  int tex_y = int(frag_texture_page.y) + int(frag_texture_coord.y);
+    int pix_per_hw = 1 << frag_palette_shift;
 
-  vec4 texel = texelFetch(fb_texture, ivec2(tex_x, 511 - tex_y), 0);
+    float tex_x_float = frag_texture_coord.x / float(pix_per_hw);
 
-  // Recompose 1555 the color
-  int icolor = rebuild_color(texel);
+    int align = int(fract(tex_x_float) * pix_per_hw);
 
-  int clut_idx = (icolor >> (align * bpp)) & ((1 << bpp) - 1);
+    int tex_x = int(frag_texture_page.x) + int(tex_x_float);
+    int tex_y = int(frag_texture_page.y) + int(frag_texture_coord.y);
 
-  int clut_x = int(frag_clut.x) + clut_idx;
-  int clut_y = int(frag_clut.y);
+    vec4 texel = texelFetch(fb_texture, ivec2(tex_x, 511 - tex_y), 0);
 
-  //int clut_x = 320 + clut_idx;
-  //int clut_y = 480;
+    // Recompose 1555 the color
+    int icolor = rebuild_color(texel);
 
-  vec4 tex_color = texelFetch(fb_texture, ivec2(clut_x, 511 - clut_y), 0);
-  //float comp = float(clut_idx) / 0xff;
+    int clut_idx = (icolor >> (align * bpp)) & ((1 << bpp) - 1);
 
-  if (is_transparent(tex_color)) {
+    int clut_x = int(frag_clut.x) + clut_idx;
+    int clut_y = int(frag_clut.y);
+
+    //int clut_x = 320 + clut_idx;
+    //int clut_y = 480;
+
+    vec4 tex_color = texelFetch(fb_texture, ivec2(clut_x, 511 - clut_y), 0);
+    //float comp = float(clut_idx) / 0xff;
+
+    if (is_transparent(tex_color)) {
       discard;
+    }
+
+    if (frag_texture_blend_mode == 1) {
+      // Raw texture
+      color = tex_color;
+    } else {
+      // Texture blend
+      color = frag_shading_color * 2 * tex_color;
+    }
   }
 
-  //vec4 tex_color = vec4(texel.rgb, 1.0);
-
-  // Blend the texture color and shading color acconding to the
-  // blending mode
-  vec4 end_col =
-    frag_shading_color * (1.0 - frag_texture_blend) +
-    tex_color * frag_texture_blend;
-
-  frag_color = vec4(end_col.rgb, 1.0);
+  frag_color = vec4(color.rgb, 1.0);
 }

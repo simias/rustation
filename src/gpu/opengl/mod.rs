@@ -38,14 +38,14 @@ pub struct CommandVertex {
     pub texture_coord: [u16; 2],
     /// Color Look-Up Table (palette) coordinates
     pub clut: [u16; 2],
-    /// Blending factor
-    pub texture_blend: f32,
+    /// Blending factor: 0: no texture, 1: raw-texture, 2: blended
+    pub texture_blend_mode: u16,
     /// 1 for 8bpp textures, 2 for 4bpp textures
     pub palette_shift: u16,
 }
 
 implement_vertex!(CommandVertex, position, color, alpha,
-                  texture_page, texture_coord, clut, texture_blend,
+                  texture_page, texture_coord, clut, texture_blend_mode,
                   palette_shift);
 
 impl CommandVertex {
@@ -64,12 +64,12 @@ impl CommandVertex {
                 1.0
             };
 
-        let blend =
+        let blend_mode =
             match texture_method {
-                TextureMethod::None => 0.0,
-                TextureMethod::Raw => 1.0,
+                TextureMethod::None => 0,
+                TextureMethod::Raw => 1,
                 // XXX Or...?
-                TextureMethod::Blended => 1.0,
+                TextureMethod::Blended => 2,
             };
 
         CommandVertex {
@@ -78,7 +78,7 @@ impl CommandVertex {
             alpha: alpha,
             texture_page: texture_page,
             texture_coord: texture_coord,
-            texture_blend: blend,
+            texture_blend_mode: blend_mode,
             clut: clut,
             palette_shift: palette_shift,
         }
@@ -139,8 +139,8 @@ impl Renderer {
         use glium_sdl2::DisplayBuild;
         // Size of the framebuffer emulating the Playstation VRAM for
         // draw commands. Can be increased.
-        let fb_out_x_res = (VRAM_WIDTH_PIXELS * 4) as u32;
-        let fb_out_y_res = (VRAM_HEIGHT * 4) as u32;
+        let fb_out_x_res = (VRAM_WIDTH_PIXELS * 2) as u32;
+        let fb_out_y_res = (VRAM_HEIGHT * 2) as u32;
         // Internal format for the framebuffer. The real console uses
         // RGB 555 + one "mask" bit which we store as alpha.
         let fb_out_format = UncompressedFloatFormat::U8U8U8U8;

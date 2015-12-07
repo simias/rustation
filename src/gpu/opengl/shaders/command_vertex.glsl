@@ -8,7 +8,7 @@ in float alpha;
 in uvec2 texture_page;
 in uvec2 texture_coord;
 in uvec2 clut;
-in float texture_blend;
+in int texture_blend_mode;
 in int palette_shift;
 
 // Drawing offset
@@ -18,7 +18,7 @@ out vec4 frag_shading_color;
 flat out uvec2 frag_texture_page;
 out vec2 frag_texture_coord;
 flat out uvec2 frag_clut;
-flat out float frag_texture_blend;
+flat out int frag_texture_blend_mode;
 flat out int frag_palette_shift;
 
 void main() {
@@ -43,7 +43,7 @@ void main() {
 
   frag_clut = clut;
 
-  frag_texture_blend = texture_blend;
+  frag_texture_blend_mode = texture_blend_mode;
 
   frag_palette_shift = palette_shift;
 }
