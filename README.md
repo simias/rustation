@@ -49,7 +49,7 @@ PlayStation. We'll see if this turns out to be a good idea...
 * Basic GTE support (ported from mednafen PSX)
 * Instruction cache
 * Interrupts
-* Very basic GPU (no textures)
+* Very basic GPU (no semi-transparency or mask bit emulation)
 * Timers
 * DMA
 * Debugger
