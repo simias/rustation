@@ -108,7 +108,7 @@ pub struct Gpu {
 impl Gpu {
     pub fn new(renderer: opengl::Renderer, hardware: HardwareType) -> Gpu {
         let dummy_gp0 =
-            Gp0Attributes::new(Gpu::gp0_nop, false, BlendMode::None);
+            Gp0Attributes::new(Gpu::gp0_nop, false, BlendMode::None, false);
 
         Gpu {
             renderer: renderer,
@@ -617,66 +617,68 @@ impl Gpu {
     fn gp0_parse_command(&self, gp0: u32) -> (u32, Gp0Attributes) {
         let opcode = gp0 >> 24;
 
-        let (len, cback): (u32, fn(&mut Gpu)) =
+        let dither = self.dither();
+
+        let (len, cback, dither): (u32, fn(&mut Gpu), bool) =
             match opcode {
-                0x00 => (1,  Gpu::gp0_nop),
-                0x01 => (1,  Gpu::gp0_clear_cache),
-                0x02 => (3,  Gpu::gp0_fill_rect),
-                0x20 => (4,  Gpu::gp0_monochrome_triangle),
-                0x22 => (4,  Gpu::gp0_monochrome_triangle),
-                0x24 => (7,  Gpu::gp0_textured_triangle),
-                0x25 => (7,  Gpu::gp0_textured_triangle),
-                0x26 => (7,  Gpu::gp0_textured_triangle),
-                0x27 => (7,  Gpu::gp0_textured_triangle),
-                0x28 => (5,  Gpu::gp0_monochrome_quad),
-                0x2a => (5,  Gpu::gp0_monochrome_quad),
-                0x2c => (9,  Gpu::gp0_textured_quad),
-                0x2d => (9,  Gpu::gp0_textured_quad),
-                0x2e => (9,  Gpu::gp0_textured_quad),
-                0x2f => (9,  Gpu::gp0_textured_quad),
-                0x30 => (6,  Gpu::gp0_shaded_triangle),
-                0x32 => (6,  Gpu::gp0_shaded_triangle),
-                0x34 => (9,  Gpu::gp0_textured_shaded_triangle),
-                0x36 => (9,  Gpu::gp0_textured_shaded_triangle),
-                0x38 => (8,  Gpu::gp0_shaded_quad),
-                0x3a => (8,  Gpu::gp0_shaded_quad),
-                0x3c => (12, Gpu::gp0_textured_shaded_quad),
-                0x3e => (12, Gpu::gp0_textured_shaded_quad),
-                0x40 => (3,  Gpu::gp0_monochrome_line),
-                0x42 => (3,  Gpu::gp0_monochrome_line),
-                0x48 => (3,  Gpu::gp0_monochrome_polyline),
-                0x4a => (3,  Gpu::gp0_monochrome_polyline),
-                0x50 => (4,  Gpu::gp0_shaded_line),
-                0x52 => (4,  Gpu::gp0_shaded_line),
-                0x58 => (4,  Gpu::gp0_shaded_polyline),
-                0x5a => (4,  Gpu::gp0_shaded_polyline),
-                0x60 => (3,  Gpu::gp0_monochrome_rect),
-                0x62 => (3,  Gpu::gp0_monochrome_rect),
-                0x64 => (4,  Gpu::gp0_textured_rect),
-                0x65 => (4,  Gpu::gp0_textured_rect),
-                0x66 => (4,  Gpu::gp0_textured_rect),
-                0x67 => (4,  Gpu::gp0_textured_rect),
-                0x68 => (2,  Gpu::gp0_monochrome_rect_1x1),
-                0x6a => (2,  Gpu::gp0_monochrome_rect_1x1),
-                0x74 => (3,  Gpu::gp0_textured_rect_8x8),
-                0x75 => (3,  Gpu::gp0_textured_rect_8x8),
-                0x76 => (3,  Gpu::gp0_textured_rect_8x8),
-                0x77 => (3,  Gpu::gp0_textured_rect_8x8),
-                0x78 => (2,  Gpu::gp0_monochrome_rect_16x16),
-                0x7a => (2,  Gpu::gp0_monochrome_rect_16x16),
-                0x7c => (3,  Gpu::gp0_textured_rect_16x16),
-                0x7d => (3,  Gpu::gp0_textured_rect_16x16),
-                0x7e => (3,  Gpu::gp0_textured_rect_16x16),
-                0x7f => (3,  Gpu::gp0_textured_rect_16x16),
-                0x80 => (4,  Gpu::gp0_copy_rect),
-                0xa0 => (3,  Gpu::gp0_image_load),
-                0xc0 => (3,  Gpu::gp0_image_store),
-                0xe1 => (1,  Gpu::gp0_draw_mode),
-                0xe2 => (1,  Gpu::gp0_texture_window),
-                0xe3 => (1,  Gpu::gp0_drawing_area_top_left),
-                0xe4 => (1,  Gpu::gp0_drawing_area_bottom_right),
-                0xe5 => (1,  Gpu::gp0_drawing_offset),
-                0xe6 => (1,  Gpu::gp0_mask_bit_setting),
+                0x00 => (1,  Gpu::gp0_nop, false),
+                0x01 => (1,  Gpu::gp0_clear_cache, false),
+                0x02 => (3,  Gpu::gp0_fill_rect, false),
+                0x20 => (4,  Gpu::gp0_monochrome_triangle, false),
+                0x22 => (4,  Gpu::gp0_monochrome_triangle, false),
+                0x24 => (7,  Gpu::gp0_textured_triangle, dither),
+                0x25 => (7,  Gpu::gp0_textured_triangle, dither),
+                0x26 => (7,  Gpu::gp0_textured_triangle, dither),
+                0x27 => (7,  Gpu::gp0_textured_triangle, dither),
+                0x28 => (5,  Gpu::gp0_monochrome_quad, false),
+                0x2a => (5,  Gpu::gp0_monochrome_quad, false),
+                0x2c => (9,  Gpu::gp0_textured_quad, dither),
+                0x2d => (9,  Gpu::gp0_textured_quad, dither),
+                0x2e => (9,  Gpu::gp0_textured_quad, dither),
+                0x2f => (9,  Gpu::gp0_textured_quad, dither),
+                0x30 => (6,  Gpu::gp0_shaded_triangle, dither),
+                0x32 => (6,  Gpu::gp0_shaded_triangle, dither),
+                0x34 => (9,  Gpu::gp0_textured_shaded_triangle, dither),
+                0x36 => (9,  Gpu::gp0_textured_shaded_triangle, dither),
+                0x38 => (8,  Gpu::gp0_shaded_quad, dither),
+                0x3a => (8,  Gpu::gp0_shaded_quad, dither),
+                0x3c => (12, Gpu::gp0_textured_shaded_quad, dither),
+                0x3e => (12, Gpu::gp0_textured_shaded_quad, dither),
+                0x40 => (3,  Gpu::gp0_monochrome_line, false),
+                0x42 => (3,  Gpu::gp0_monochrome_line, false),
+                0x48 => (3,  Gpu::gp0_monochrome_polyline, false),
+                0x4a => (3,  Gpu::gp0_monochrome_polyline, false),
+                0x50 => (4,  Gpu::gp0_shaded_line, false),
+                0x52 => (4,  Gpu::gp0_shaded_line, false),
+                0x58 => (4,  Gpu::gp0_shaded_polyline, false),
+                0x5a => (4,  Gpu::gp0_shaded_polyline, false),
+                0x60 => (3,  Gpu::gp0_monochrome_rect, false),
+                0x62 => (3,  Gpu::gp0_monochrome_rect, false),
+                0x64 => (4,  Gpu::gp0_textured_rect, false),
+                0x65 => (4,  Gpu::gp0_textured_rect, false),
+                0x66 => (4,  Gpu::gp0_textured_rect, false),
+                0x67 => (4,  Gpu::gp0_textured_rect, false),
+                0x68 => (2,  Gpu::gp0_monochrome_rect_1x1, false),
+                0x6a => (2,  Gpu::gp0_monochrome_rect_1x1, false),
+                0x74 => (3,  Gpu::gp0_textured_rect_8x8, false),
+                0x75 => (3,  Gpu::gp0_textured_rect_8x8, false),
+                0x76 => (3,  Gpu::gp0_textured_rect_8x8, false),
+                0x77 => (3,  Gpu::gp0_textured_rect_8x8, false),
+                0x78 => (2,  Gpu::gp0_monochrome_rect_16x16, false),
+                0x7a => (2,  Gpu::gp0_monochrome_rect_16x16, false),
+                0x7c => (3,  Gpu::gp0_textured_rect_16x16, false),
+                0x7d => (3,  Gpu::gp0_textured_rect_16x16, false),
+                0x7e => (3,  Gpu::gp0_textured_rect_16x16, false),
+                0x7f => (3,  Gpu::gp0_textured_rect_16x16, false),
+                0x80 => (4,  Gpu::gp0_copy_rect, false),
+                0xa0 => (3,  Gpu::gp0_image_load, false),
+                0xc0 => (3,  Gpu::gp0_image_store, false),
+                0xe1 => (1,  Gpu::gp0_draw_mode, false),
+                0xe2 => (1,  Gpu::gp0_texture_window, false),
+                0xe3 => (1,  Gpu::gp0_drawing_area_top_left, false),
+                0xe4 => (1,  Gpu::gp0_drawing_area_bottom_right, false),
+                0xe5 => (1,  Gpu::gp0_drawing_offset, false),
+                0xe6 => (1,  Gpu::gp0_mask_bit_setting, false),
                 _    => panic!("Unhandled GP0 command {:08x}", gp0),
             };
 
@@ -695,9 +697,17 @@ impl Gpu {
 
         let semi_transparent = opcode & 2 != 0;
 
-        let attr = Gp0Attributes::new(cback, semi_transparent, blend_mode);
+        let attr =
+            Gp0Attributes::new(cback,
+                               semi_transparent,
+                               blend_mode,
+                               dither);
 
         (len, attr)
+    }
+
+    fn dither(&self) -> bool {
+        (self.draw_mode >> 9) & 1 != 0
     }
 
     /// GP0(0x00): No operation
@@ -1627,6 +1637,7 @@ struct Gp0Attributes {
     semi_transparency_mode: SemiTransparencyMode,
     clut: [u16; 2],
     texture_depth: TextureDepth,
+    dither: bool,
 }
 
 impl Gp0Attributes {
@@ -1634,7 +1645,8 @@ impl Gp0Attributes {
     /// the other attributes.
     fn new(callback: fn(&mut Gpu),
            semi_transparent: bool,
-           blend_mode: BlendMode) -> Gp0Attributes {
+           blend_mode: BlendMode,
+           dither: bool) -> Gp0Attributes {
 
         Gp0Attributes {
             callback: callback,
@@ -1644,6 +1656,7 @@ impl Gp0Attributes {
             semi_transparency_mode: SemiTransparencyMode::Average,
             clut: [0; 2],
             texture_depth: TextureDepth::T4Bpp,
+            dither: dither,
         }
     }
 
@@ -1700,7 +1713,8 @@ impl Gp0Attributes {
                            self.texture_page,
                            texture_coord,
                            self.clut,
-                           self.texture_depth)
+                           self.texture_depth,
+                           self.dither)
     }
 
     /// Build a vertex using the current attributes. Used for untextured primitives
@@ -1713,7 +1727,8 @@ impl Gp0Attributes {
                            [0; 2],
                            [0; 2],
                            [0; 2],
-                           TextureDepth::T4Bpp)
+                           TextureDepth::T4Bpp,
+                           self.dither)
     }
 }
 

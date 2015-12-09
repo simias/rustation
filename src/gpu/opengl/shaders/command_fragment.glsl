@@ -13,6 +13,8 @@ flat in uvec2 frag_clut;
 flat in int frag_texture_blend_mode;
 // 0: 16bpp (no clut), 1: 8bpp, 2: 4bpp
 flat in int frag_depth_shift;
+// 0: No dithering, 1: dithering enabled
+flat in int frag_dither;
 
 out vec4 frag_color;
 
@@ -43,6 +45,19 @@ int rebuild_color(vec4 color) {
 bool is_transparent(vec4 texel) {
   return rebuild_color(texel) == 0;
 }
+
+vec3 column0 = vec3(0.0, 1.0, 0.0);
+vec3 column1 = vec3(1.0, 0.0, 0.0);
+vec3 column2 = vec3(0.0, 0.0, 1.0);
+
+// PlayStation dithering pattern. The offset is selected based on the
+// pixel position in VRAM, by blocks of 4x4 pixels. The value is added
+// to the 8bit color components before they're truncated to 5 bits.
+const int dither_pattern[16] =
+  int[16](-4,  0, -3,  1,
+           2, -2,  3, -1,
+          -3,  1, -4,  0,
+           3, -1,  2, -2);
 
 void main() {
 
@@ -124,5 +139,15 @@ void main() {
     }
   }
 
-  frag_color = color;
+  // Dithering
+  int x_dither = int(gl_FragCoord.x) & 3;
+  int y_dither = int(gl_FragCoord.y) & 3;
+
+  // The multiplication by `frag_dither` will result in
+  // `dither_offset` being 0 if dithering is disabled
+  int dither_offset = dither_pattern[y_dither * 4 + x_dither] * frag_dither;
+
+  float dither = float(dither_offset) / 255.;
+
+  frag_color = color + vec4(dither, dither, dither, 0.);
 }
