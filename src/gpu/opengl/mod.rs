@@ -36,11 +36,13 @@ pub struct CommandVertex {
     /// Right shift from 16bits: 0 for 16bpp textures, 1 for 8bpp, 2
     /// for 4bpp
     pub depth_shift: u8,
+    /// True if dithering is enabled for this primitive
+    pub dither: u8,
 }
 
 implement_vertex!(CommandVertex, position, color,
                   texture_page, texture_coord, clut, texture_blend_mode,
-                  depth_shift);
+                  depth_shift, dither);
 
 impl CommandVertex {
     pub fn new(pos: [i16; 2],
@@ -49,7 +51,8 @@ impl CommandVertex {
                texture_page: [u16; 2],
                texture_coord: [u16; 2],
                clut: [u16; 2],
-               texture_depth: TextureDepth) -> CommandVertex {
+               texture_depth: TextureDepth,
+               dither: bool) -> CommandVertex {
 
         let blend_mode =
             match blend_mode {
@@ -73,6 +76,7 @@ impl CommandVertex {
             texture_blend_mode: blend_mode,
             clut: clut,
             depth_shift: depth_shift,
+            dither: dither as u8,
         }
     }
 }
@@ -349,7 +353,8 @@ impl Renderer {
                                [0; 2],
                                [0; 2],
                                [0; 2],
-                               TextureDepth::T4Bpp)
+                               TextureDepth::T4Bpp,
+                               false)
         };
 
         let vertices =
