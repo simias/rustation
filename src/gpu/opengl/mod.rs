@@ -7,11 +7,12 @@ use glium_sdl2;
 
 use glium::{Program, VertexBuffer, Surface, DrawParameters, Rect, Blend};
 use glium::index;
-use glium::uniforms::{UniformsStorage, EmptyUniforms};
 use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter};
 use glium::program::ProgramCreationInput;
 use glium::texture::{Texture2d, UncompressedFloatFormat, MipmapsOption};
 use glium::texture::{Texture2dDataSource, RawImage2d, ClientFormat};
+
+use super::{TextureDepth, BlendMode, VRAM_WIDTH_PIXELS, VRAM_HEIGHT};
 
 /// Maximum number of vertex that can be stored in an attribute
 /// buffers
@@ -24,32 +25,54 @@ pub struct CommandVertex {
     pub position: [i16; 2],
     /// RGB color, 8bits per component
     pub color: [u8; 3],
-    /// Vertex alpha value, used for blending.
-    ///
-    /// XXX This is not accurate, we should implement blending
-    /// ourselves taking the current semi-transparency mode into
-    /// account. We should maybe store two variables, one with the
-    /// source factor and one with the destination factor.
-    pub alpha: f32,
+    /// Texture page (base offset in VRAM used for texture lookup)
+    pub texture_page: [u16; 2],
+    /// Texture coordinates within the page
+    pub texture_coord: [u16; 2],
+    /// Color Look-Up Table (palette) coordinates in VRAM
+    pub clut: [u16; 2],
+    /// Blending mode: 0: no texture, 1: raw-texture, 2: texture-blended
+    pub texture_blend_mode: u8,
+    /// Right shift from 16bits: 0 for 16bpp textures, 1 for 8bpp, 2
+    /// for 4bpp
+    pub depth_shift: u8,
 }
 
-implement_vertex!(CommandVertex, position, color, alpha);
+implement_vertex!(CommandVertex, position, color,
+                  texture_page, texture_coord, clut, texture_blend_mode,
+                  depth_shift);
 
 impl CommandVertex {
     pub fn new(pos: [i16; 2],
                color: [u8; 3],
-               semi_transparent: bool) -> CommandVertex {
-        let alpha =
-            if semi_transparent {
-                0.5
-            } else {
-                1.0
+               blend_mode: BlendMode,
+               texture_page: [u16; 2],
+               texture_coord: [u16; 2],
+               clut: [u16; 2],
+               texture_depth: TextureDepth) -> CommandVertex {
+
+        let blend_mode =
+            match blend_mode {
+                BlendMode::None => 0,
+                BlendMode::Raw => 1,
+                BlendMode::Blended => 2,
+            };
+
+        let depth_shift =
+            match texture_depth {
+                TextureDepth::T4Bpp => 2,
+                TextureDepth::T8Bpp => 1,
+                TextureDepth::T16Bpp => 0,
             };
 
         CommandVertex {
             position: pos,
             color: color,
-            alpha: alpha,
+            texture_page: texture_page,
+            texture_coord: texture_coord,
+            texture_blend_mode: blend_mode,
+            clut: clut,
+            depth_shift: depth_shift,
         }
     }
 }
@@ -61,9 +84,11 @@ pub struct Renderer {
     /// the render commands.
     fb_out: Texture2d,
     /// Framebuffer horizontal resolution (native: 1024)
-    fb_x_res: u16,
+    fb_out_x_res: u16,
     /// Framebuffer vertical resolution (native: 512)
-    fb_y_res: u16,
+    fb_out_y_res: u16,
+    /// Texture used to store the VRAM for texture mapping
+    fb_texture: Texture2d,
     /// Program used to process draw commands
     command_program: Program,
     /// Permanent vertex buffer used to store pending draw commands
@@ -77,8 +102,6 @@ pub struct Renderer {
     /// Current draw command. Will be pushed onto the `command_queue`
     /// if a new command needs to be started.
     current_command: (index::PrimitiveType, u32),
-    /// Uniforms used by draw commands
-    command_uniforms: UniformsStorage<'static, [i32; 2], EmptyUniforms>,
     /// Current draw offset
     offset: (i16, i16),
     /// Parameters for draw commands
@@ -93,13 +116,13 @@ impl Renderer {
 
     pub fn new(sdl_context: &sdl2::Sdl) -> Renderer {
         use glium_sdl2::DisplayBuild;
-        // Native PSX VRAM resolution
-        let fb_x_res = 1024u32 * 4;
-        let fb_y_res = 512u32 * 4;
+        // Size of the framebuffer emulating the Playstation VRAM for
+        // draw commands. Can be increased.
+        let fb_out_x_res = VRAM_WIDTH_PIXELS as u32;
+        let fb_out_y_res = VRAM_HEIGHT as u32;
         // Internal format for the framebuffer. The real console uses
         // RGB 555 + one "mask" bit which we store as alpha.
-        let fb_format = UncompressedFloatFormat::U8U8U8U8;
-
+        let fb_out_format = UncompressedFloatFormat::U5U5U5U1;
 
         // Video output resolution ("TV screen" size). It's not
         // directly related to the internal framebuffer resolution.
@@ -149,10 +172,6 @@ impl Renderer {
                                            VERTEX_BUFFER_LEN as usize)
             .unwrap();
 
-        let command_uniforms = uniform! {
-            offset: [0; 2],
-        };
-
         // In order to have the line size scale with the internal
         // resolution upscale we need to compute the upscaling ratio.
         //
@@ -160,20 +179,17 @@ impl Renderer {
         // both dimensions are scaled by the same ratio. Otherwise
         // we'd have to change the line thickness depending on its
         // angle and that would be tricky.
-        let scaling_factor = fb_y_res as f32 / 512.;
+        let scaling_factor = fb_out_y_res as f32 / 512.;
 
         let command_params = DrawParameters {
             // Default to full screen
             scissor: Some(Rect {
                 left: 0,
                 bottom: 0,
-                width: fb_x_res,
-                height: fb_y_res,
+                width: fb_out_x_res,
+                height: fb_out_y_res,
             }),
             line_width: Some(scaling_factor),
-            // XXX temporary hack for semi-transparency, use basic
-            // alpha blending.
-            blend: Blend::alpha_blending(),
             ..Default::default()
         };
 
@@ -181,12 +197,25 @@ impl Renderer {
         let default_color = Some((0.5, 0.2, 0.1, 0.0));
 
         let fb_out = Texture2d::empty_with_format(&window,
-                                                  fb_format,
+                                                  fb_out_format,
                                                   MipmapsOption::NoMipmap,
-                                                  fb_x_res,
-                                                  fb_y_res).unwrap();
+                                                  fb_out_x_res,
+                                                  fb_out_y_res).unwrap();
 
         fb_out.as_surface().clear(None, default_color, false, None, None);
+
+
+        // The texture framebuffer is always at the native resolution
+        // since textures can be paletted so no filtering is possible
+        // on the raw data.
+        let fb_texture =
+            Texture2d::empty_with_format(&window,
+                                         fb_out_format,
+                                         MipmapsOption::NoMipmap,
+                                         VRAM_WIDTH_PIXELS as u32,
+                                         VRAM_HEIGHT as u32).unwrap();
+
+        fb_texture.as_surface().clear(None, default_color, false, None, None);
 
         // Build the program used to render the framebuffer onto the output
         let output_vs_src = include_str!("shaders/output_vertex.glsl");
@@ -226,14 +255,14 @@ impl Renderer {
         Renderer {
             window: window,
             fb_out: fb_out,
-            fb_x_res: fb_x_res as u16,
-            fb_y_res: fb_y_res as u16,
+            fb_out_x_res: fb_out_x_res as u16,
+            fb_out_y_res: fb_out_y_res as u16,
+            fb_texture: fb_texture,
             command_program: command_program,
             command_vertex_buffer: command_vertex_buffer,
             nvertices: 0,
             command_queue: Vec::new(),
             current_command: (index::PrimitiveType::TrianglesList, 0),
-            command_uniforms: command_uniforms,
             offset: (0, 0),
             command_params: command_params,
             output_program: output_program,
@@ -306,38 +335,45 @@ impl Renderer {
         // Flush any pending draw commands
         self.draw();
 
-        // Save the current value of the scissor
-        let scissor = self.command_params.scissor;
-
-        // Disable the scissor and offset
-        self.command_params.scissor = None;
-        self.command_uniforms = uniform! {
-            offset: [0; 2],
-        };
-
         let top = top as i16;
         let left = left as i16;
         // Fill rect is inclusive
         let bottom = bottom as i16;
         let right = right as i16;
 
-        // Draw a quad to fill the rectangle
-        self.push_quad(&[
-            CommandVertex::new([left, top], color, false),
-            CommandVertex::new([right, top], color, false),
-            CommandVertex::new([left, bottom], color, false),
-            CommandVertex::new([right, bottom], color, false),
-            ]);
-
-        self.draw();
-
-        // Restore previous scissor box and offset
-        self.command_params.scissor = scissor;
-
-        let (x, y) = self.offset;
-        self.command_uniforms = uniform! {
-            offset: [x as i32, y as i32],
+        // Build monochrome command vertex
+        let build_vertex = |x: i16, y: i16| -> CommandVertex {
+            CommandVertex::new([x, y],
+                               color,
+                               BlendMode::None,
+                               [0; 2],
+                               [0; 2],
+                               [0; 2],
+                               TextureDepth::T4Bpp)
         };
+
+        let vertices =
+            VertexBuffer::new(&self.window,
+                              &[build_vertex(left, top),
+                                build_vertex(right, top),
+                                build_vertex(left, bottom),
+                                build_vertex(right, bottom)])
+            .unwrap();
+
+
+        let mut surface = self.fb_out.as_surface();
+
+        let uniforms = uniform! {
+            offset: [0, 0],
+            fb_texture: &self.fb_texture,
+        };
+
+        surface.draw(&vertices,
+                     &index::NoIndices(index::PrimitiveType::TriangleStrip),
+                     &self.command_program,
+                     &uniforms,
+                     &DrawParameters { ..Default::default() })
+            .unwrap();
     }
 
     /// Set the value of the uniform draw offset
@@ -346,10 +382,6 @@ impl Renderer {
         self.draw();
 
         self.offset = (x, y);
-
-        self.command_uniforms = uniform! {
-            offset : [x as i32, y as i32],
-        }
     }
 
     /// Set the drawing area. Coordinates are offsets in the
@@ -407,6 +439,11 @@ impl Renderer {
 
         let mut vertex_pos = 0;
 
+        let uniforms = uniform! {
+            offset: [self.offset.0 as i32, self.offset.1 as i32],
+            fb_texture: &self.fb_texture,
+        };
+
         for &(cmd_type, cmd_len) in &self.command_queue {
             let start = vertex_pos;
             let end = start + cmd_len as usize;
@@ -418,7 +455,7 @@ impl Renderer {
             surface.draw(vertices,
                          &index::NoIndices(cmd_type),
                          &self.command_program,
-                         &self.command_uniforms,
+                         &uniforms,
                          &self.command_params).unwrap();
 
             vertex_pos = end;
@@ -497,7 +534,7 @@ impl Renderer {
                                          fb_coord: [0, 512] },
                                 Vertex { position: [1.0, -1.0],
                                          fb_coord: [1024, 512] },
-                                Vertex { position: [0., -0.5],
+                                Vertex { position: [0.0, -0.5],
                                          fb_coord: [0, 0] },
                                 Vertex { position: [1.0, -0.5],
                                          fb_coord: [1024, 0] }])
@@ -534,8 +571,8 @@ impl Renderer {
         // left so we need to complement the y coordinate
         let y = !y & 0x1ff;
 
-        let x = (x as u32 * self.fb_x_res as u32 + 512) / 1024;
-        let y = (y as u32 * self.fb_y_res as u32 + 256) / 512;
+        let x = (x as u32 * self.fb_out_x_res as u32 + 512) / 1024;
+        let y = (y as u32 * self.fb_out_y_res as u32 + 256) / 512;
 
         (x, y)
     }
@@ -547,8 +584,6 @@ impl Renderer {
 
         // First we must run any pending command
         self.draw();
-
-        let mut surface = self.fb_out.as_surface();
 
         // Target coordinates in VRAM
         let (x, y) = load_buffer.top_left();
@@ -572,17 +607,6 @@ impl Renderer {
 
         implement_vertex!(Vertex, position, image_coord);
 
-        // We cannot filter the texture here because it can contain
-        // paletted textures or palette data
-        let sampler =
-            image.sampled()
-            .magnify_filter(MagnifySamplerFilter::Nearest)
-            .minify_filter(MinifySamplerFilter::Nearest);
-
-        let uniforms = uniform! {
-            image: sampler,
-        };
-
         let x_start = x;
         let x_end = x + width;
         let y_start = y;
@@ -601,6 +625,37 @@ impl Renderer {
                                 Vertex { position: [x_end, y_end],
                                          image_coord: [1.0, 1.0] }])
             .unwrap();
+
+        // First we copy the data to the texture VRAM
+        //
+        // We cannot filter the texture here because it can contain
+        // paletted textures or palette data and linear filtering
+        // would mess that up. Normally no upscaling should take place
+        // so it shouldn't matter but let's be paranoid about it.
+        let sampler =
+            image.sampled()
+            .magnify_filter(MagnifySamplerFilter::Nearest)
+            .minify_filter(MinifySamplerFilter::Nearest);
+
+        let uniforms = uniform! {
+            image: sampler,
+        };
+
+        let mut surface = self.fb_texture.as_surface();
+
+        surface.draw(&vertices,
+                     &index::NoIndices(index::PrimitiveType::TriangleStrip),
+                     &self.image_load_program,
+                     &uniforms,
+                     &params).unwrap();
+
+        // We'll also write the data to `fb_out` in case the game
+        // tries to upload some image directly into the displayed
+        // framebuffer. If that's the case it means that the image is
+        // either a 16 or 24bit per pixel bitmap and we can
+        // potentially filter it but let's stick to nearest for the
+        // time being.
+        let mut surface = self.fb_out.as_surface();
 
         surface.draw(&vertices,
                      &index::NoIndices(index::PrimitiveType::TriangleStrip),

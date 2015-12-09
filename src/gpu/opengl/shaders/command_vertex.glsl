@@ -4,12 +4,21 @@
 
 in ivec2 position;
 in vec3 color;
-in float alpha;
+in uvec2 texture_page;
+in uvec2 texture_coord;
+in uvec2 clut;
+in int texture_blend_mode;
+in int depth_shift;
 
 // Drawing offset
 uniform ivec2 offset;
 
-out vec4 v_color;
+out vec3 frag_shading_color;
+flat out uvec2 frag_texture_page;
+out vec2 frag_texture_coord;
+flat out uvec2 frag_clut;
+flat out int frag_texture_blend_mode;
+flat out int frag_depth_shift;
 
 void main() {
   ivec2 pos = position + offset;
@@ -24,5 +33,13 @@ void main() {
   gl_Position.xyzw = vec4(xpos, ypos, 0.0, 1.0);
 
   // Glium doesn't support "normalized" for now
-  v_color = vec4(color / 255, alpha);
+  frag_shading_color = vec3(color / 255.);
+
+  // Let OpenGL interpolate the texel position
+  frag_texture_coord = vec2(texture_coord);
+
+  frag_texture_page = texture_page;
+  frag_clut = clut;
+  frag_texture_blend_mode = texture_blend_mode;
+  frag_depth_shift = depth_shift;
 }
