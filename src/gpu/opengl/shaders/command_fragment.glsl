@@ -46,10 +46,6 @@ bool is_transparent(vec4 texel) {
   return rebuild_color(texel) == 0;
 }
 
-vec3 column0 = vec3(0.0, 1.0, 0.0);
-vec3 column1 = vec3(1.0, 0.0, 0.0);
-vec3 column2 = vec3(0.0, 0.0, 1.0);
-
 // PlayStation dithering pattern. The offset is selected based on the
 // pixel position in VRAM, by blocks of 4x4 pixels. The value is added
 // to the 8bit color components before they're truncated to 5 bits.
@@ -135,7 +131,7 @@ void main() {
       // OpenGL will take care of that since the output buffer holds
       // integers. The alpha/mask bit bit is taken directly from the
       // texture however.
-      color = vec4(frag_shading_color * 2 * texel.rgb, texel.a);
+      color = vec4(frag_shading_color * 2. * texel.rgb, texel.a);
     }
   }
 
