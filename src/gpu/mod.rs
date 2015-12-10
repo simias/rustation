@@ -360,7 +360,8 @@ impl Gpu {
         self.renderer.display(self.display_vram_x_start,
                               self.display_vram_y_start,
                               self.hres.width(),
-                              self.vres.height());
+                              self.vres.height(),
+                              self.display_depth);
     }
 
     /// Return true if we're currently in the video blanking period
@@ -1424,8 +1425,8 @@ impl Gpu {
 
         self.display_depth =
             match val & 0x10 != 0 {
-                false => DisplayDepth::D24Bits,
-                true  => DisplayDepth::D15Bits,
+                false => DisplayDepth::D15Bits,
+                true  => DisplayDepth::D24Bits,
             };
 
         self.interlaced = val & 0x20 != 0;

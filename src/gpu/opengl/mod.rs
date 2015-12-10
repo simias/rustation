@@ -12,7 +12,8 @@ use glium::program::ProgramCreationInput;
 use glium::texture::{Texture2d, UncompressedFloatFormat, MipmapsOption};
 use glium::texture::{Texture2dDataSource, RawImage2d, ClientFormat};
 
-use super::{TextureDepth, BlendMode, VRAM_WIDTH_PIXELS, VRAM_HEIGHT};
+use super::{TextureDepth, BlendMode, DisplayDepth};
+use super::{VRAM_WIDTH_PIXELS, VRAM_HEIGHT};
 
 /// Maximum number of vertex that can be stored in an attribute
 /// buffers
@@ -475,7 +476,8 @@ impl Renderer {
     /// Draw the buffered commands and refresh the video output.
     pub fn display(&mut self,
                    fb_x: u16, fb_y: u16,
-                   width: u16, height: u16) {
+                   width: u16, height: u16,
+                   depth: DisplayDepth) {
         // Draw any pending commands
         self.draw();
 
@@ -490,6 +492,10 @@ impl Renderer {
         let uniforms = uniform! {
             fb: &self.fb_out,
             alpha: 1.0f32,
+            depth_24bpp: match depth {
+                DisplayDepth::D15Bits => 0,
+                DisplayDepth::D24Bits => 1,
+            },
         };
 
         /// Vertex definition for the video output program
@@ -556,6 +562,7 @@ impl Renderer {
         let uniforms = uniform! {
             fb: sampler,
             alpha: 0.7f32,
+            depth_24bpp: 0,
         };
 
         frame.draw(&vertices,
