@@ -30,10 +30,10 @@ vec4 vram_get_pixel(int x, int y) {
 // Take a normalized color and convert it into a 16bit 1555 ABGR
 // integer in the format used internally by the Playstation GPU.
 int rebuild_color(vec4 color) {
-  int a = int(round(color.a));
-  int r = int(round(color.r * 31.));
-  int g = int(round(color.g * 31.));
-  int b = int(round(color.b * 31.));
+  int a = int(floor(color.a + 0.5));
+  int r = int(floor(color.r * 31. + 0.5));
+  int g = int(floor(color.g * 31. + 0.5));
+  int b = int(floor(color.b * 31. + 0.5));
 
   return (a << 15) | (b << 10) | (g << 5) | r;
 }
