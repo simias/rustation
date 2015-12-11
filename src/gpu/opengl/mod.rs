@@ -614,7 +614,7 @@ impl Renderer {
             /// Vertex position in VRAM
             position: [u16; 2],
             /// Coordinate in the loaded image
-            image_coord: [f32; 2],
+            image_coord: [u16; 2],
         }
 
         implement_vertex!(Vertex, position, image_coord);
@@ -629,13 +629,13 @@ impl Renderer {
         let vertices =
             VertexBuffer::new(&self.window,
                               &[Vertex { position: [x_start, y_start],
-                                         image_coord: [0.0, 0.0] },
+                                         image_coord: [0, 0] },
                                 Vertex { position: [x_end, y_start],
-                                         image_coord: [1.0, 0.0] },
+                                         image_coord: [width, 0] },
                                 Vertex { position: [x_start, y_end],
-                                         image_coord: [0.0, 1.0] },
+                                         image_coord: [0, height] },
                                 Vertex { position: [x_end, y_end],
-                                         image_coord: [1.0, 1.0] }])
+                                         image_coord: [width, height] }])
             .unwrap();
 
         // First we copy the data to the texture VRAM
@@ -650,7 +650,7 @@ impl Renderer {
             .minify_filter(MinifySamplerFilter::Nearest);
 
         let uniforms = uniform! {
-            image: sampler,
+            image: &image,
         };
 
         let mut surface = self.fb_texture.as_surface();
@@ -663,10 +663,7 @@ impl Renderer {
 
         // We'll also write the data to `fb_out` in case the game
         // tries to upload some image directly into the displayed
-        // framebuffer. If that's the case it means that the image is
-        // either a 16 or 24bit per pixel bitmap and we can
-        // potentially filter it but let's stick to nearest for the
-        // time being.
+        // framebuffer.
         let mut surface = self.fb_out.as_surface();
 
         surface.draw(&vertices,

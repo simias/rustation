@@ -14,5 +14,5 @@ void main() {
 
   gl_Position.xyzw = vec4(xpos, ypos, 0.0, 1.0);
 
-  frag_image_coord = image_coord;
+  frag_image_coord = vec2(image_coord);
 }
