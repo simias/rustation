@@ -15,73 +15,6 @@ use glium::texture::{Texture2dDataSource, RawImage2d, ClientFormat};
 use super::{TextureDepth, BlendMode, DisplayDepth};
 use super::{VRAM_WIDTH_PIXELS, VRAM_HEIGHT};
 
-/// Maximum number of vertex that can be stored in an attribute
-/// buffers
-const VERTEX_BUFFER_LEN: u32 = 64 * 1024;
-
-/// Vertex definition used by the draw commands
-#[derive(Copy,Clone,Debug)]
-pub struct CommandVertex {
-    /// Position in PlayStation VRAM coordinates
-    pub position: [i16; 2],
-    /// RGB color, 8bits per component
-    pub color: [u8; 3],
-    /// Texture page (base offset in VRAM used for texture lookup)
-    pub texture_page: [u16; 2],
-    /// Texture coordinates within the page
-    pub texture_coord: [u16; 2],
-    /// Color Look-Up Table (palette) coordinates in VRAM
-    pub clut: [u16; 2],
-    /// Blending mode: 0: no texture, 1: raw-texture, 2: texture-blended
-    pub texture_blend_mode: u8,
-    /// Right shift from 16bits: 0 for 16bpp textures, 1 for 8bpp, 2
-    /// for 4bpp
-    pub depth_shift: u8,
-    /// True if dithering is enabled for this primitive
-    pub dither: u8,
-}
-
-implement_vertex!(CommandVertex, position, color,
-                  texture_page, texture_coord, clut, texture_blend_mode,
-                  depth_shift, dither);
-
-impl CommandVertex {
-    pub fn new(pos: [i16; 2],
-               color: [u8; 3],
-               blend_mode: BlendMode,
-               texture_page: [u16; 2],
-               texture_coord: [u16; 2],
-               clut: [u16; 2],
-               texture_depth: TextureDepth,
-               dither: bool) -> CommandVertex {
-
-        let blend_mode =
-            match blend_mode {
-                BlendMode::None => 0,
-                BlendMode::Raw => 1,
-                BlendMode::Blended => 2,
-            };
-
-        let depth_shift =
-            match texture_depth {
-                TextureDepth::T4Bpp => 2,
-                TextureDepth::T8Bpp => 1,
-                TextureDepth::T16Bpp => 0,
-            };
-
-        CommandVertex {
-            position: pos,
-            color: color,
-            texture_page: texture_page,
-            texture_coord: texture_coord,
-            texture_blend_mode: blend_mode,
-            clut: clut,
-            depth_shift: depth_shift,
-            dither: dither as u8,
-        }
-    }
-}
-
 pub struct Renderer {
     /// Glium display
     window: glium_sdl2::SDL2Facade,
@@ -639,16 +572,6 @@ impl Renderer {
             .unwrap();
 
         // First we copy the data to the texture VRAM
-        //
-        // We cannot filter the texture here because it can contain
-        // paletted textures or palette data and linear filtering
-        // would mess that up. Normally no upscaling should take place
-        // so it shouldn't matter but let's be paranoid about it.
-        let sampler =
-            image.sampled()
-            .magnify_filter(MagnifySamplerFilter::Nearest)
-            .minify_filter(MinifySamplerFilter::Nearest);
-
         let uniforms = uniform! {
             image: &image,
         };
@@ -671,6 +594,73 @@ impl Renderer {
                      &self.image_load_program,
                      &uniforms,
                      &params).unwrap();
+    }
+}
+
+/// Maximum number of vertex that can be stored in an attribute
+/// buffers
+const VERTEX_BUFFER_LEN: u32 = 64 * 1024;
+
+/// Vertex definition used by the draw commands
+#[derive(Copy,Clone,Debug)]
+pub struct CommandVertex {
+    /// Position in PlayStation VRAM coordinates
+    position: [i16; 2],
+    /// RGB color, 8bits per component
+    color: [u8; 3],
+    /// Texture page (base offset in VRAM used for texture lookup)
+    texture_page: [u16; 2],
+    /// Texture coordinates within the page
+    texture_coord: [u16; 2],
+    /// Color Look-Up Table (palette) coordinates in VRAM
+    clut: [u16; 2],
+    /// Blending mode: 0: no texture, 1: raw-texture, 2: texture-blended
+    texture_blend_mode: u8,
+    /// Right shift from 16bits: 0 for 16bpp textures, 1 for 8bpp, 2
+    /// for 4bpp
+    depth_shift: u8,
+    /// True if dithering is enabled for this primitive
+    dither: u8,
+}
+
+implement_vertex!(CommandVertex, position, color,
+                  texture_page, texture_coord, clut, texture_blend_mode,
+                  depth_shift, dither);
+
+impl CommandVertex {
+    pub fn new(pos: [i16; 2],
+               color: [u8; 3],
+               blend_mode: BlendMode,
+               texture_page: [u16; 2],
+               texture_coord: [u16; 2],
+               clut: [u16; 2],
+               texture_depth: TextureDepth,
+               dither: bool) -> CommandVertex {
+
+        let blend_mode =
+            match blend_mode {
+                BlendMode::None => 0,
+                BlendMode::Raw => 1,
+                BlendMode::Blended => 2,
+            };
+
+        let depth_shift =
+            match texture_depth {
+                TextureDepth::T4Bpp => 2,
+                TextureDepth::T8Bpp => 1,
+                TextureDepth::T16Bpp => 0,
+            };
+
+        CommandVertex {
+            position: pos,
+            color: color,
+            texture_page: texture_page,
+            texture_coord: texture_coord,
+            texture_blend_mode: blend_mode,
+            clut: clut,
+            depth_shift: depth_shift,
+            dither: dither as u8,
+        }
     }
 }
 
