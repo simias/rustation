@@ -580,7 +580,7 @@ impl Gpu {
             self.gp0_attributes.vertex(end_pos, end_color),
             ];
 
-        self.renderer.push_line(&vertices);
+        self.renderer.push_line(vertices);
 
         // Store the new ending position for the next segment (if any)
         self.polyline_prev = (end_pos, end_color);
@@ -607,7 +607,7 @@ impl Gpu {
             self.gp0_attributes.vertex(end_pos, color),
             ];
 
-        self.renderer.push_line(&vertices);
+        self.renderer.push_line(vertices);
 
         // Store the new ending position for the next segment (if any)
         self.polyline_prev = (end_pos, color);
@@ -789,7 +789,7 @@ impl Gpu {
                                        color),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        self.renderer.push_triangle(vertices);
     }
 
     /// Draw an untextured unshaded quad
@@ -807,7 +807,7 @@ impl Gpu {
                                        color),
             ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Draw a monochrome line
@@ -819,7 +819,7 @@ impl Gpu {
                                        gp0_color(self.gp0_command[0])),
             ];
 
-        self.renderer.push_line(&vertices);
+        self.renderer.push_line(vertices);
     }
 
     /// Draw a monochrome polyline
@@ -837,7 +837,7 @@ impl Gpu {
             self.gp0_attributes.vertex(end_pos, color),
             ];
 
-        self.renderer.push_line(&vertices);
+        self.renderer.push_line(vertices);
 
         // Store the end point to continue the polyline when we get
         // the next vertex
@@ -869,7 +869,7 @@ impl Gpu {
                 gp0_texture_coordinates(self.gp0_command[6])),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        self.renderer.push_triangle(vertices);
     }
 
     /// Draw a textured unshaded quad
@@ -898,7 +898,7 @@ impl Gpu {
                 gp0_texture_coordinates(self.gp0_command[8])),
             ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Draw an untextured shaded triangle
@@ -912,7 +912,7 @@ impl Gpu {
                                        gp0_color(self.gp0_command[4])),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        self.renderer.push_triangle(vertices);
     }
 
     /// Draw an untextured shaded quad
@@ -928,7 +928,7 @@ impl Gpu {
                                        gp0_color(self.gp0_command[6])),
             ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Draw a shaded line
@@ -940,7 +940,7 @@ impl Gpu {
                                        gp0_color(self.gp0_command[2])),
             ];
 
-        self.renderer.push_line(&vertices);
+        self.renderer.push_line(vertices);
     }
 
     /// Draw a shaded polyline
@@ -962,7 +962,7 @@ impl Gpu {
             self.gp0_attributes.vertex(end_pos, end_color),
             ];
 
-        self.renderer.push_line(&vertices);
+        self.renderer.push_line(vertices);
 
         // Store the end point to continue the polyline when we get
         // the next vertex
@@ -992,7 +992,7 @@ impl Gpu {
                 gp0_texture_coordinates(self.gp0_command[8])),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        self.renderer.push_triangle(vertices);
     }
 
     /// Draw a textured shaded quad
@@ -1020,7 +1020,7 @@ impl Gpu {
                 gp0_texture_coordinates(self.gp0_command[11])),
             ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
 
@@ -1043,7 +1043,7 @@ impl Gpu {
                                        color),
         ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     fn gp0_rect_sized_textured(&mut self, width: i16, height: i16) {
@@ -1083,7 +1083,7 @@ impl Gpu {
                  tex_top_left[1] + height as u16]),
         ];
 
-        self.renderer.push_quad(&vertices);
+        self.renderer.push_quad(vertices);
     }
 
     /// Draw a textured rectangle

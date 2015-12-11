@@ -6,11 +6,14 @@ use sdl2::video::GLProfile;
 use glium_sdl2;
 
 use glium::{Program, VertexBuffer, Surface, DrawParameters, Rect, Blend};
+use glium::{Depth, DepthTest};
 use glium::index;
 use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter};
 use glium::program::ProgramCreationInput;
 use glium::texture::{Texture2d, UncompressedFloatFormat, MipmapsOption};
 use glium::texture::{Texture2dDataSource, RawImage2d, ClientFormat};
+use glium::texture::{DepthTexture2d, DepthFormat};
+use glium::framebuffer::SimpleFrameBuffer;
 
 use super::{TextureDepth, BlendMode, DisplayDepth};
 use super::{VRAM_WIDTH_PIXELS, VRAM_HEIGHT};
@@ -27,6 +30,8 @@ pub struct Renderer {
     fb_out_y_res: u16,
     /// Texture used to store the VRAM for texture mapping
     fb_texture: Texture2d,
+    /// Depth buffer used for front-to-back drawing
+    depth_texture: DepthTexture2d,
     /// Program used to process draw commands
     command_program: Program,
     /// Permanent vertex buffer used to store pending draw commands
@@ -128,6 +133,11 @@ impl Renderer {
                 height: fb_out_y_res,
             }),
             line_width: Some(scaling_factor),
+            depth: Depth {
+                test: DepthTest::IfMore,
+                write: true,
+                .. Default::default()
+            },
             ..Default::default()
         };
 
@@ -142,6 +152,12 @@ impl Renderer {
 
         fb_out.as_surface().clear(None, default_color, false, None, None);
 
+        let depth_texture =
+            DepthTexture2d::empty_with_format(&window,
+                                              DepthFormat::F32,
+                                              MipmapsOption::NoMipmap,
+                                              fb_out_x_res,
+                                              fb_out_y_res).unwrap();
 
         // The texture framebuffer is always at the native resolution
         // since textures can be paletted so no filtering is possible
@@ -193,6 +209,7 @@ impl Renderer {
         Renderer {
             window: window,
             fb_out: fb_out,
+            depth_texture: depth_texture,
             fb_out_x_res: fb_out_x_res as u16,
             fb_out_y_res: fb_out_y_res as u16,
             fb_texture: fb_texture,
@@ -209,27 +226,27 @@ impl Renderer {
     }
 
     /// Add a triangle to the draw buffer
-    pub fn push_triangle(&mut self, vertices: &[CommandVertex; 3]) {
+    pub fn push_triangle(&mut self, mut vertices: [CommandVertex; 3]) {
         self.push_primitive(index::PrimitiveType::TrianglesList,
-                            vertices);
+                            &mut vertices);
     }
 
     /// Add a quad to the draw buffer
-    pub fn push_quad(&mut self, vertices: &[CommandVertex; 4]) {
-        self.push_triangle(&[vertices[0], vertices[1], vertices[2]]);
-        self.push_triangle(&[vertices[1], vertices[2], vertices[3]]);
+    pub fn push_quad(&mut self, vertices: [CommandVertex; 4]) {
+        self.push_triangle([vertices[0], vertices[1], vertices[2]]);
+        self.push_triangle([vertices[1], vertices[2], vertices[3]]);
     }
 
     /// Add a line to the draw buffer
-    pub fn push_line(&mut self, vertices: &[CommandVertex; 2]) {
+    pub fn push_line(&mut self, mut vertices: [CommandVertex; 2]) {
         self.push_primitive(index::PrimitiveType::LinesList,
-                            vertices);
+                            &mut vertices);
     }
 
     /// Add a primitive to the draw buffer
     fn push_primitive(&mut self,
                       primitive_type: index::PrimitiveType,
-                      vertices: &[CommandVertex]) {
+                      vertices: &mut [CommandVertex]) {
         let primitive_vertices = vertices.len() as u32;
 
         // Make sure we have enough room left to queue the vertex. We
@@ -238,6 +255,10 @@ impl Renderer {
             // The vertex attribute buffers are full, force an early
             // draw
             self.draw();
+        }
+
+        for v in vertices.iter_mut() {
+            v.order = self.nvertices;
         }
 
         let (mut cmd_type, mut cmd_len) = self.current_command;
@@ -253,9 +274,14 @@ impl Renderer {
             cmd_len = 0;
         }
 
-        // Copy the vertices into the vertex buffer
-        let start = self.nvertices as usize;
-        let end = start + primitive_vertices as usize;
+        // Copy the vertices into the vertex buffer. We fill the
+        // buffer from the end going backwards so that we can use the
+        // Z-buffer to reduce overdraw.
+        let end = VERTEX_BUFFER_LEN - self.nvertices;
+        let start = end - primitive_vertices;
+
+        let end = end as usize;
+        let start = start as usize;
 
         let slice = self.command_vertex_buffer.slice(start..end).unwrap();
         slice.write(vertices);
@@ -374,16 +400,26 @@ impl Renderer {
             return;
         }
 
-        let mut surface = self.fb_out.as_surface();
+        let mut surface =
+            SimpleFrameBuffer::with_depth_buffer(&self.window,
+                                                 &self.fb_out,
+                                                 &self.depth_texture)
+            .unwrap();
 
-        let mut vertex_pos = 0;
+        surface.clear_depth(0.0);
 
         let uniforms = uniform! {
             offset: [self.offset.0 as i32, self.offset.1 as i32],
             fb_texture: &self.fb_texture,
+            max_order: self.nvertices as i32,
         };
 
-        for &(cmd_type, cmd_len) in &self.command_queue {
+        let mut vertex_pos = (VERTEX_BUFFER_LEN - self.nvertices) as usize;
+
+        // We iterate in the opposite direction to reduce
+        // overdraw. The depth buffer will take care of overlapping
+        // geometry.
+        for &(cmd_type, cmd_len) in self.command_queue.iter().rev() {
             let start = vertex_pos;
             let end = start + cmd_len as usize;
 
@@ -606,6 +642,9 @@ const VERTEX_BUFFER_LEN: u32 = 64 * 1024;
 pub struct CommandVertex {
     /// Position in PlayStation VRAM coordinates
     position: [i16; 2],
+    /// Drawing order, later primitives must appear above the earlier
+    /// ones.
+    order: u32,
     /// RGB color, 8bits per component
     color: [u8; 3],
     /// Texture page (base offset in VRAM used for texture lookup)
@@ -623,12 +662,12 @@ pub struct CommandVertex {
     dither: u8,
 }
 
-implement_vertex!(CommandVertex, position, color,
+implement_vertex!(CommandVertex, position, order, color,
                   texture_page, texture_coord, clut, texture_blend_mode,
                   depth_shift, dither);
 
 impl CommandVertex {
-    pub fn new(pos: [i16; 2],
+    pub fn new(position: [i16; 2],
                color: [u8; 3],
                blend_mode: BlendMode,
                texture_page: [u16; 2],
@@ -652,7 +691,8 @@ impl CommandVertex {
             };
 
         CommandVertex {
-            position: pos,
+            position: position,
+            order: 0,
             color: color,
             texture_page: texture_page,
             texture_coord: texture_coord,

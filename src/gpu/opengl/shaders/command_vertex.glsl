@@ -10,9 +10,13 @@ in uvec2 clut;
 in int texture_blend_mode;
 in int depth_shift;
 in int dither;
+in int order;
 
 // Drawing offset
 uniform ivec2 offset;
+
+// Maximum value for the 'order' param, used for normalization
+uniform int max_order;
 
 out vec3 frag_shading_color;
 flat out uvec2 frag_texture_page;
@@ -32,7 +36,7 @@ void main() {
   // vertically
   float ypos = 1.0 - (float(pos.y) / 256);
 
-  gl_Position.xyzw = vec4(xpos, ypos, 0.0, 1.0);
+  gl_Position.xyzw = vec4(xpos, ypos, float(order) / float(max_order), 1.0);
 
   // Glium doesn't support "normalized" for now
   frag_shading_color = vec3(color / 255.);
