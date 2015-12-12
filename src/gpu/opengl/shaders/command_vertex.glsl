@@ -3,6 +3,7 @@
 // Vertex shader for rendering GPU draw commands in the framebuffer
 
 in ivec2 position;
+in int order;
 in vec3 color;
 in uvec2 texture_page;
 in uvec2 texture_coord;
@@ -10,7 +11,7 @@ in uvec2 clut;
 in int texture_blend_mode;
 in int depth_shift;
 in int dither;
-in int order;
+in int semi_transparent;
 
 // Drawing offset
 uniform ivec2 offset;
@@ -25,6 +26,7 @@ flat out uvec2 frag_clut;
 flat out int frag_texture_blend_mode;
 flat out int frag_depth_shift;
 flat out int frag_dither;
+flat out int frag_semi_transparent;
 
 void main() {
   ivec2 pos = position + offset;
@@ -36,7 +38,7 @@ void main() {
   // vertically
   float ypos = 1.0 - (float(pos.y) / 256);
 
-  gl_Position.xyzw = vec4(xpos, ypos, float(order) / float(max_order), 1.0);
+  gl_Position.xyzw = vec4(xpos, ypos, float(order) / 100000., 1.0);
 
   // Glium doesn't support "normalized" for now
   frag_shading_color = vec3(color / 255.);
@@ -49,4 +51,5 @@ void main() {
   frag_texture_blend_mode = texture_blend_mode;
   frag_depth_shift = depth_shift;
   frag_dither = dither;
+  frag_semi_transparent = semi_transparent;
 }

@@ -1,6 +1,8 @@
 #version 330 core
 
 uniform sampler2D fb_texture;
+// 0: Only draw opaque pixels, 1: only draw semi-transparent pixels
+uniform int draw_semi_transparent;
 
 in vec3 frag_shading_color;
 // Texture page: base offset for texture lookup.
@@ -15,6 +17,8 @@ flat in int frag_texture_blend_mode;
 flat in int frag_depth_shift;
 // 0: No dithering, 1: dithering enabled
 flat in int frag_dither;
+// 0: Opaque primitive, 1: semi-transparent primitive
+flat in int frag_semi_transparent;
 
 out vec4 frag_color;
 
@@ -38,14 +42,6 @@ int rebuild_color(vec4 color) {
   return (a << 15) | (b << 10) | (g << 5) | r;
 }
 
-// Texture color 0x0000 is special in the Playstation GPU, it denotes
-// a fully transparent texel (even for opaque draw commands). If you
-// want black you have to use an opaque draw command and use `0x8000`
-// instead.
-bool is_transparent(vec4 texel) {
-  return rebuild_color(texel) == 0;
-}
-
 // PlayStation dithering pattern. The offset is selected based on the
 // pixel position in VRAM, by blocks of 4x4 pixels. The value is added
 // to the 8bit color components before they're truncated to 5 bits.
@@ -60,6 +56,10 @@ void main() {
   vec4 color;
 
   if (frag_texture_blend_mode == BLEND_MODE_NO_TEXTURE) {
+    if (frag_semi_transparent != draw_semi_transparent) {
+      discard;
+    }
+
     color = vec4(frag_shading_color, 0.0);
   } else {
     // Look up texture
@@ -116,8 +116,17 @@ void main() {
       texel = vram_get_pixel(clut_x, clut_y);
     }
 
-    if (is_transparent(texel)) {
+    int icolor = rebuild_color(texel);
+
+    if (icolor == 0x0000) {
       // Fully transparent texel, discard
+      discard;
+    }
+
+    int is_texel_semi_transparent = (icolor >> 15) & frag_semi_transparent;
+
+    if (is_texel_semi_transparent != draw_semi_transparent) {
+      // We're not drawing those texels in this pass, discard
       discard;
     }
 

@@ -580,7 +580,9 @@ impl Gpu {
             self.gp0_attributes.vertex(end_pos, end_color),
             ];
 
-        self.renderer.push_line(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_line(vertices, mode);
 
         // Store the new ending position for the next segment (if any)
         self.polyline_prev = (end_pos, end_color);
@@ -607,7 +609,9 @@ impl Gpu {
             self.gp0_attributes.vertex(end_pos, color),
             ];
 
-        self.renderer.push_line(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_line(vertices, mode);
 
         // Store the new ending position for the next segment (if any)
         self.polyline_prev = (end_pos, color);
@@ -696,7 +700,7 @@ impl Gpu {
                 BlendMode::None
             };
 
-        let semi_transparent = opcode & 2 != 0;
+        let semi_transparent = (opcode & 2) != 0;
 
         let attr =
             Gp0Attributes::new(cback,
@@ -780,6 +784,8 @@ impl Gpu {
     fn gp0_monochrome_triangle(&mut self) {
         let color = gp0_color(self.gp0_command[0]);
 
+        self.gp0_attributes.set_draw_params(self.draw_mode as u32);
+
         let vertices = [
             self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
                                        color),
@@ -789,12 +795,16 @@ impl Gpu {
                                        color),
             ];
 
-        self.renderer.push_triangle(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_triangle(vertices, mode);
     }
 
     /// Draw an untextured unshaded quad
     fn gp0_monochrome_quad(&mut self) {
         let color = gp0_color(self.gp0_command[0]);
+
+        self.gp0_attributes.set_draw_params(self.draw_mode as u32);
 
         let vertices = [
             self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
@@ -807,7 +817,9 @@ impl Gpu {
                                        color),
             ];
 
-        self.renderer.push_quad(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_quad(vertices, mode);
     }
 
     /// Draw a monochrome line
@@ -819,7 +831,9 @@ impl Gpu {
                                        gp0_color(self.gp0_command[0])),
             ];
 
-        self.renderer.push_line(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_line(vertices, mode);
     }
 
     /// Draw a monochrome polyline
@@ -837,11 +851,15 @@ impl Gpu {
             self.gp0_attributes.vertex(end_pos, color),
             ];
 
-        self.renderer.push_line(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_line(vertices, mode);
 
         // Store the end point to continue the polyline when we get
         // the next vertex
         self.polyline_prev = (end_pos, color);
+
+        self.gp0_attributes.set_draw_params(self.draw_mode as u32);
 
         self.gp0_handler = Gpu::gp0_handle_monochrome_polyline_vertex;
     }
@@ -869,7 +887,9 @@ impl Gpu {
                 gp0_texture_coordinates(self.gp0_command[6])),
             ];
 
-        self.renderer.push_triangle(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_triangle(vertices, mode);
     }
 
     /// Draw a textured unshaded quad
@@ -898,11 +918,15 @@ impl Gpu {
                 gp0_texture_coordinates(self.gp0_command[8])),
             ];
 
-        self.renderer.push_quad(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_quad(vertices, mode);
     }
 
     /// Draw an untextured shaded triangle
     fn gp0_shaded_triangle(&mut self) {
+        self.gp0_attributes.set_draw_params(self.draw_mode as u32);
+
         let vertices = [
             self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
                                        gp0_color(self.gp0_command[0])),
@@ -912,11 +936,15 @@ impl Gpu {
                                        gp0_color(self.gp0_command[4])),
             ];
 
-        self.renderer.push_triangle(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_triangle(vertices, mode);
     }
 
     /// Draw an untextured shaded quad
     fn gp0_shaded_quad(&mut self) {
+        self.gp0_attributes.set_draw_params(self.draw_mode as u32);
+
         let vertices = [
             self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
                                        gp0_color(self.gp0_command[0])),
@@ -928,7 +956,9 @@ impl Gpu {
                                        gp0_color(self.gp0_command[6])),
             ];
 
-        self.renderer.push_quad(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_quad(vertices, mode);
     }
 
     /// Draw a shaded line
@@ -940,7 +970,9 @@ impl Gpu {
                                        gp0_color(self.gp0_command[2])),
             ];
 
-        self.renderer.push_line(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_line(vertices, mode);
     }
 
     /// Draw a shaded polyline
@@ -962,11 +994,15 @@ impl Gpu {
             self.gp0_attributes.vertex(end_pos, end_color),
             ];
 
-        self.renderer.push_line(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_line(vertices, mode);
 
         // Store the end point to continue the polyline when we get
         // the next vertex
         self.polyline_prev = (end_pos, end_color);
+
+        self.gp0_attributes.set_draw_params(self.draw_mode as u32);
 
         self.gp0_handler = Gpu::gp0_handle_shaded_polyline_color;
     }
@@ -992,7 +1028,9 @@ impl Gpu {
                 gp0_texture_coordinates(self.gp0_command[8])),
             ];
 
-        self.renderer.push_triangle(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_triangle(vertices, mode);
     }
 
     /// Draw a textured shaded quad
@@ -1020,11 +1058,15 @@ impl Gpu {
                 gp0_texture_coordinates(self.gp0_command[11])),
             ];
 
-        self.renderer.push_quad(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_quad(vertices, mode);
     }
 
 
     fn gp0_rect_sized(&mut self, width: i16, height: i16) {
+
+        self.gp0_attributes.set_draw_params(self.draw_mode as u32);
 
         let top_left = gp0_position(self.gp0_command[1]);
         let color = gp0_color(self.gp0_command[0]);
@@ -1043,7 +1085,9 @@ impl Gpu {
                                        color),
         ];
 
-        self.renderer.push_quad(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_quad(vertices, mode);
     }
 
     fn gp0_rect_sized_textured(&mut self, width: i16, height: i16) {
@@ -1083,7 +1127,9 @@ impl Gpu {
                  tex_top_left[1] + height as u16]),
         ];
 
-        self.renderer.push_quad(vertices);
+        let mode = self.gp0_attributes.semi_transparency_mode;
+
+        self.renderer.push_quad(vertices, mode);
     }
 
     /// Draw a textured rectangle
@@ -1630,8 +1676,6 @@ impl ::std::ops::Index<usize> for CommandBuffer {
 struct Gp0Attributes {
     /// Method called when all the parameters have been received.
     callback: fn(&mut Gpu),
-    /// XXX implement me
-    #[allow(dead_code)]
     semi_transparent: bool,
     blend_mode: BlendMode,
     texture_page: [u16; 2],
@@ -1715,7 +1759,8 @@ impl Gp0Attributes {
                            texture_coord,
                            self.clut,
                            self.texture_depth,
-                           self.dither)
+                           self.dither,
+                           self.semi_transparent)
     }
 
     /// Build a vertex using the current attributes. Used for untextured primitives
@@ -1729,7 +1774,8 @@ impl Gp0Attributes {
                            [0; 2],
                            [0; 2],
                            TextureDepth::T4Bpp,
-                           self.dither)
+                           self.dither,
+                           self.semi_transparent)
     }
 }
 

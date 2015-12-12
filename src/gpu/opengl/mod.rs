@@ -5,9 +5,9 @@ use sdl2::video::GLProfile;
 
 use glium_sdl2;
 
-use glium::{Program, VertexBuffer, Surface, DrawParameters, Rect, Blend};
-use glium::{Depth, DepthTest};
-use glium::index;
+use glium::{Program, VertexBuffer, Surface, DrawParameters, Rect};
+use glium::{Depth, DepthTest, Blend, BlendingFunction, LinearBlendingFactor};
+use glium::index::{PrimitiveType, NoIndices};
 use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter};
 use glium::program::ProgramCreationInput;
 use glium::texture::{Texture2d, UncompressedFloatFormat, MipmapsOption};
@@ -15,7 +15,7 @@ use glium::texture::{Texture2dDataSource, RawImage2d, ClientFormat};
 use glium::texture::{DepthTexture2d, DepthFormat};
 use glium::framebuffer::SimpleFrameBuffer;
 
-use super::{TextureDepth, BlendMode, DisplayDepth};
+use super::{TextureDepth, BlendMode, DisplayDepth, SemiTransparencyMode};
 use super::{VRAM_WIDTH_PIXELS, VRAM_HEIGHT};
 
 pub struct Renderer {
@@ -34,17 +34,35 @@ pub struct Renderer {
     depth_texture: DepthTexture2d,
     /// Program used to process draw commands
     command_program: Program,
-    /// Permanent vertex buffer used to store pending draw commands
-    command_vertex_buffer: VertexBuffer<CommandVertex>,
-    /// Current number or vertices in the command buffer
-    nvertices: u32,
-    /// List of queued draw commands. Each command contains a
-    /// primitive type (triangle or line) and a number of *vertices*
-    /// to be drawn from the `vertex_buffer`.
-    command_queue: Vec<(index::PrimitiveType, u32)>,
+    /// Permanent vertex buffer used to store pending opaque draw commands
+    opaque_vertex_buffer: VertexBuffer<CommandVertex>,
+    /// Current number or vertices in the opaque vertex buffer
+    opaque_vertices: u32,
+    /// Permanent vertex buffer used to store pending semi-transparent
+    /// draw commands
+    semi_transparent_vertex_buffer: VertexBuffer<CommandVertex>,
+    /// Current number or vertices in the semi-transparent vertex buffer
+    semi_transparent_vertices: u32,
+    /// Drawing order of the primitives
+    order: u32,
+    /// List of queued opaque draw commands. Each command contains a
+    /// primitive type (triangle or line) and a number of vertices to
+    /// be drawn from the `vertex_buffer`.
+    opaque_command_queue: Vec<(PrimitiveType, u32)>,
     /// Current draw command. Will be pushed onto the `command_queue`
     /// if a new command needs to be started.
-    current_command: (index::PrimitiveType, u32),
+    current_opaque_command: (PrimitiveType, u32),
+    /// List of queued semi-transparent draw commands. Each command
+    /// contains a primitive type (triangle or line), a semi-transparency mode
+    /// and a number of vertices to be drawn from the `vertex_buffer`.
+    semi_transparent_command_queue: Vec<(PrimitiveType,
+                                         SemiTransparencyMode,
+                                         u32)>,
+    /// Current draw command. Will be pushed onto the `command_queue`
+    /// if a new command needs to be started.
+    current_semi_transparent_command: (PrimitiveType,
+                                       SemiTransparencyMode,
+                                       u32),
     /// Current draw offset
     offset: (i16, i16),
     /// Parameters for draw commands
@@ -110,7 +128,12 @@ impl Renderer {
                              uses_point_size: false,
                          }).unwrap();
 
-        let command_vertex_buffer =
+        let opaque_vertex_buffer =
+            VertexBuffer::empty_persistent(&window,
+                                           VERTEX_BUFFER_LEN as usize)
+            .unwrap();
+
+        let semi_transparent_vertex_buffer =
             VertexBuffer::empty_persistent(&window,
                                            VERTEX_BUFFER_LEN as usize)
             .unwrap();
@@ -214,10 +237,17 @@ impl Renderer {
             fb_out_y_res: fb_out_y_res as u16,
             fb_texture: fb_texture,
             command_program: command_program,
-            command_vertex_buffer: command_vertex_buffer,
-            nvertices: 0,
-            command_queue: Vec::new(),
-            current_command: (index::PrimitiveType::TrianglesList, 0),
+            opaque_vertex_buffer: opaque_vertex_buffer,
+            opaque_vertices: 0,
+            semi_transparent_vertex_buffer: semi_transparent_vertex_buffer,
+            semi_transparent_vertices: 0,
+            order: 0,
+            opaque_command_queue: Vec::new(),
+            current_opaque_command: (PrimitiveType::TrianglesList, 0),
+            semi_transparent_command_queue: Vec::new(),
+            current_semi_transparent_command: (PrimitiveType::TrianglesList,
+                                               SemiTransparencyMode::Average,
+                                               0),
             offset: (0, 0),
             command_params: command_params,
             output_program: output_program,
@@ -226,48 +256,73 @@ impl Renderer {
     }
 
     /// Add a triangle to the draw buffer
-    pub fn push_triangle(&mut self, mut vertices: [CommandVertex; 3]) {
-        self.push_primitive(index::PrimitiveType::TrianglesList,
+    pub fn push_triangle(&mut self,
+                         mut vertices: [CommandVertex; 3],
+                         semi_transparency_mode: SemiTransparencyMode) {
+
+        self.push_primitive(PrimitiveType::TrianglesList,
                             &mut vertices);
+
+        if vertices[0].semi_transparent != 0 {
+            self.push_semi_transparent_primitive(PrimitiveType::TrianglesList,
+                                                 &vertices,
+                                                 semi_transparency_mode);
+        }
     }
 
     /// Add a quad to the draw buffer
-    pub fn push_quad(&mut self, vertices: [CommandVertex; 4]) {
-        self.push_triangle([vertices[0], vertices[1], vertices[2]]);
-        self.push_triangle([vertices[1], vertices[2], vertices[3]]);
+    pub fn push_quad(&mut self,
+                     vertices: [CommandVertex; 4],
+                     semi_transparency_mode: SemiTransparencyMode) {
+        self.push_triangle([vertices[0], vertices[1], vertices[2]],
+                           semi_transparency_mode);
+        self.push_triangle([vertices[1], vertices[2], vertices[3]],
+                           semi_transparency_mode);
     }
 
     /// Add a line to the draw buffer
-    pub fn push_line(&mut self, mut vertices: [CommandVertex; 2]) {
-        self.push_primitive(index::PrimitiveType::LinesList,
+    pub fn push_line(&mut self,
+                     mut vertices: [CommandVertex; 2],
+                     semi_transparency_mode: SemiTransparencyMode) {
+
+        self.push_primitive(PrimitiveType::LinesList,
                             &mut vertices);
+
+        if vertices[0].semi_transparent != 0 {
+            self.push_semi_transparent_primitive(PrimitiveType::LinesList,
+                                                 &vertices,
+                                                 semi_transparency_mode);
+        }
     }
 
-    /// Add a primitive to the draw buffer
+    /// Add a primitive to the draw buffer to be drawn during the
+    /// opaque pass
     fn push_primitive(&mut self,
-                      primitive_type: index::PrimitiveType,
+                      primitive_type: PrimitiveType,
                       vertices: &mut [CommandVertex]) {
         let primitive_vertices = vertices.len() as u32;
 
         // Make sure we have enough room left to queue the vertex. We
         // need to push two triangles to draw a quad, so 6 vertex
-        if self.nvertices + primitive_vertices > VERTEX_BUFFER_LEN {
+        if self.opaque_vertices + primitive_vertices > VERTEX_BUFFER_LEN {
             // The vertex attribute buffers are full, force an early
             // draw
             self.draw();
         }
 
         for v in vertices.iter_mut() {
-            v.order = self.nvertices;
+            v.order = self.order;
         }
 
-        let (mut cmd_type, mut cmd_len) = self.current_command;
+        self.order += 1;
+
+        let (mut cmd_type, mut cmd_len) = self.current_opaque_command;
 
         if primitive_type != cmd_type {
             // We have to change the primitive type. Push the current
             // command onto the queue and start a new one.
             if cmd_len > 0 {
-                self.command_queue.push(self.current_command);
+                self.opaque_command_queue.push(self.current_opaque_command);
             }
 
             cmd_type = primitive_type;
@@ -277,17 +332,74 @@ impl Renderer {
         // Copy the vertices into the vertex buffer. We fill the
         // buffer from the end going backwards so that we can use the
         // Z-buffer to reduce overdraw.
-        let end = VERTEX_BUFFER_LEN - self.nvertices;
+        let end = VERTEX_BUFFER_LEN - self.opaque_vertices;
         let start = end - primitive_vertices;
 
         let end = end as usize;
         let start = start as usize;
 
-        let slice = self.command_vertex_buffer.slice(start..end).unwrap();
+        let slice = self.opaque_vertex_buffer.slice(start..end).unwrap();
         slice.write(vertices);
 
-        self.nvertices += primitive_vertices;
-        self.current_command = (cmd_type, cmd_len + primitive_vertices);
+        self.opaque_vertices += primitive_vertices;
+        self.current_opaque_command = (cmd_type, cmd_len + primitive_vertices);
+    }
+
+    /// Add a primitive to the draw buffer to be drawn during the semi-transparent pass
+    fn push_semi_transparent_primitive(&mut self,
+                                       primitive_type: PrimitiveType,
+                                       vertices: &[CommandVertex],
+                                       mode: SemiTransparencyMode) {
+        let primitive_vertices = vertices.len() as u32;
+
+        // Make sure we have enough room left to queue the vertex. We
+        // need to push two triangles to draw a quad, so 6 vertex
+        if self.semi_transparent_vertices + primitive_vertices > VERTEX_BUFFER_LEN {
+            // The vertex attribute buffers are full, force an early
+            // draw
+            self.draw();
+        }
+
+        // XXX restore me when needed
+        // for v in vertices.iter_mut() {
+        //     v.order = self.order;
+        // }
+
+        //self.order += 1;
+
+        let cur_cmd = self.current_semi_transparent_command;
+
+        let (mut cmd_type, mut cmd_mode, mut cmd_len) = cur_cmd;
+
+        if primitive_type != cmd_type || mode != cmd_mode {
+            // We have to change the primitive type or
+            // semi-transparency mode. Push the current command onto
+            // the queue and start a new one.
+            if cmd_len > 0 {
+                self.semi_transparent_command_queue.push(cur_cmd);
+            }
+
+            cmd_type = primitive_type;
+            cmd_mode = mode;
+            cmd_len = 0;
+        }
+
+        // Copy the vertices into the vertex buffer. We fill the
+        // buffer from the end going backwards so that we can use the
+        // Z-buffer to reduce overdraw.
+        let start = self.semi_transparent_vertices;
+        let end = start + primitive_vertices;
+
+        let start = start as usize;
+        let end = end as usize;
+
+        let slice = self.semi_transparent_vertex_buffer.slice(start..end).unwrap();
+        slice.write(vertices);
+
+        self.semi_transparent_vertices += primitive_vertices;
+        self.current_semi_transparent_command = (cmd_type,
+                                                 cmd_mode,
+                                                 cmd_len + primitive_vertices);
     }
 
     /// Fill a rectangle in memory with the given color. This method
@@ -314,6 +426,7 @@ impl Renderer {
                                [0; 2],
                                [0; 2],
                                TextureDepth::T4Bpp,
+                               false,
                                false)
         };
 
@@ -331,10 +444,12 @@ impl Renderer {
         let uniforms = uniform! {
             offset: [0, 0],
             fb_texture: &self.fb_texture,
+            max_order: 1,
+            draw_semi_transparent: 0,
         };
 
         surface.draw(&vertices,
-                     &index::NoIndices(index::PrimitiveType::TriangleStrip),
+                     &NoIndices(PrimitiveType::TriangleStrip),
                      &self.command_program,
                      &uniforms,
                      &DrawParameters { ..Default::default() })
@@ -387,59 +502,162 @@ impl Renderer {
 
     /// Draw the buffered commands and reset the buffers
     pub fn draw(&mut self) {
-
-        // Push the last pending command if needed
-        let (_, cmd_len) = self.current_command;
-
-        if cmd_len > 0 {
-            self.command_queue.push(self.current_command);
-        }
-
-        if self.command_queue.is_empty() {
-            // Nothing to be done
-            return;
-        }
+        let depth_texture =
+            DepthTexture2d::empty_with_format(&self.window,
+                                              DepthFormat::F32,
+                                              MipmapsOption::NoMipmap,
+                                              self.fb_out_x_res as u32,
+                                              self.fb_out_y_res as u32).unwrap();
 
         let mut surface =
             SimpleFrameBuffer::with_depth_buffer(&self.window,
                                                  &self.fb_out,
-                                                 &self.depth_texture)
+                                                 &depth_texture)
             .unwrap();
 
         surface.clear_depth(0.0);
 
+        // Push the last pending commands if needed
+        let (_, cmd_len) = self.current_opaque_command;
+
+        if cmd_len > 0 {
+            self.opaque_command_queue.push(self.current_opaque_command);
+        }
+
+        self.draw_opaque(&mut surface);
+
+        // Reset the buffers
+        self.opaque_vertices = 0;
+        self.opaque_command_queue.clear();
+        self.current_opaque_command = (PrimitiveType::TrianglesList, 0);
+
+
+        // Push the last pending commands if needed
+        let cur_cmd = self.current_semi_transparent_command;
+
+        let (_, _ ,cmd_len) = cur_cmd;
+
+        if cmd_len > 0 {
+            self.semi_transparent_command_queue.push(cur_cmd);
+        }
+
+        self.draw_semi_transparent(&mut surface);
+
+        // Reset the buffers
+        self.semi_transparent_vertices = 0;
+        self.semi_transparent_command_queue.clear();
+        self.current_semi_transparent_command = (PrimitiveType::TrianglesList,
+                                                 SemiTransparencyMode::Average,
+                                                 0);
+
+        self.order = 0;
+    }
+
+    pub fn draw_opaque(&self, surface: &mut SimpleFrameBuffer) {
+
+        if self.opaque_command_queue.is_empty() {
+            // Nothing to be done
+            return;
+        }
+
         let uniforms = uniform! {
             offset: [self.offset.0 as i32, self.offset.1 as i32],
             fb_texture: &self.fb_texture,
-            max_order: self.nvertices as i32,
+            max_order: self.order as i32,
+            draw_semi_transparent: 0,
         };
 
-        let mut vertex_pos = (VERTEX_BUFFER_LEN - self.nvertices) as usize;
+        let mut vertex_pos = (VERTEX_BUFFER_LEN - self.opaque_vertices) as usize;
 
         // We iterate in the opposite direction to reduce
         // overdraw. The depth buffer will take care of overlapping
         // geometry.
-        for &(cmd_type, cmd_len) in self.command_queue.iter().rev() {
+        for &(cmd_type, cmd_len) in self.opaque_command_queue.iter().rev() {
             let start = vertex_pos;
             let end = start + cmd_len as usize;
 
             let vertices =
-                self.command_vertex_buffer.slice(start..end)
+                self.opaque_vertex_buffer.slice(start..end)
                 .unwrap();
 
             surface.draw(vertices,
-                         &index::NoIndices(cmd_type),
+                         &NoIndices(cmd_type),
                          &self.command_program,
                          &uniforms,
                          &self.command_params).unwrap();
 
             vertex_pos = end;
         }
+    }
 
-        // Reset the buffers
-        self.nvertices = 0;
-        self.command_queue.clear();
-        self.current_command = (index::PrimitiveType::TrianglesList, 0);
+    pub fn draw_semi_transparent(&self, surface: &mut SimpleFrameBuffer) {
+
+        if self.semi_transparent_command_queue.is_empty() {
+            // Nothing to be done
+            return;
+        }
+
+        let uniforms = uniform! {
+            offset: [self.offset.0 as i32, self.offset.1 as i32],
+            fb_texture: &self.fb_texture,
+            max_order: self.order as i32,
+            draw_semi_transparent: 1,
+        };
+
+        let mut vertex_pos = 0;
+
+        let mut params = self.command_params.clone();
+
+        // We iterate in the opposite direction to reduce
+        // overdraw. The depth buffer will take care of overlapping
+        // geometry.
+        for &(cmd_type, cmd_mode, cmd_len) in &self.semi_transparent_command_queue {
+
+            let (blend_fn, _) =
+                match cmd_mode {
+                    SemiTransparencyMode::Average =>
+                        (BlendingFunction::Addition {
+                            source: LinearBlendingFactor::ConstantColor,
+                            destination: LinearBlendingFactor::ConstantColor,
+                        }, 0.5),
+                    SemiTransparencyMode::Add =>
+                        (BlendingFunction::Addition {
+                            source: LinearBlendingFactor::One,
+                            destination: LinearBlendingFactor::One,
+                        }, 0.5),
+                    SemiTransparencyMode::SubstractSource =>
+                        (BlendingFunction::ReverseSubtraction {
+                            source: LinearBlendingFactor::One,
+                            destination: LinearBlendingFactor::One,
+                        }, 0.5),
+                    SemiTransparencyMode::AddQuarterSource =>
+                        (BlendingFunction::ReverseSubtraction {
+                            source: LinearBlendingFactor::ConstantAlpha,
+                            destination: LinearBlendingFactor::One,
+                        }, 0.25),
+                };
+
+            params.blend = Blend {
+                color: blend_fn,
+                alpha: BlendingFunction::AlwaysReplace,
+                constant_value: (0.5, 0.5, 0.5, 0.25),
+            };
+
+            let start = vertex_pos;
+            let end = start + cmd_len as usize;
+
+            let vertices =
+                self.semi_transparent_vertex_buffer.slice(start..end)
+                .unwrap();
+
+            surface.draw(vertices,
+                         &NoIndices(cmd_type),
+                         &self.command_program,
+                         &uniforms,
+                         &params).unwrap();
+
+            vertex_pos = end;
+        }
     }
 
     /// Draw the buffered commands and refresh the video output.
@@ -501,7 +719,7 @@ impl Renderer {
             .unwrap();
 
         frame.draw(&vertices,
-                   &index::NoIndices(index::PrimitiveType::TriangleStrip),
+                   &NoIndices(PrimitiveType::TriangleStrip),
                    &self.output_program,
                    &uniforms,
                    &params).unwrap();
@@ -535,7 +753,7 @@ impl Renderer {
         };
 
         frame.draw(&vertices,
-                   &index::NoIndices(index::PrimitiveType::TriangleStrip),
+                   &NoIndices(PrimitiveType::TriangleStrip),
                    &self.output_program,
                    &uniforms,
                    &params).unwrap();
@@ -615,7 +833,7 @@ impl Renderer {
         let mut surface = self.fb_texture.as_surface();
 
         surface.draw(&vertices,
-                     &index::NoIndices(index::PrimitiveType::TriangleStrip),
+                     &NoIndices(PrimitiveType::TriangleStrip),
                      &self.image_load_program,
                      &uniforms,
                      &params).unwrap();
@@ -626,7 +844,7 @@ impl Renderer {
         let mut surface = self.fb_out.as_surface();
 
         surface.draw(&vertices,
-                     &index::NoIndices(index::PrimitiveType::TriangleStrip),
+                     &NoIndices(PrimitiveType::TriangleStrip),
                      &self.image_load_program,
                      &uniforms,
                      &params).unwrap();
@@ -658,13 +876,15 @@ pub struct CommandVertex {
     /// Right shift from 16bits: 0 for 16bpp textures, 1 for 8bpp, 2
     /// for 4bpp
     depth_shift: u8,
-    /// True if dithering is enabled for this primitive
+    /// 1 if dithering is enabled for this primitive, otherwise 0
     dither: u8,
+    /// 1 if the primitive is semi-transparent, otherwise 0
+    semi_transparent: u8,
 }
 
 implement_vertex!(CommandVertex, position, order, color,
                   texture_page, texture_coord, clut, texture_blend_mode,
-                  depth_shift, dither);
+                  depth_shift, dither, semi_transparent);
 
 impl CommandVertex {
     pub fn new(position: [i16; 2],
@@ -674,7 +894,8 @@ impl CommandVertex {
                texture_coord: [u16; 2],
                clut: [u16; 2],
                texture_depth: TextureDepth,
-               dither: bool) -> CommandVertex {
+               dither: bool,
+               semi_transparent: bool) -> CommandVertex {
 
         let blend_mode =
             match blend_mode {
@@ -700,6 +921,7 @@ impl CommandVertex {
             clut: clut,
             depth_shift: depth_shift,
             dither: dither as u8,
+            semi_transparent: semi_transparent as u8,
         }
     }
 }
