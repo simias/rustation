@@ -213,7 +213,7 @@ impl Spu {
         // XXX handle FIFO overflow?
         let index = self.ram_index;
 
-        println!("SPU RAM store {:05x}: {:04x}", index, val);
+        debug!("SPU RAM store {:05x}: {:04x}", index, val);
 
         self.ram[index as usize] = val;
         self.ram_index = (index + 1) & 0x3ffff;

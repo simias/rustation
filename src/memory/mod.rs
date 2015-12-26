@@ -1,16 +1,16 @@
-pub mod bios;
-pub mod interrupts;
 pub mod timers;
 mod ram;
 mod dma;
 
-use self::bios::Bios;
 use self::ram::{Ram, ScratchPad};
 use self::dma::{Dma, Port, Direction, Step, Sync};
 use self::timers::Timers;
-use self::interrupts::InterruptState;
-use timekeeper::{TimeKeeper, Peripheral};
+
+use shared::SharedState;
+use bios::Bios;
+use timekeeper::Peripheral;
 use gpu::Gpu;
+use gpu::renderer::Renderer;
 use spu::Spu;
 use cdrom::CdRom;
 use cdrom::disc::Disc;
@@ -19,7 +19,6 @@ use padmemcard::gamepad;
 
 /// Global interconnect
 pub struct Interconnect {
-    irq_state: InterruptState,
     /// Basic Input/Output memory
     bios: Bios,
     /// Main RAM
@@ -50,7 +49,6 @@ pub struct Interconnect {
 impl Interconnect {
     pub fn new(bios: Bios, gpu: Gpu, disc: Option<Disc>) -> Interconnect {
         Interconnect {
-            irq_state: InterruptState::new(),
             bios: bios,
             ram: Ram::new(),
             scratch_pad: ScratchPad::new(),
@@ -66,28 +64,24 @@ impl Interconnect {
         }
     }
 
-    pub fn sync(&mut self, tk: &mut TimeKeeper) {
-        if tk.needs_sync(Peripheral::Gpu) {
-            self.gpu.sync(tk, &mut self.irq_state);
+    pub fn sync(&mut self, shared: &mut SharedState) {
+        if shared.tk().needs_sync(Peripheral::Gpu) {
+            self.gpu.sync(shared);
         }
 
-        if tk.needs_sync(Peripheral::PadMemCard) {
-            self.pad_memcard.sync(tk, &mut self.irq_state);
+        if shared.tk().needs_sync(Peripheral::PadMemCard) {
+            self.pad_memcard.sync(shared);
         }
 
-        self.timers.sync(tk, &mut self.irq_state);
+        self.timers.sync(shared);
 
-        if tk.needs_sync(Peripheral::CdRom) {
-            self.cdrom.sync(tk, &mut self.irq_state);
+        if shared.tk().needs_sync(Peripheral::CdRom) {
+            self.cdrom.sync(shared);
         }
     }
 
     pub fn cache_control(&self) -> CacheControl {
         self.cache_control
-    }
-
-    pub fn irq_state(&self) -> InterruptState {
-        self.irq_state
     }
 
     pub fn pad_profiles(&mut self) -> [&mut gamepad::Profile; 2] {
@@ -113,12 +107,12 @@ impl Interconnect {
 
     /// Interconnect: load value at `addr`
     pub fn load<T: Addressable>(&mut self,
-                                tk: &mut TimeKeeper,
+                                shared: &mut SharedState,
                                 addr: u32) -> u32 {
         // XXX Average RAM load delay, needs to do per-device tests
         // XXX This does not take the CPU pipelining into account so
         // it might be a little too slow in some cases actually.
-        tk.tick(5);
+        shared.tk().tick(5);
 
         let abs_addr = map::mask_region(addr);
 
@@ -141,8 +135,8 @@ impl Interconnect {
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
             return
                 match offset {
-                    0 => self.irq_state.status() as u32,
-                    4 => self.irq_state.mask() as u32,
+                    0 => shared.irq_state().status() as u32,
+                    4 => shared.irq_state().mask() as u32,
                     _ => panic!("Unhandled IRQ load at address {:08x}", addr),
                 };
         }
@@ -152,19 +146,19 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.load::<T>(tk, &mut self.irq_state, offset);
+            return self.gpu.load::<T>(shared, offset);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            return self.timers.load::<T>(tk, &mut self.irq_state, offset);
+            return self.timers.load::<T>(shared, offset);
         }
 
         if let Some(offset) = map::CDROM.contains(abs_addr) {
-            return self.cdrom.load::<T>(tk, &mut self.irq_state, offset);
+            return self.cdrom.load::<T>(shared, offset);
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
-            println!("Unhandled load from MDEC register {:x}", offset);
+            warn!("Unhandled load from MDEC register {:x}", offset);
             return 0;
         }
 
@@ -173,7 +167,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
-            return self.pad_memcard.load::<T>(tk, &mut self.irq_state, offset);
+            return self.pad_memcard.load::<T>(shared, offset);
         }
 
         if let Some(_) = map::EXPANSION_1.contains(abs_addr) {
@@ -202,7 +196,8 @@ impl Interconnect {
 
     /// Interconnect: store `val` into `addr`
     pub fn store<T: Addressable>(&mut self,
-                                 tk: &mut TimeKeeper,
+                                 shared: &mut SharedState,
+                                 renderer: &mut Renderer,
                                  addr: u32,
                                  val: u32) {
 
@@ -223,30 +218,29 @@ impl Interconnect {
 
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
             match offset {
-                0 => self.irq_state.ack(val as u16),
-                4 => self.irq_state.set_mask(val as u16),
+                0 => shared.irq_state().ack(val as u16),
+                4 => shared.irq_state().set_mask(val as u16),
                 _ => panic!("Unhandled IRQ store at address {:08x}"),
             }
             return;
         }
 
         if let Some(offset) = map::DMA.contains(abs_addr) {
-            self.set_dma_reg::<T>(offset, val);
+            self.set_dma_reg::<T>(shared, renderer, offset, val);
             return;
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            self.gpu.store::<T>(tk,
+            self.gpu.store::<T>(shared,
+                                renderer,
                                 &mut self.timers,
-                                &mut self.irq_state,
                                 offset,
                                 val);
             return;
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            self.timers.store::<T>(tk,
-                                   &mut self.irq_state,
+            self.timers.store::<T>(shared,
                                    &mut self.gpu,
                                    offset,
                                    val);
@@ -254,11 +248,11 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::CDROM.contains(abs_addr) {
-            return self.cdrom.store::<T>(tk, &mut self.irq_state, offset, val);
+            return self.cdrom.store::<T>(shared, offset, val);
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
-            println!("Unhandled write to MDEC register {:x}", offset);
+            warn!("Unhandled write to MDEC register {:x}", offset);
             return;
         }
 
@@ -268,7 +262,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
-            self.pad_memcard.store::<T>(tk, &mut self.irq_state, offset, val);
+            self.pad_memcard.store::<T>(shared, offset, val);
             return;
         }
 
@@ -300,9 +294,9 @@ impl Interconnect {
                         panic!("Bad expansion 2 base address: 0x{:08x}", val);
                     },
                 _ =>
-                    println!("Unhandled write to MEM_CONTROL register {:x}: \
-                              0x{:08x}",
-                             offset, val),
+                    warn!("Unhandled write to MEM_CONTROL register {:x}: \
+                           0x{:08x}",
+                          offset, val),
             }
 
             let index = (offset >> 2) as usize;
@@ -323,7 +317,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::EXPANSION_2.contains(abs_addr) {
-            println!("Unhandled write to expansion 2 register {:x}", offset);
+            warn!("Unhandled write to expansion 2 register {:x}", offset);
             return;
         }
 
@@ -368,7 +362,11 @@ impl Interconnect {
     }
 
     /// DMA register write
-    fn set_dma_reg<T: Addressable>(&mut self, offset: u32, val: u32) {
+    fn set_dma_reg<T: Addressable>(&mut self,
+                                   shared: &mut SharedState,
+                                   renderer: &mut Renderer,
+                                   offset: u32,
+                                   val: u32) {
         // Byte and Halfword writes are treated like word writes with
         // the *entire* Word value shifted by the alignment.
         let align = offset & 3;
@@ -403,7 +401,7 @@ impl Interconnect {
                 7 => {
                     match minor {
                         0 => self.dma.set_control(val),
-                        4 => self.dma.set_interrupt(val, &mut self.irq_state),
+                        4 => self.dma.set_interrupt(shared, val),
                         _ => panic!("Unhandled DMA write {:x}: {:08x}",
                                     offset, val),
                     }
@@ -415,26 +413,29 @@ impl Interconnect {
             };
 
         if let Some(port) = active_port {
-            self.do_dma(port);
+            self.do_dma(shared, renderer, port);
         }
     }
 
     /// Execute DMA transfer for a port
-    fn do_dma(&mut self, port: Port) {
+    fn do_dma(&mut self,
+              shared: &mut SharedState,
+              renderer: &mut Renderer,
+              port: Port) {
         // DMA transfer has been started, for now let's
         // process everything in one pass (i.e. no
         // chopping or priority handling)
 
         match self.dma.channel(port).sync() {
-                Sync::LinkedList => self.do_dma_linked_list(port),
-                _                => self.do_dma_block(port),
+                Sync::LinkedList => self.do_dma_linked_list(renderer, port),
+                _                => self.do_dma_block(renderer, port),
         }
 
-        self.dma.done(port, &mut self.irq_state);
+        self.dma.done(shared, port);
     }
 
     /// Emulate DMA transfer for linked list synchronization mode.
-    fn do_dma_linked_list(&mut self, port: Port) {
+    fn do_dma_linked_list(&mut self, renderer: &mut Renderer, port: Port) {
         let channel = self.dma.channel_mut(port);
 
         let mut addr = channel.base() & 0x1ffffc;
@@ -463,7 +464,7 @@ impl Interconnect {
                 let command = self.ram.load::<Word>(addr);
 
                 // Send command to the GPU
-                self.gpu.gp0(command);
+                self.gpu.gp0(renderer, command);
 
                 remsz -= 1;
             }
@@ -483,7 +484,7 @@ impl Interconnect {
 
     /// Emulate DMA transfer for Manual and Request synchronization
     /// modes.
-    fn do_dma_block(&mut self, port: Port) {
+    fn do_dma_block(&mut self, renderer: &mut Renderer, port: Port) {
         let channel = self.dma.channel_mut(port);
 
         let increment = match channel.step() {
@@ -514,7 +515,7 @@ impl Interconnect {
                     let src_word = self.ram.load::<Word>(cur_addr);
 
                     match port {
-                        Port::Gpu => self.gpu.gp0(src_word),
+                        Port::Gpu => self.gpu.gp0(renderer, src_word),
                         // XXX ignore transfers to the MDEC for now
                         Port::MDecIn => (),
                         // XXX ignre transfers to the SPU for now
@@ -537,7 +538,7 @@ impl Interconnect {
                         Port::MDecOut => 0,
                         Port::Gpu => {
                             // XXX to be implemented
-                            println!("DMA GPU READ");
+                            debug!("DMA GPU READ");
                             0
                         }
                         Port::CdRom => self.cdrom.dma_read_word(),

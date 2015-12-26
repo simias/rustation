@@ -37,7 +37,8 @@ impl TimeKeeper {
     pub fn new() -> TimeKeeper {
         TimeKeeper {
             now: 0,
-            next_sync: Cycles::max_value(),
+            // Force a sync at the start to initialize evrything
+            next_sync: 0,
             timesheets: [TimeSheet::new(); 6],
         }
     }
@@ -64,7 +65,7 @@ impl TimeKeeper {
 
     /// Set next sync *only* if it's closer than what's already
     /// configured.
-    pub fn set_next_sync_delta_if_closer(&mut self,
+    pub fn set_next_sync_delta_if_sooner(&mut self,
                                          who: Peripheral,
                                          delta: Cycles) {
         let date = self.now + delta;

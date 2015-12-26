@@ -1,15 +1,15 @@
-use self::opengl::{Renderer, CommandVertex, LoadBuffer};
 use memory::Addressable;
-use memory::interrupts::{Interrupt, InterruptState};
 use memory::timers::Timers;
-use timekeeper::{TimeKeeper, Peripheral, Cycles, FracCycles};
-use HardwareType;
+use shared::SharedState;
+use interrupt::Interrupt;
+use timekeeper::{Peripheral, Cycles, FracCycles};
 
-pub mod opengl;
+use self::renderer::{Renderer, Vertex, PrimitiveAttributes};
+use self::renderer::{BlendMode, SemiTransparencyMode, TextureDepth};
+
+pub mod renderer;
 
 pub struct Gpu {
-    /// OpenGL renderer
-    renderer: Renderer,
     /// Draw mode for rectangles, dithering enable and a few other
     /// things
     draw_mode: u16,
@@ -74,7 +74,7 @@ pub struct Gpu {
     /// DMA request direction
     dma_direction: DmaDirection,
     /// Handler function for GP0 writes
-    gp0_handler: fn (&mut Gpu, val: u32),
+    gp0_handler: fn (&mut Gpu, &mut Renderer, u32),
     /// Buffer containing the current GP0 command
     gp0_command: CommandBuffer,
     /// Remaining number of words to fetch for the current GP0 command
@@ -93,25 +93,24 @@ pub struct Gpu {
     display_line: u16,
     /// Current GPU clock tick for the current line
     display_line_tick: u16,
-    /// Hardware type (PAL or NTSC)
-    hardware: HardwareType,
+    /// Video standard (PAL or NTSC)
+    standard: VideoClock,
     /// Next word returned by the GPUREAD command
     read_word: u32,
     /// When drawing polylines we must keep track of the previous
     /// vertex position and color
     polyline_prev: ([i16; 2], [u8; 3]),
-    /// Buffer holding the textures when they are being loaded through
-    /// GP0
-    load_buffer: LoadBuffer,
+    /// Image buffer for texture uploads
+    load_buffer: ImageBuffer,
 }
 
 impl Gpu {
-    pub fn new(renderer: opengl::Renderer, hardware: HardwareType) -> Gpu {
+    pub fn new(standard: VideoClock) -> Gpu {
         let dummy_gp0 =
             Gp0Attributes::new(Gpu::gp0_nop, false, BlendMode::None, false);
 
         Gpu {
-            renderer: renderer,
+            //renderer: renderer,
             draw_mode: 0,
             texture_window_x_mask: 0,
             texture_window_y_mask: 0,
@@ -150,10 +149,10 @@ impl Gpu {
             gpu_clock_phase: 0,
             display_line: 0,
             display_line_tick: 0,
-            hardware: hardware,
+            standard: standard,
             read_word: 0,
             polyline_prev: ([0; 2], [0; 3]),
-            load_buffer: LoadBuffer::null(),
+            load_buffer: ImageBuffer::new(),
         }
     }
 
@@ -176,9 +175,9 @@ impl Gpu {
         // First we convert the delta into GPU clock periods.
         // GPU clock in Hz
         let gpu_clock =
-            match self.hardware {
-                HardwareType::Ntsc => 53_690_000.,
-                HardwareType::Pal  => 53_200_000.,
+            match self.standard {
+                VideoClock::Ntsc => 53_690_000.,
+                VideoClock::Pal  => 53_222_000.,
             };
 
         // CPU clock in Hz
@@ -232,10 +231,9 @@ impl Gpu {
 
     /// Update the GPU state to its current status
     pub fn sync(&mut self,
-                tk: &mut TimeKeeper,
-                irq_state: &mut InterruptState) {
+                shared: &mut SharedState) {
 
-        let delta = tk.sync(Peripheral::Gpu);
+        let delta = shared.tk().sync(Peripheral::Gpu);
 
         // Convert delta in GPU time, adding the leftover from the
         // last time
@@ -284,22 +282,21 @@ impl Gpu {
 
         if !self.vblank_interrupt && vblank_interrupt {
             // Rising edge of the vblank interrupt
-            irq_state.assert(Interrupt::VBlank);
+            shared.irq_state().assert(Interrupt::VBlank);
         }
 
         if self.vblank_interrupt && !vblank_interrupt {
-            // End of vertical blanking, probably as a good place as
-            // any to update the display
-            self.display();
+            // End of vertical blanking, we're starting a new frame
+            shared.new_frame();
         }
 
         self.vblank_interrupt = vblank_interrupt;
 
-        self.predict_next_sync(tk);
+        self.predict_next_sync(shared);
     }
 
     /// Predict when the next "forced" sync should take place
-    pub fn predict_next_sync(&self, tk: &mut TimeKeeper) {
+    pub fn predict_next_sync(&self, shared: &mut SharedState) {
         let (ticks_per_line, lines_per_frame) = self.vmode_timings();
 
         let ticks_per_line = ticks_per_line as Cycles;
@@ -351,17 +348,7 @@ impl Gpu {
         let ratio = self.gpu_to_cpu_clock_ratio().get_fp();
         delta = (delta + ratio - 1) / ratio;
 
-        tk.set_next_sync_delta(Peripheral::Gpu, delta);
-    }
-
-    /// Called when we want to display a new frame. Refreshes the
-    /// video output.
-    fn display(&mut self) {
-        self.renderer.display(self.display_vram_x_start,
-                              self.display_vram_y_start,
-                              self.hres.width(),
-                              self.vres.height(),
-                              self.display_depth);
+        shared.tk().set_next_sync_delta(Peripheral::Gpu, delta);
     }
 
     /// Return true if we're currently in the video blanking period
@@ -384,15 +371,14 @@ impl Gpu {
     }
 
     pub fn load<T: Addressable>(&mut self,
-                                tk: &mut TimeKeeper,
-                                irq_state: &mut InterruptState,
+                                shared: &mut SharedState,
                                 offset: u32) -> u32 {
 
         if T::size() != 4 {
             panic!("Unhandled GPU load ({})", T::size());
         }
 
-        self.sync(tk, irq_state);
+        self.sync(shared);
 
         let r =
             match offset {
@@ -405,9 +391,9 @@ impl Gpu {
     }
 
     pub fn store<T: Addressable>(&mut self,
-                                 tk: &mut TimeKeeper,
+                                 shared: &mut SharedState,
+                                 renderer: &mut Renderer,
                                  timers: &mut Timers,
-                                 irq_state: &mut InterruptState,
                                  offset: u32,
                                  val: u32) {
 
@@ -415,18 +401,18 @@ impl Gpu {
             panic!("Unhandled GPU load ({})", T::size());
         }
 
-        self.sync(tk, irq_state);
+        self.sync(shared);
 
         match offset {
-            0 => self.gp0(val),
-            4 => self.gp1(val, tk, timers, irq_state),
+            0 => self.gp0(renderer, val),
+            4 => self.gp1(shared, renderer, val, timers),
             _ => unreachable!(),
         }
     }
 
     /// Dispatch to the current GP0 handler method
-    pub fn gp0(&mut self, val: u32) {
-        (self.gp0_handler)(self, val);
+    pub fn gp0(&mut self, renderer: &mut Renderer, val: u32) {
+        (self.gp0_handler)(self, renderer, val);
     }
 
     /// Retrieve value of the status register
@@ -489,13 +475,13 @@ impl Gpu {
 
     /// Retrieve value of the "read" register
     fn read(&self) -> u32 {
-        println!("GPUREAD");
+        debug!("GPUREAD");
         // XXX framebuffer read not supported
         self.read_word
     }
 
     /// GP0 handler method: handle a command word
-    fn gp0_handle_command(&mut self, val: u32) {
+    fn gp0_handle_command(&mut self, renderer: &mut Renderer, val: u32) {
         let (len, attributes) = self.gp0_parse_command(val);
 
         self.gp0_words_remaining = len;
@@ -505,11 +491,11 @@ impl Gpu {
         self.gp0_handler = Gpu::gp0_handle_parameter;
 
         // Call the parameter handling function for the current word
-        self.gp0_handle_parameter(val);
+        self.gp0_handle_parameter(renderer, val);
     }
 
     /// GP0 handler method: handle a command parameter
-    fn gp0_handle_parameter(&mut self, val: u32) {
+    fn gp0_handle_parameter(&mut self, renderer: &mut Renderer, val: u32) {
         self.gp0_command.push_word(val);
         self.gp0_words_remaining -= 1;
 
@@ -523,33 +509,12 @@ impl Gpu {
             // Reset GP0 handler. Can be overriden by the callback in
             // certain cases, for instance for image load commands.
             self.gp0_handler = Gpu::gp0_handle_command;
-            (self.gp0_attributes.callback)(self);
-        }
-    }
-
-    /// GP0 handler method: handle image load
-    fn gp0_handle_image_load(&mut self, word: u32) {
-        self.load_buffer.push_word(word);
-
-        self.gp0_words_remaining -= 1;
-
-        if self.gp0_words_remaining == 0 {
-            let mut load_buffer = LoadBuffer::null();
-
-            // We are going to consume the LoadBuffer, we need to move
-            // out of `self`
-            ::std::mem::swap(&mut self.load_buffer,
-                             &mut load_buffer);
-
-            self.renderer.load_image(load_buffer);
-
-            // We're done, wait for the next command
-            self.gp0_handler = Gpu::gp0_handle_command;
+            (self.gp0_attributes.callback)(self, renderer);
         }
     }
 
     /// GP0 handler method: handle shaded polyline color word
-    fn gp0_handle_shaded_polyline_color(&mut self, val: u32) {
+    fn gp0_handle_shaded_polyline_color(&mut self, _: &mut Renderer, val: u32) {
         self.gp0_handler =
             if is_polyline_end_marker(val) {
                 // We found the end-of-polyline marker, we're done.
@@ -564,7 +529,9 @@ impl Gpu {
     }
 
     /// GP0 handler method: handle shaded polyline vertex word
-    fn gp0_handle_shaded_polyline_vertex(&mut self, val: u32) {
+    fn gp0_handle_shaded_polyline_vertex(&mut self,
+                                         renderer: &mut Renderer,
+                                         val: u32) {
         // We don't test for the end-of-polyline marker here because
         // it only works in color words for shaded polylines.
 
@@ -576,11 +543,12 @@ impl Gpu {
         let end_pos = gp0_position(val);
 
         let vertices = [
-            self.gp0_attributes.vertex(start_pos, start_color),
-            self.gp0_attributes.vertex(end_pos, end_color),
+            Vertex::new(start_pos, start_color),
+            Vertex::new(end_pos, end_color),
             ];
 
-        self.renderer.push_line(&vertices);
+        renderer.push_line(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
 
         // Store the new ending position for the next segment (if any)
         self.polyline_prev = (end_pos, end_color);
@@ -590,7 +558,9 @@ impl Gpu {
     }
 
     /// GP0 handler method: handle monochrome polyline position word
-    fn gp0_handle_monochrome_polyline_vertex(&mut self, val: u32) {
+    fn gp0_handle_monochrome_polyline_vertex(&mut self,
+                                             renderer: &mut Renderer,
+                                             val: u32) {
         if is_polyline_end_marker(val) {
             // We found the end-of-polyline marker, we're done.
             self.gp0_handler = Gpu::gp0_handle_command;
@@ -603,11 +573,12 @@ impl Gpu {
         let end_pos = gp0_position(val);
 
         let vertices = [
-            self.gp0_attributes.vertex(start_pos, color),
-            self.gp0_attributes.vertex(end_pos, color),
+            Vertex::new(start_pos, color),
+            Vertex::new(end_pos, color),
             ];
 
-        self.renderer.push_line(&vertices);
+        renderer.push_line(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
 
         // Store the new ending position for the next segment (if any)
         self.polyline_prev = (end_pos, color);
@@ -620,7 +591,7 @@ impl Gpu {
 
         let dither = self.dither();
 
-        let (len, cback, dither): (u32, fn(&mut Gpu), bool) =
+        let (len, cback, dither): (u32, fn(&mut Gpu, &mut Renderer), bool) =
             match opcode {
                 0x00 => (1,  Gpu::gp0_nop, false),
                 0x01 => (1,  Gpu::gp0_clear_cache, false),
@@ -712,18 +683,18 @@ impl Gpu {
     }
 
     /// GP0(0x00): No operation
-    fn gp0_nop(&mut self) {
+    fn gp0_nop(&mut self, _: &mut Renderer) {
         // NOP
     }
 
     /// GP0(0x01): Clear cache
-    fn gp0_clear_cache(&mut self) {
+    fn gp0_clear_cache(&mut self, _: &mut Renderer) {
         // XXX Not implemented
     }
 
     /// GP0(0x02): Fill rectangle
     /// *Not* affected by mask setting unlike other rect commands
-    fn gp0_fill_rect(&mut self) {
+    fn gp0_fill_rect(&mut self, renderer: &mut Renderer) {
         let top_left = gp0_position(self.gp0_command[1]);
         let size = gp0_position(self.gp0_command[2]);
 
@@ -751,79 +722,78 @@ impl Gpu {
         // XXX Normally the fill rect wraps around: if the x or y
         // coordinates overflow we should wrap around the image.
         if right > 0x400 {
-            println!("Fill rect X overflow: {}", right);
+            warn!("Fill rect X overflow: {}", right);
             right = 0x400;
         }
 
         if bottom > 0x200 {
-            println!("Fill rect Y overflow: {}", bottom);
+            warn!("Fill rect Y overflow: {}", bottom);
             bottom = 0x200;
         }
 
-        self.renderer.fill_rect(color,
-                                top, left,
-                                bottom, right);
+        let width = right - left;
+        let height = bottom - top;
+
+        renderer.fill_rect(color,
+                           (left, top),
+                           (width, height));
     }
 
     /// Gp0(0x80): Copy rectangle
-    fn gp0_copy_rect(&mut self) {
+    fn gp0_copy_rect(&mut self, _: &mut Renderer) {
         let size = gp0_position(self.gp0_command[3]);
         let src_top_left = gp0_position(self.gp0_command[1]);
         let dst_top_left = gp0_position(self.gp0_command[2]);
 
         // XXX Implement me
-        println!("Copy Rectangle {:?} {:?} {:?}",
-                 size, src_top_left, dst_top_left);
+        debug!("Copy Rectangle {:?} {:?} {:?}",
+               size, src_top_left, dst_top_left);
     }
 
     /// Draw an untextured unshaded triangle
-    fn gp0_monochrome_triangle(&mut self) {
+    fn gp0_monochrome_triangle(&mut self, renderer: &mut Renderer) {
         let color = gp0_color(self.gp0_command[0]);
 
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[2]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[3]),
-                                       color),
+            Vertex::new(gp0_position(self.gp0_command[1]), color),
+            Vertex::new(gp0_position(self.gp0_command[2]), color),
+            Vertex::new(gp0_position(self.gp0_command[3]), color),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        renderer.push_triangle(self.gp0_attributes.primitive_attributes(),
+                               &vertices);
     }
 
     /// Draw an untextured unshaded quad
-    fn gp0_monochrome_quad(&mut self) {
+    fn gp0_monochrome_quad(&mut self, renderer: &mut Renderer) {
         let color = gp0_color(self.gp0_command[0]);
 
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[2]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[3]),
-                                       color),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[4]),
-                                       color),
+            Vertex::new(gp0_position(self.gp0_command[1]), color),
+            Vertex::new(gp0_position(self.gp0_command[2]), color),
+            Vertex::new(gp0_position(self.gp0_command[3]), color),
+            Vertex::new(gp0_position(self.gp0_command[4]), color),
             ];
 
-        self.renderer.push_quad(&vertices);
+        renderer.push_quad(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
     }
 
     /// Draw a monochrome line
-    fn gp0_monochrome_line(&mut self) {
+    fn gp0_monochrome_line(&mut self, renderer: &mut Renderer) {
+        let color = gp0_color(self.gp0_command[0]);
+
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       gp0_color(self.gp0_command[0])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[2]),
-                                       gp0_color(self.gp0_command[0])),
+            Vertex::new(gp0_position(self.gp0_command[1]), color),
+            Vertex::new(gp0_position(self.gp0_command[2]), color),
             ];
 
-        self.renderer.push_line(&vertices);
+        renderer.push_line(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
     }
 
     /// Draw a monochrome polyline
-    fn gp0_monochrome_polyline(&mut self) {
+    fn gp0_monochrome_polyline(&mut self, renderer: &mut Renderer) {
         // Start with the first segment. The end-of-polyline marker is
         // ignored for the first two vertices.
 
@@ -833,11 +803,12 @@ impl Gpu {
         let end_pos = gp0_position(self.gp0_command[2]);
 
         let vertices = [
-            self.gp0_attributes.vertex(start_pos, color),
-            self.gp0_attributes.vertex(end_pos, color),
+            Vertex::new(start_pos, color),
+            Vertex::new(end_pos, color),
             ];
 
-        self.renderer.push_line(&vertices);
+        renderer.push_line(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
 
         // Store the end point to continue the polyline when we get
         // the next vertex
@@ -848,103 +819,101 @@ impl Gpu {
 
 
     /// Draw a textured unshaded triangle
-    fn gp0_textured_triangle(&mut self) {
+    fn gp0_textured_triangle(&mut self, renderer: &mut Renderer) {
         let color = gp0_color(self.gp0_command[0]);
 
         self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
         self.gp0_attributes.set_draw_params(self.gp0_command[4] >> 16);
 
         let vertices = [
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[1]),
-                color,
-                gp0_texture_coordinates(self.gp0_command[2])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[3]),
-                color,
-                gp0_texture_coordinates(self.gp0_command[4])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[5]),
-                color,
-                gp0_texture_coordinates(self.gp0_command[6])),
+            Vertex::new_textured(gp0_position(self.gp0_command[1]),
+                                 color,
+                                 gp0_texture_coordinates(self.gp0_command[2])),
+            Vertex::new_textured(gp0_position(self.gp0_command[3]),
+                                 color,
+                                 gp0_texture_coordinates(self.gp0_command[4])),
+            Vertex::new_textured(gp0_position(self.gp0_command[5]),
+                                 color,
+                                 gp0_texture_coordinates(self.gp0_command[6])),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        renderer.push_triangle(self.gp0_attributes.primitive_attributes(),
+                               &vertices);
     }
 
     /// Draw a textured unshaded quad
-    fn gp0_textured_quad(&mut self) {
+    fn gp0_textured_quad(&mut self, renderer: &mut Renderer) {
         let color = gp0_color(self.gp0_command[0]);
 
         self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
         self.gp0_attributes.set_draw_params(self.gp0_command[4] >> 16);
 
         let vertices = [
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[1]),
-                color,
-                gp0_texture_coordinates(self.gp0_command[2])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[3]),
-                color,
-                gp0_texture_coordinates(self.gp0_command[4])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[5]),
-                color,
-                gp0_texture_coordinates(self.gp0_command[6])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[7]),
-                color,
-                gp0_texture_coordinates(self.gp0_command[8])),
+            Vertex::new_textured(gp0_position(self.gp0_command[1]),
+                                 color,
+                                 gp0_texture_coordinates(self.gp0_command[2])),
+            Vertex::new_textured(gp0_position(self.gp0_command[3]),
+                                 color,
+                                 gp0_texture_coordinates(self.gp0_command[4])),
+            Vertex::new_textured(gp0_position(self.gp0_command[5]),
+                                 color,
+                                 gp0_texture_coordinates(self.gp0_command[6])),
+            Vertex::new_textured(gp0_position(self.gp0_command[7]),
+                                 color,
+                                 gp0_texture_coordinates(self.gp0_command[8])),
             ];
 
-        self.renderer.push_quad(&vertices);
+        renderer.push_quad(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
     }
 
     /// Draw an untextured shaded triangle
-    fn gp0_shaded_triangle(&mut self) {
+    fn gp0_shaded_triangle(&mut self, renderer: &mut Renderer) {
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       gp0_color(self.gp0_command[0])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[3]),
-                                       gp0_color(self.gp0_command[2])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[5]),
-                                       gp0_color(self.gp0_command[4])),
+            Vertex::new(gp0_position(self.gp0_command[1]),
+                        gp0_color(self.gp0_command[0])),
+            Vertex::new(gp0_position(self.gp0_command[3]),
+                        gp0_color(self.gp0_command[2])),
+            Vertex::new(gp0_position(self.gp0_command[5]),
+                        gp0_color(self.gp0_command[4])),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        renderer.push_triangle(self.gp0_attributes.primitive_attributes(),
+                               &vertices);
     }
 
     /// Draw an untextured shaded quad
-    fn gp0_shaded_quad(&mut self) {
+    fn gp0_shaded_quad(&mut self, renderer: &mut Renderer) {
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       gp0_color(self.gp0_command[0])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[3]),
-                                       gp0_color(self.gp0_command[2])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[5]),
-                                       gp0_color(self.gp0_command[4])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[7]),
-                                       gp0_color(self.gp0_command[6])),
+            Vertex::new(gp0_position(self.gp0_command[1]),
+                        gp0_color(self.gp0_command[0])),
+            Vertex::new(gp0_position(self.gp0_command[3]),
+                        gp0_color(self.gp0_command[2])),
+            Vertex::new(gp0_position(self.gp0_command[5]),
+                        gp0_color(self.gp0_command[4])),
+            Vertex::new(gp0_position(self.gp0_command[7]),
+                        gp0_color(self.gp0_command[6])),
             ];
 
-        self.renderer.push_quad(&vertices);
+        renderer.push_quad(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
     }
 
     /// Draw a shaded line
-    fn gp0_shaded_line(&mut self) {
+    fn gp0_shaded_line(&mut self, renderer: &mut Renderer) {
         let vertices = [
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[1]),
-                                       gp0_color(self.gp0_command[0])),
-            self.gp0_attributes.vertex(gp0_position(self.gp0_command[3]),
-                                       gp0_color(self.gp0_command[2])),
+            Vertex::new(gp0_position(self.gp0_command[1]),
+                        gp0_color(self.gp0_command[0])),
+            Vertex::new(gp0_position(self.gp0_command[3]),
+                        gp0_color(self.gp0_command[2])),
             ];
 
-        self.renderer.push_line(&vertices);
+        renderer.push_line(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
     }
 
     /// Draw a shaded polyline
-    fn gp0_shaded_polyline(&mut self) {
+    fn gp0_shaded_polyline(&mut self, renderer: &mut Renderer) {
         // Start with the first segment. We cannot have an
         // end-of-polyline marker in any of these vertice's color code
         // (if you put the marker in the 2nd vertex color word it's
@@ -958,11 +927,12 @@ impl Gpu {
         let end_pos = gp0_position(self.gp0_command[3]);
 
         let vertices = [
-            self.gp0_attributes.vertex(start_pos, start_color),
-            self.gp0_attributes.vertex(end_pos, end_color),
+            Vertex::new(start_pos, start_color),
+            Vertex::new(end_pos, end_color),
             ];
 
-        self.renderer.push_line(&vertices);
+        renderer.push_line(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
 
         // Store the end point to continue the polyline when we get
         // the next vertex
@@ -972,81 +942,76 @@ impl Gpu {
     }
 
     /// Draw a textured shaded triangle
-    fn gp0_textured_shaded_triangle(&mut self) {
+    fn gp0_textured_shaded_triangle(&mut self, renderer: &mut Renderer) {
 
         self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
         self.gp0_attributes.set_draw_params(self.gp0_command[5] >> 16);
 
         let vertices = [
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[1]),
-                gp0_color(self.gp0_command[0]),
-                gp0_texture_coordinates(self.gp0_command[2])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[4]),
-                gp0_color(self.gp0_command[3]),
-                gp0_texture_coordinates(self.gp0_command[5])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[7]),
-                gp0_color(self.gp0_command[6]),
-                gp0_texture_coordinates(self.gp0_command[8])),
+            Vertex::new_textured(gp0_position(self.gp0_command[1]),
+                                 gp0_color(self.gp0_command[0]),
+                                 gp0_texture_coordinates(self.gp0_command[2])),
+            Vertex::new_textured(gp0_position(self.gp0_command[4]),
+                                 gp0_color(self.gp0_command[3]),
+                                 gp0_texture_coordinates(self.gp0_command[5])),
+            Vertex::new_textured(gp0_position(self.gp0_command[7]),
+                                 gp0_color(self.gp0_command[6]),
+                                 gp0_texture_coordinates(self.gp0_command[8])),
             ];
 
-        self.renderer.push_triangle(&vertices);
+        renderer.push_triangle(self.gp0_attributes.primitive_attributes(),
+                               &vertices);
     }
 
     /// Draw a textured shaded quad
-    fn gp0_textured_shaded_quad(&mut self) {
+    fn gp0_textured_shaded_quad(&mut self, renderer: &mut Renderer) {
 
         self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
         self.gp0_attributes.set_draw_params(self.gp0_command[5] >> 16);
 
         let vertices = [
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[1]),
-                gp0_color(self.gp0_command[0]),
-                gp0_texture_coordinates(self.gp0_command[2])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[4]),
-                gp0_color(self.gp0_command[3]),
-                gp0_texture_coordinates(self.gp0_command[5])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[7]),
-                gp0_color(self.gp0_command[6]),
-                gp0_texture_coordinates(self.gp0_command[8])),
-            self.gp0_attributes.vertex_textured(
-                gp0_position(self.gp0_command[10]),
-                gp0_color(self.gp0_command[9]),
-                gp0_texture_coordinates(self.gp0_command[11])),
+            Vertex::new_textured(gp0_position(self.gp0_command[1]),
+                                 gp0_color(self.gp0_command[0]),
+                                 gp0_texture_coordinates(self.gp0_command[2])),
+            Vertex::new_textured(gp0_position(self.gp0_command[4]),
+                                 gp0_color(self.gp0_command[3]),
+                                 gp0_texture_coordinates(self.gp0_command[5])),
+            Vertex::new_textured(gp0_position(self.gp0_command[7]),
+                                 gp0_color(self.gp0_command[6]),
+                                 gp0_texture_coordinates(self.gp0_command[8])),
+            Vertex::new_textured(gp0_position(self.gp0_command[10]),
+                                 gp0_color(self.gp0_command[9]),
+                                 gp0_texture_coordinates(self.gp0_command[11])),
             ];
 
-        self.renderer.push_quad(&vertices);
+        renderer.push_quad(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
     }
 
 
-    fn gp0_rect_sized(&mut self, width: i16, height: i16) {
+    fn gp0_rect_sized(&mut self,
+                      renderer: &mut Renderer,
+                      width: i16,
+                      height: i16) {
 
         let top_left = gp0_position(self.gp0_command[1]);
         let color = gp0_color(self.gp0_command[0]);
 
         let vertices = [
-            self.gp0_attributes.vertex(top_left,
-                                       color),
-            self.gp0_attributes.vertex([top_left[0] + width,
-                                        top_left[1]],
-                                       color),
-            self.gp0_attributes.vertex([top_left[0],
-                                        top_left[1] + height],
-                                       color),
-            self.gp0_attributes.vertex([top_left[0] + width,
-                                        top_left[1] + height],
-                                       color),
+            Vertex::new(top_left, color),
+            Vertex::new([top_left[0] + width, top_left[1]], color),
+            Vertex::new([top_left[0], top_left[1] + height], color),
+            Vertex::new([top_left[0] + width, top_left[1] + height], color),
         ];
 
-        self.renderer.push_quad(&vertices);
+        renderer.push_quad(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
     }
 
-    fn gp0_rect_sized_textured(&mut self, width: i16, height: i16) {
+    fn gp0_rect_sized_textured(&mut self,
+                               renderer: &mut Renderer,
+                               width: i16,
+                               height: i16) {
 
         // Rectangles draw params are set with the "Draw Mode" command
         self.gp0_attributes.set_draw_params(self.draw_mode as u32);
@@ -1060,69 +1025,64 @@ impl Gpu {
         let color = gp0_color(self.gp0_command[0]);
 
         let vertices = [
-            self.gp0_attributes.vertex_textured(top_left,
-                                                color,
-                                                tex_top_left),
-            self.gp0_attributes.vertex_textured(
-                [top_left[0] + width,
-                 top_left[1]],
-                color,
-                [tex_top_left[0] + width as u16,
-                 tex_top_left[1]]),
-            self.gp0_attributes.vertex_textured(
-                [top_left[0],
-                 top_left[1] + height],
-                color,
-                [tex_top_left[0],
-                 tex_top_left[1] + height as u16]),
-            self.gp0_attributes.vertex_textured(
-                [top_left[0] + width,
-                 top_left[1] + height],
-                color,
-                [tex_top_left[0] + width as u16,
-                 tex_top_left[1] + height as u16]),
+            Vertex::new_textured(top_left,
+                                 color,
+                                 tex_top_left),
+            Vertex::new_textured([top_left[0] + width, top_left[1]],
+                                 color,
+                                 [tex_top_left[0] + width as u16,
+                                  tex_top_left[1]]),
+            Vertex::new_textured([top_left[0], top_left[1] + height],
+                                 color,
+                                 [tex_top_left[0],
+                                  tex_top_left[1] + height as u16]),
+            Vertex::new_textured([top_left[0] + width, top_left[1] + height],
+                                 color,
+                                 [tex_top_left[0] + width as u16,
+                                  tex_top_left[1] + height as u16]),
         ];
 
-        self.renderer.push_quad(&vertices);
+        renderer.push_quad(self.gp0_attributes.primitive_attributes(),
+                           &vertices);
     }
 
     /// Draw a textured rectangle
-    fn gp0_textured_rect(&mut self) {
+    fn gp0_textured_rect(&mut self, renderer: &mut Renderer) {
         let size = gp0_position(self.gp0_command[3]);
 
-        self.gp0_rect_sized_textured(size[0], size[1]);
+        self.gp0_rect_sized_textured(renderer, size[0], size[1]);
     }
 
     /// Draw a monochrome rectangle
-    fn gp0_monochrome_rect(&mut self) {
+    fn gp0_monochrome_rect(&mut self, renderer: &mut Renderer) {
         let size = gp0_position(self.gp0_command[2]);
 
-        self.gp0_rect_sized(size[0], size[1]);
+        self.gp0_rect_sized(renderer, size[0], size[1]);
     }
 
     /// Draw a 1x1 monochrome rectangle (point)
-    fn gp0_monochrome_rect_1x1(&mut self) {
-        self.gp0_rect_sized(1, 1);
+    fn gp0_monochrome_rect_1x1(&mut self, renderer: &mut Renderer) {
+        self.gp0_rect_sized(renderer, 1, 1);
     }
 
     /// Draw a 16x16 monochrome rectangle
-    fn gp0_monochrome_rect_16x16(&mut self) {
-        self.gp0_rect_sized(16, 16);
+    fn gp0_monochrome_rect_16x16(&mut self, renderer: &mut Renderer) {
+        self.gp0_rect_sized(renderer, 16, 16);
     }
 
 
     /// Draw a 8x8 textured rectangle
-    fn gp0_textured_rect_8x8(&mut self) {
-        self.gp0_rect_sized_textured(8, 8);
+    fn gp0_textured_rect_8x8(&mut self, renderer: &mut Renderer) {
+        self.gp0_rect_sized_textured(renderer, 8, 8);
     }
 
     /// Draw a 16x16 textured rectangle
-    fn gp0_textured_rect_16x16(&mut self) {
-        self.gp0_rect_sized_textured(16, 16);
+    fn gp0_textured_rect_16x16(&mut self, renderer: &mut Renderer) {
+        self.gp0_rect_sized_textured(renderer, 16, 16);
     }
 
     /// GP0(0xA0): Image Load
-    fn gp0_image_load(&mut self) {
+    fn gp0_image_load(&mut self, _: &mut Renderer) {
         // Parameter 1 contains the location of the target location's
         // top-left corner in VRAM
         let pos = self.gp0_command[1];
@@ -1148,35 +1108,50 @@ impl Gpu {
         self.gp0_words_remaining = imgsize / 2;
 
         if self.gp0_words_remaining > 0 {
-            self.load_buffer = LoadBuffer::new(x, y,
-                                               width as u16, height as u16);
+            self.load_buffer.reset(x, y, width as u16, height as u16);
 
             // Use a custom GP0 handler to handle the GP0 image load
             self.gp0_handler = Gpu::gp0_handle_image_load;
         } else {
-            println!("GPU: 0-sized image load");
+            warn!("GPU: 0-sized image load");
         }
 
     }
 
+    /// GP0 handler method: handle image load
+    fn gp0_handle_image_load(&mut self, renderer: &mut Renderer, word: u32) {
+        self.load_buffer.push_gp0_word(word);
+
+        self.gp0_words_remaining -= 1;
+
+        if self.gp0_words_remaining == 0 {
+            renderer.load_image(self.load_buffer.top_left(),
+                                self.load_buffer.resolution(),
+                                self.load_buffer.buffer());
+
+            // We're done, wait for the next command
+            self.gp0_handler = Gpu::gp0_handle_command;
+        }
+    }
+
     /// GP0(0xC0): Image Store
-    fn gp0_image_store(&mut self) {
+    fn gp0_image_store(&mut self, _: &mut Renderer) {
         // Parameter 2 contains the image resolution
         let res = self.gp0_command[2];
 
         let width  = res & 0xffff;
         let height = res >> 16;
 
-        println!("Unhandled image store: {}x{}", width, height);
+        warn!("Unhandled image store: {}x{}", width, height);
     }
 
     /// GP0(0xE1): Draw Mode
-    fn gp0_draw_mode(&mut self) {
+    fn gp0_draw_mode(&mut self, _: &mut Renderer) {
         self.draw_mode = self.gp0_command[0] as u16;
     }
 
     /// GP0(0xE2): Set Texture Window
-    fn gp0_texture_window(&mut self) {
+    fn gp0_texture_window(&mut self, _: &mut Renderer) {
         let val = self.gp0_command[0];
 
         self.texture_window_x_mask = (val & 0x1f) as u8;
@@ -1186,35 +1161,35 @@ impl Gpu {
     }
 
     /// GP0(0xE3): Set Drawing Area top left
-    fn gp0_drawing_area_top_left(&mut self) {
+    fn gp0_drawing_area_top_left(&mut self, renderer: &mut Renderer) {
         let val = self.gp0_command[0];
 
         self.drawing_area_top = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_left = (val & 0x3ff) as u16;
 
-        self.update_drawing_area();
+        self.update_draw_area(renderer);
     }
 
     /// GP0(0xE4): Set Drawing Area bottom right
-    fn gp0_drawing_area_bottom_right(&mut self) {
+    fn gp0_drawing_area_bottom_right(&mut self, renderer: &mut Renderer) {
         let val = self.gp0_command[0];
 
         self.drawing_area_bottom = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_right = (val & 0x3ff) as u16;
 
-        self.update_drawing_area();
+        self.update_draw_area(renderer);
     }
 
     // Called when the drawing area changes to notify the renderer
-    fn update_drawing_area(&mut self) {
-        self.renderer.set_drawing_area(self.drawing_area_left,
-                                       self.drawing_area_top,
-                                       self.drawing_area_right,
-                                       self.drawing_area_bottom);
+    fn update_draw_area(&mut self, renderer: &mut Renderer) {
+        renderer.set_draw_area((self.drawing_area_left,
+                                self.drawing_area_top),
+                               (self.drawing_area_right,
+                                self.drawing_area_bottom));
     }
 
     /// GP0(0xE5): Set Drawing Offset
-    fn gp0_drawing_offset(&mut self) {
+    fn gp0_drawing_offset(&mut self, renderer: &mut Renderer) {
         let val = self.gp0_command[0];
 
         let x = (val & 0x7ff) as u16;
@@ -1226,11 +1201,11 @@ impl Gpu {
         let y = ((y << 5) as i16) >> 5;
 
         self.drawing_offset = (x, y);
-        self.renderer.set_draw_offset(x, y);
+        renderer.set_draw_offset(x, y);
     }
 
     /// GP0(0xE6): Set Mask Bit Setting
-    fn gp0_mask_bit_setting(&mut self) {
+    fn gp0_mask_bit_setting(&mut self, _: &mut Renderer) {
         let val = self.gp0_command[0];
 
         self.force_set_mask_bit = (val & 1) != 0;
@@ -1239,16 +1214,19 @@ impl Gpu {
 
     /// Handle writes to the GP1 command register
     pub fn gp1(&mut self,
+               shared: &mut SharedState,
+               renderer: &mut Renderer,
                val: u32,
-               tk: &mut TimeKeeper,
-               timers: &mut Timers,
-               irq_state: &mut InterruptState) {
+               timers: &mut Timers) {
+
         let opcode = (val >> 24) & 0xff;
 
         match opcode {
             0x00 => {
-                self.gp1_reset(tk, irq_state);
-                timers.video_timings_changed(tk, irq_state, self);
+                self.gp1_reset(shared);
+
+                timers.video_timings_changed(shared, self);
+                self.update_display_mode(renderer);
             },
             0x01 => self.gp1_reset_command_buffer(),
             0x02 => self.gp1_acknowledge_irq(),
@@ -1256,20 +1234,30 @@ impl Gpu {
             0x04 => self.gp1_dma_direction(val),
             0x05 => self.gp1_display_vram_start(val),
             0x06 => self.gp1_display_horizontal_range(val),
-            0x07 => self.gp1_display_vertical_range(val, tk, irq_state),
+            0x07 => self.gp1_display_vertical_range(shared,val),
             0x10 => self.gp1_get_info(val),
             0x08 => {
-                self.gp1_display_mode(val, tk, irq_state);
-                timers.video_timings_changed(tk, irq_state, self);
+                self.gp1_display_mode(shared, val);
+                timers.video_timings_changed(shared, self);
+                self.update_display_mode(renderer);
             }
             _    => panic!("Unhandled GP1 command {:08x}", val),
         }
     }
 
+    fn update_display_mode(&self, renderer: &mut Renderer) {
+        let top_left = (self.display_vram_x_start, self.display_vram_y_start);
+        let resolution = (self.hres.width(), self.vres.height());
+
+        let depth_24bpp = self.display_depth == DisplayDepth::D24Bits;
+
+        renderer.set_display_mode(top_left, resolution, depth_24bpp);
+    }
+
     /// GP1(0x00): Soft Reset
     fn gp1_reset(&mut self,
-                 tk: &mut TimeKeeper,
-                 irq_state: &mut InterruptState) {
+                 shared: &mut SharedState) {
+
         self.draw_mode = 0;
         self.texture_window_x_mask = 0;
         self.texture_window_y_mask = 0;
@@ -1304,12 +1292,12 @@ impl Gpu {
         self.display_line = 0;
         self.display_line_tick = 0;
 
-        self.renderer.set_draw_offset(0, 0);
+        //self.renderer.set_draw_offset(0, 0);
 
         self.gp1_reset_command_buffer();
         self.gp1_acknowledge_irq();
 
-        self.sync(tk, irq_state);
+        self.sync(shared);
 
         // XXX should also invalidate GPU cache if we ever implement it
     }
@@ -1358,13 +1346,13 @@ impl Gpu {
 
     /// GP1(0x07): Display Vertical Range
     fn gp1_display_vertical_range(&mut self,
-                                  val: u32,
-                                  tk: &mut TimeKeeper,
-                                  irq_state: &mut InterruptState) {
+                                  shared: &mut SharedState,
+                                  val: u32) {
+
         self.display_line_start = (val & 0x3ff) as u16;
         self.display_line_end   = ((val >> 10) & 0x3ff) as u16;
 
-        self.sync(tk, irq_state);
+        self.sync(shared);
     }
 
     /// Return various GPU state information in the GPUREAD register
@@ -1403,9 +1391,8 @@ impl Gpu {
 
     /// GP1(0x08): Display Mode
     fn gp1_display_mode(&mut self,
-                        val: u32,
-                        tk: &mut TimeKeeper,
-                        irq_state: &mut InterruptState) {
+                        shared: &mut SharedState,
+                        val: u32) {
         let hr1 = (val & 3) as u8;
         let hr2 = ((val >> 6) & 1) as u8;
 
@@ -1437,19 +1424,8 @@ impl Gpu {
             panic!("Unsupported display mode {:08x}", val);
         }
 
-        self.sync(tk, irq_state);
+        self.sync(shared);
     }
-}
-
-/// Depth of the pixel values in a texture page
-#[derive(Clone,Copy)]
-pub enum TextureDepth {
-    /// 4 bits per pixel, paletted
-    T4Bpp = 0,
-    /// 8 bits per pixel, paletted
-    T8Bpp = 1,
-    /// 16 bits per pixel, truecolor
-    T16Bpp = 2,
 }
 
 /// Interlaced output splits each frame in two fields
@@ -1565,7 +1541,7 @@ enum VMode {
 }
 
 /// Display area color depth
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy, PartialEq, Eq)]
 enum DisplayDepth {
     /// 15 bits per pixel
     D15Bits = 0,
@@ -1629,36 +1605,36 @@ impl ::std::ops::Index<usize> for CommandBuffer {
 /// `parser_callback`
 struct Gp0Attributes {
     /// Method called when all the parameters have been received.
-    callback: fn(&mut Gpu),
-    /// XXX implement me
-    #[allow(dead_code)]
-    semi_transparent: bool,
-    blend_mode: BlendMode,
-    texture_page: [u16; 2],
-    semi_transparency_mode: SemiTransparencyMode,
-    clut: [u16; 2],
-    texture_depth: TextureDepth,
-    dither: bool,
+    callback: fn(&mut Gpu, &mut Renderer),
+    /// If the command draws a primitive this will contain its
+    /// attributes. Otherwise it should be ignored.
+    primitive_attributes: PrimitiveAttributes,
 }
 
 impl Gp0Attributes {
     /// Builder for GP0 commands that just need a parser and ignore
     /// the other attributes.
-    fn new(callback: fn(&mut Gpu),
+    fn new(callback: fn(&mut Gpu, &mut Renderer),
            semi_transparent: bool,
            blend_mode: BlendMode,
            dither: bool) -> Gp0Attributes {
 
         Gp0Attributes {
             callback: callback,
-            semi_transparent: semi_transparent,
-            blend_mode: blend_mode,
-            texture_page: [0; 2],
-            semi_transparency_mode: SemiTransparencyMode::Average,
-            clut: [0; 2],
-            texture_depth: TextureDepth::T4Bpp,
-            dither: dither,
+            primitive_attributes: PrimitiveAttributes {
+                semi_transparent: semi_transparent,
+                semi_transparency_mode: SemiTransparencyMode::Average,
+                blend_mode: blend_mode,
+                texture_page: [0; 2],
+                texture_depth: TextureDepth::T4Bpp,
+                clut: [0, 0],
+                dither: dither,
+            }
         }
+    }
+
+    fn primitive_attributes(&self) -> &PrimitiveAttributes {
+        &self.primitive_attributes
     }
 
     /// Load the clut coordinates from a GP0 word
@@ -1666,7 +1642,7 @@ impl Gp0Attributes {
         let x = (clut & 0x3f) << 4;
         let y = (clut >> 6) & 0x1ff;
 
-        self.clut = [x as u16, y as u16];
+        self.primitive_attributes.clut = [x as u16, y as u16];
     }
 
     fn set_draw_params(&mut self, params: u32) {
@@ -1676,9 +1652,11 @@ impl Gp0Attributes {
         // Y coord is either 0 or 256
         let y = ((params >> 4) & 1) << 8;
 
-        self.texture_page = [x as u16, y as u16];
+        let mut attrs = &mut self.primitive_attributes;
 
-        self.semi_transparency_mode =
+        attrs.texture_page = [x as u16, y as u16];
+
+        attrs.semi_transparency_mode =
             match (params >> 5) & 3 {
                 0 => SemiTransparencyMode::Average,
                 1 => SemiTransparencyMode::Add,
@@ -1687,7 +1665,7 @@ impl Gp0Attributes {
                 _ => unreachable!(),
             };
 
-        self.texture_depth =
+        attrs.texture_depth =
             match (params >> 7) & 3 {
                 0 => TextureDepth::T4Bpp,
                 1 => TextureDepth::T8Bpp,
@@ -1695,67 +1673,14 @@ impl Gp0Attributes {
                 // Not sure what this does, No$ says it's
                 // "reserved". More testing required...
                 _ => {
-                    println!("Invalid texture depth");
+                    warn!("Invalid texture depth");
                     TextureDepth::T16Bpp
                 }
             };
     }
-
-    /// Build a vertex using the current attributes. Used for textured
-    /// primitives.
-    fn vertex_textured(&self,
-                       position: [i16; 2],
-                       color: [u8; 3],
-                       texture_coord: [u16; 2]) -> CommandVertex {
-
-        CommandVertex::new(position,
-                           color,
-                           self.blend_mode,
-                           self.texture_page,
-                           texture_coord,
-                           self.clut,
-                           self.texture_depth,
-                           self.dither)
-    }
-
-    /// Build a vertex using the current attributes. Used for untextured primitives
-    fn vertex(&self, position: [i16; 2], color: [u8; 3]) -> CommandVertex {
-        CommandVertex::new(position,
-                           color,
-                           BlendMode::None,
-                           // No texture so the next parameters don't
-                           // matter, use dummy values
-                           [0; 2],
-                           [0; 2],
-                           [0; 2],
-                           TextureDepth::T4Bpp,
-                           self.dither)
-    }
 }
 
-/// Primitive texturing methods
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum BlendMode {
-    /// No texture, used
-    None,
-    /// Raw texture
-    Raw,
-    /// Texture bledend with the monochrome/shading color
-    Blended,
-}
 
-/// Semi-transparency modes supported by the PlayStation GPU
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum SemiTransparencyMode {
-    /// Source / 2 + destination / 2
-    Average = 0,
-    /// Source + destination
-    Add = 1,
-    /// Destination - source
-    SubstractSource = 2,
-    /// Destination + source / 4
-    AddQuarterSource = 3,
-}
 
 /// Parse a position as written in the GP0 register and return it as
 /// an array of two `i16`
@@ -1787,13 +1712,80 @@ fn gp0_texture_coordinates(gp0: u32) -> [u16; 2] {
 }
 
 /// Return true if the word is a polyline end maker. Most games use
-/// `0x55555555` but the GPU only tests for `0x5XXX5XXX` (so
-/// `0x51235abc` would be a valid marker for instance).
+/// `0x55555555` but the GPU looks for `0x5XXX5XXX` (so `0x51235abc`
+/// would be a valid marker for instance).
 fn is_polyline_end_marker(val: u32) -> bool {
     val & 0xf000f000 == 0x50005000
 }
 
+/// Buffer holding a portion of the VRAM while it's being transfered
+struct ImageBuffer {
+    /// Coordinates of the top-left corner in VRAM
+    top_left: (u16, u16),
+    /// Resolution of the rectangle
+    resolution: (u16, u16),
+    /// Current write position in the buffer
+    index: u32,
+    /// Pixel buffer. The maximum size is the entire VRAM resolution.
+    buffer: Box<[u16; 1024 * 512]>,
+}
+
+impl ImageBuffer {
+    fn new() -> ImageBuffer {
+        ImageBuffer {
+            top_left: (0, 0),
+            resolution: (0, 0),
+            index: 0,
+            buffer: Box::new([0; 1024 * 512]),
+        }
+    }
+
+    fn top_left(&self) -> (u16, u16) {
+        self.top_left
+    }
+
+    fn resolution(&self) -> (u16, u16) {
+        self.resolution
+    }
+
+
+    fn buffer(&self) -> &[u16] {
+        // I don't use `index` because it can potentially point one
+        // past the end of the buffer if the image has an odd number
+        // of pixels.
+        let len = self.resolution.0 as usize * self.resolution.1 as usize;
+
+        &self.buffer[0..len]
+    }
+
+    fn reset(&mut self, x: u16, y: u16, width: u16, height: u16) {
+        self.top_left = (x, y);
+        self.resolution = (width, height);
+        self.index = 0;
+    }
+
+    fn push_gp0_word(&mut self, word: u32) {
+        // No bound checks: I trust the caller not to send more
+        // pixels than fits the buffer. I already have a state
+        // machine with `gp0_words_remaining` in `Gpu`, I don't want
+        // to duplicate it here.
+        self.buffer[self.index as usize] = word as u16;
+        self.index += 1;
+        self.buffer[self.index as usize] = (word >> 16) as u16;
+        self.index += 1;
+    }
+}
+
+
 // Width of the VRAM in 16bit pixels
-const VRAM_WIDTH_PIXELS: u16 = 1024;
+pub const VRAM_WIDTH_PIXELS: u16 = 1024;
 // Height of the VRAM in lines
-const VRAM_HEIGHT: u16 = 512;
+pub const VRAM_HEIGHT: u16 = 512;
+
+/// The are a few hardware differences between PAL and NTSC consoles,
+/// in particular the pixelclock runs slightly slower on PAL consoles.
+#[derive(Clone,Copy)]
+pub enum VideoClock {
+    Ntsc,
+    Pal,
+}

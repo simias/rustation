@@ -1,6 +1,7 @@
 [package]
 
 name = "rustation"
+# Exported as VERSION and VERSION_CSTR in the library
 version = "0.0.1"
 authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
 
@@ -14,6 +15,9 @@ keywords = ["emulator", "playstation"]
 
 [dependencies]
 
-glium = "0.10.0"
-glium_sdl2 = "0.8.0"
-sdl2 = "0.9.1"
+shaman = "0.1.0"
+log = "0.3.4"
+
+[lib]
+name = "rustation"
+crate-type = ["rlib"]

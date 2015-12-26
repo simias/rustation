@@ -1,4 +1,4 @@
-use memory::interrupts::InterruptState;
+use interrupt::InterruptState;
 
 /// Coprocessor 0: System control
 pub struct Cop0 {

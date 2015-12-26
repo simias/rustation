@@ -626,8 +626,8 @@ impl Gte {
 
                 self.lzcr = tmp.leading_zeros() as u8;
             }
-            31 => println!("Write to read-only GTE data register 31"),
-            _  => panic!("Unhandled GTE data register {} {:x}", reg, val),
+            31 => warn!("Write to read-only GTE data register 31"),
+            _  => unreachable!(),
         }
     }
 

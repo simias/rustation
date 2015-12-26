@@ -34,7 +34,7 @@ impl Debugger {
                 Err(e) => panic!("Couldn't bind GDB server TCP socket: {}", e),
             };
 
-        println!("Waiting for debugger on {}", bind_to);
+        info!("Waiting for debugger on {}", bind_to);
 
         Debugger {
             listener: listener,
@@ -141,7 +141,7 @@ impl Debugger {
         // executes a `load32 at` address 0, should we break? Also,
         // should we mask the region?
         if self.read_watchpoints.contains(&addr) {
-            println!("Read watchpoint triggered at 0x{:08x}", addr);
+            info!("Read watchpoint triggered at 0x{:08x}", addr);
             self.debug(cpu);
         }
     }
@@ -165,7 +165,7 @@ impl Debugger {
     pub fn memory_write(&mut self, cpu: &mut Cpu, addr: u32) {
         // XXX: same remark as memory_read for unaligned stores
         if self.write_watchpoints.contains(&addr) {
-            println!("Write watchpoint triggered at 0x{:08x}", addr);
+            info!("Write watchpoint triggered at 0x{:08x}", addr);
             self.debug(cpu);
         }
     }

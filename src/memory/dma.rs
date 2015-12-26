@@ -1,4 +1,5 @@
-use memory::interrupts::{Interrupt, InterruptState};
+use shared::SharedState;
+use interrupt::Interrupt;
 
 /// Direct Memory Access
 pub struct Dma {
@@ -68,8 +69,8 @@ impl Dma {
 
     /// Set the value of the interrupt register
     pub fn set_interrupt(&mut self,
-                         val: u32,
-                         irq_state: &mut InterruptState) {
+                         shared: &mut SharedState,
+                         val: u32) {
         let prev_irq = self.irq();
 
         // Unknown what bits [5:0] do
@@ -89,7 +90,7 @@ impl Dma {
 
         if !prev_irq && self.irq() {
             // Rising edge of the done interrupt
-            irq_state.assert(Interrupt::Dma);
+            shared.irq_state().assert(Interrupt::Dma);
         }
     }
 
@@ -104,8 +105,9 @@ impl Dma {
     }
 
     pub fn done(&mut self,
-                port: Port,
-                irq_state: &mut InterruptState) {
+                shared: &mut SharedState,
+                port: Port) {
+
         self.channel_mut(port).done();
 
         let prev_irq = self.irq();
@@ -117,7 +119,7 @@ impl Dma {
 
         if !prev_irq && self.irq() {
             // Rising edge of the done interrupt
-            irq_state.assert(Interrupt::Dma);
+            shared.irq_state().assert(Interrupt::Dma);
         }
     }
 }

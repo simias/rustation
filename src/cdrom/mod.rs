@@ -1,6 +1,7 @@
 use memory::Addressable;
-use timekeeper::{TimeKeeper, Peripheral, Cycles};
-use memory::interrupts::{Interrupt, InterruptState};
+use timekeeper::{Peripheral, Cycles};
+use interrupt::Interrupt;
+use shared::SharedState;
 
 use self::disc::{Disc, Region, XaSector};
 use self::disc::msf::Msf;
@@ -118,10 +119,9 @@ impl CdRom {
     }
 
     pub fn load<T: Addressable>(&mut self,
-                                tk: &mut TimeKeeper,
-                                irq_state: &mut InterruptState,
+                                shared: &mut SharedState,
                                 offset: u32) -> u32 {
-        self.sync(tk, irq_state);
+        self.sync(shared);
 
         if T::size() != 1 {
             panic!("Unhandled CDROM load ({})", T::size());
@@ -140,7 +140,7 @@ impl CdRom {
                 0 => self.status(),
                 1 => {
                     if self.response.empty() {
-                        println!("CDROM response FIFO underflow");
+                        warn!("CDROM response FIFO underflow");
                     }
 
                     self.response.pop()
@@ -160,12 +160,11 @@ impl CdRom {
     }
 
     pub fn store<T: Addressable>(&mut self,
-                                 tk: &mut TimeKeeper,
-                                 irq_state: &mut InterruptState,
+                                 shared: &mut SharedState,
                                  offset: u32,
                                  val: u32) {
 
-        self.sync(tk, irq_state);
+        self.sync(shared);
 
         if T::size() != 1 {
             panic!("Unhandled CDROM store ({})", T::size());
@@ -187,7 +186,7 @@ impl CdRom {
             0 => self.set_index(val),
             1 =>
                 match index {
-                    0 => self.command(tk, val),
+                    0 => self.command(shared, val),
                     3 => self.mixer.cd_right_to_spu_right = val,
                     _ => unimplemented(),
                 },
@@ -214,25 +213,24 @@ impl CdRom {
                         }
                     }
                     2 => self.mixer.cd_left_to_spu_right = val,
-                    3 => println!("CDROM Mixer apply {:02x}", val),
+                    3 => debug!("CDROM Mixer apply {:02x}", val),
                     _ => unimplemented(),
                 },
             _ => unimplemented(),
         }
 
-        self.check_async_event(irq_state);
+        self.check_async_event(shared);
     }
 
-    pub fn sync(&mut self,
-                tk: &mut TimeKeeper,
-                irq_state: &mut InterruptState) {
-        let delta = tk.sync(Peripheral::CdRom);
+    pub fn sync(&mut self, shared: &mut SharedState) {
+
+        let delta = shared.tk().sync(Peripheral::CdRom);
 
         // Command processing is stalled if an interrupt is active
         // XXX mednafen's code also adds a delay *after* the interrupt
         // is acknowledged before the processing restarts
         if self.irq_flags == 0 {
-            self.sync_commands(tk, irq_state, delta);
+            self.sync_commands(shared, delta);
         }
 
         // See if have a read pending
@@ -242,10 +240,12 @@ impl CdRom {
                     // Not yet there
                     delay - delta as u32
                 } else {
-                    println!("[{}] CDROM read sector {}", tk, self.position);
+                    debug!("[{}] CDROM read sector {}",
+                           shared.tk(),
+                           self.position);
 
                     // A sector has been read from the disc
-                    self.sector_read(irq_state);
+                    self.sector_read(shared);
 
                     // Prepare for the next one
                     self.cycles_per_sector()
@@ -253,21 +253,20 @@ impl CdRom {
 
             self.read_state = ReadState::Reading(next_sync);
 
-            tk.set_next_sync_delta_if_closer(Peripheral::CdRom,
-                                             next_sync as Cycles);
+            shared.tk().set_next_sync_delta_if_sooner(Peripheral::CdRom,
+                                                      next_sync as Cycles);
         }
     }
 
     /// Synchronize the command processing state machine
     fn sync_commands(&mut self,
-                     tk: &mut TimeKeeper,
-                     irq_state: &mut InterruptState,
+                     shared: &mut SharedState,
                      delta: Cycles) {
 
         let new_command_state =
             match self.command_state {
                 CommandState::Idle => {
-                    tk.no_sync_needed(Peripheral::CdRom);
+                    shared.tk().no_sync_needed(Peripheral::CdRom);
 
                     CommandState::Idle
                 }
@@ -282,8 +281,8 @@ impl CdRom {
                         let rx_delay = rx_delay - delta;
                         let irq_delay = irq_delay - delta;
 
-                        tk.set_next_sync_delta(Peripheral::CdRom,
-                                               rx_delay as Cycles);
+                        shared.tk().set_next_sync_delta(Peripheral::CdRom,
+                                                        rx_delay as Cycles);
 
                         CommandState::RxPending(rx_delay,
                                                 irq_delay,
@@ -297,15 +296,15 @@ impl CdRom {
                             // Schedule the interrupt
                             let irq_delay = irq_delay - delta as u32;
 
-                            tk.set_next_sync_delta(Peripheral::CdRom,
-                                                   irq_delay as Cycles);
+                            shared.tk().set_next_sync_delta(Peripheral::CdRom,
+                                                            irq_delay as Cycles);
 
                             CommandState::IrqPending(irq_delay, irq_code)
                         } else {
                             // IRQ reached
-                            self.trigger_irq(irq_state, irq_code);
+                            self.trigger_irq(shared, irq_code);
 
-                            tk.no_sync_needed(Peripheral::CdRom);
+                            shared.tk().no_sync_needed(Peripheral::CdRom);
 
                             CommandState::Idle
                         }
@@ -316,15 +315,15 @@ impl CdRom {
                         // Not reached the interrupt yet
                         let irq_delay = irq_delay - delta as u32;
 
-                        tk.set_next_sync_delta(Peripheral::CdRom,
-                                               irq_delay as Cycles);
+                        shared.tk().set_next_sync_delta(Peripheral::CdRom,
+                                                        irq_delay as Cycles);
 
                         CommandState::IrqPending(irq_delay, irq_code)
                     } else {
                         // IRQ reached
-                        self.trigger_irq(irq_state, irq_code);
+                        self.trigger_irq(shared, irq_code);
 
-                        tk.no_sync_needed(Peripheral::CdRom);
+                        shared.tk().no_sync_needed(Peripheral::CdRom);
 
                         CommandState::Idle
                     }
@@ -385,7 +384,7 @@ impl CdRom {
     }
 
     /// Called when a new sector has been read.
-    fn sector_read(&mut self, irq_state: &mut InterruptState) {
+    fn sector_read(&mut self, shared: &mut SharedState) {
         if self.pending_async_event.is_some() {
             // XXX I think it should replace the current pending event
             panic!("Sector read while an async event is pending");
@@ -415,20 +414,20 @@ impl CdRom {
             Some((IrqCode::SectorReady,
                   Fifo::from_bytes(&[self.drive_status()])));
 
-        self.check_async_event(irq_state);
+        self.check_async_event(shared);
 
         // Move on to the next segment.
         // XXX what happens when we're at the last one?
         self.position = self.position.next();
     }
 
-    fn check_async_event(&mut self,
-                         irq_state: &mut InterruptState) {
+    fn check_async_event(&mut self, shared: &mut SharedState) {
+
         if let Some((code, response)) = self.pending_async_event {
             if self.irq_flags == 0 {
                 // Trigger async interrupt
                 self.response = response;
-                self.trigger_irq(irq_state, code);
+                self.trigger_irq(shared, code);
 
                 self.pending_async_event = None;
             }
@@ -461,7 +460,7 @@ impl CdRom {
         self.irq_flags & self.irq_mask != 0
     }
 
-    fn trigger_irq(&mut self, irq_state: &mut InterruptState, irq: IrqCode) {
+    fn trigger_irq(&mut self, shared: &mut SharedState, irq: IrqCode) {
         if self.irq_flags != 0 {
             // XXX No$ says that the interrupts are stacked, i.e. the
             // next interrupt will only become active once the
@@ -476,7 +475,7 @@ impl CdRom {
 
         if !prev_irq && self.irq() {
             // Interrupt rising edge
-            irq_state.assert(Interrupt::CdRom);
+            shared.irq_state().assert(Interrupt::CdRom);
         }
     }
 
@@ -542,7 +541,7 @@ impl CdRom {
 
     fn push_param(&mut self, param: u8) {
         if self.params.full() {
-            println!("CDROM parameter FIFO overflow");
+            warn!("CDROM parameter FIFO overflow");
         }
 
         self.params.push(param);
@@ -559,7 +558,7 @@ impl CdRom {
     }
 
     fn command(&mut self,
-               tk: &mut TimeKeeper,
+               shared: &mut SharedState,
                cmd: u8) {
         if !self.command_state.is_idle() {
             panic!("CDROM command while controller is busy");
@@ -601,8 +600,8 @@ impl CdRom {
             // Schedule the interrupt if needed
             if let CommandState::RxPending(_, irq_delay, _, _)
                 = self.command_state {
-                tk.set_next_sync_delta(Peripheral::CdRom,
-                                       irq_delay as Cycles);
+                shared.tk().set_next_sync_delta(Peripheral::CdRom,
+                                                irq_delay as Cycles);
             }
         } else {
             // Schedule the command to be executed once the current
@@ -611,8 +610,8 @@ impl CdRom {
         }
 
         if let ReadState::Reading(delay) = self.read_state {
-            tk.set_next_sync_delta_if_closer(Peripheral::CdRom,
-                                             delay as Cycles);
+            shared.tk().set_next_sync_delta_if_sooner(Peripheral::CdRom,
+                                                      delay as Cycles);
         }
 
         // It seems that the parameters get cleared in all cases (even
@@ -743,7 +742,7 @@ impl CdRom {
     /// disc
     fn cmd_pause(&mut self) -> CommandState {
         if self.read_state.is_idle() {
-            println!("Pause when we're not reading");
+            warn!("Pause when we're not reading");
         }
 
         self.on_ack = CdRom::ack_pause;

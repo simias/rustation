@@ -1,7 +1,8 @@
-use timekeeper::{TimeKeeper, Cycles, FracCycles, Peripheral};
+use timekeeper::{Cycles, FracCycles, Peripheral};
 use gpu::Gpu;
 use super::Addressable;
-use super::interrupts::{InterruptState, Interrupt};
+use interrupt::Interrupt;
+use shared::SharedState;
 
 #[derive(Debug)]
 pub struct Timers {
@@ -27,8 +28,7 @@ impl Timers {
     }
 
     pub fn store<T: Addressable>(&mut self,
-                                 tk: &mut TimeKeeper,
-                                 irq_state: &mut InterruptState,
+                                 shared: &mut SharedState,
                                  gpu: &mut Gpu,
                                  offset: u32,
                                  val: u32) {
@@ -43,7 +43,7 @@ impl Timers {
 
         let timer = &mut self.timers[instance as usize];
 
-        timer.sync(tk, irq_state);
+        timer.sync(shared);
 
         match offset & 0xf {
             0 => timer.set_counter(val),
@@ -53,15 +53,14 @@ impl Timers {
         }
 
         if timer.needs_gpu() {
-            gpu.sync(tk, irq_state);
+            gpu.sync(shared);
         }
 
-        timer.reconfigure(gpu, tk);
+        timer.reconfigure(shared, gpu);
     }
 
     pub fn load<T: Addressable>(&mut self,
-                                tk: &mut TimeKeeper,
-                                irq_state: &mut InterruptState,
+                                shared: &mut SharedState,
                                 offset: u32) -> u32 {
 
         if T::size() == 1 {
@@ -72,7 +71,7 @@ impl Timers {
 
         let timer = &mut self.timers[instance as usize];
 
-        timer.sync(tk, irq_state);
+        timer.sync(shared);
 
         let val = match offset & 0xf {
             0 => timer.counter(),
@@ -87,31 +86,29 @@ impl Timers {
     /// Called by the GPU when the video timings change since it can
     /// affect the timers that use them.
     pub fn video_timings_changed(&mut self,
-                                 tk: &mut TimeKeeper,
-                                 irq_state: &mut InterruptState,
+                                 shared: &mut SharedState,
                                  gpu: &Gpu) {
 
         for t in &mut self.timers {
             if t.needs_gpu() {
-                t.sync(tk, irq_state);
-                t.reconfigure(gpu, tk);
+                t.sync(shared);
+                t.reconfigure(shared, gpu);
             }
         }
     }
 
-    pub fn sync(&mut self,
-                tk: &mut TimeKeeper,
-                irq_state: &mut InterruptState) {
-        if tk.needs_sync(Peripheral::Timer0) {
-            self.timers[0].sync(tk, irq_state);
+    pub fn sync(&mut self, shared: &mut SharedState) {
+
+        if shared.tk().needs_sync(Peripheral::Timer0) {
+            self.timers[0].sync(shared);
         }
 
-        if tk.needs_sync(Peripheral::Timer1) {
-            self.timers[1].sync(tk, irq_state);
+        if shared.tk().needs_sync(Peripheral::Timer1) {
+            self.timers[1].sync(shared);
         }
 
-        if tk.needs_sync(Peripheral::Timer2) {
-            self.timers[2].sync(tk, irq_state);
+        if shared.tk().needs_sync(Peripheral::Timer2) {
+            self.timers[2].sync(shared);
         }
     }
 }
@@ -189,7 +186,7 @@ impl Timer {
     ///
     /// If the GPU is needed for the timings it must be synchronized
     /// before this function is called.
-    fn reconfigure(&mut self, gpu: &Gpu, tk: &mut TimeKeeper) {
+    fn reconfigure(&mut self, shared: &mut SharedState, gpu: &Gpu) {
 
         match self.clock_source.clock(self.instance) {
             Clock::SysClock => {
@@ -212,14 +209,14 @@ impl Timer {
             }
         }
 
-        self.predict_next_sync(tk);
+        self.predict_next_sync(shared);
     }
 
     /// Synchronize this timer.
     fn sync(&mut self,
-            tk: &mut TimeKeeper,
-            irq_state: &mut InterruptState) {
-        let delta = tk.sync(self.instance);
+            shared: &mut SharedState) {
+
+        let delta = shared.tk().sync(self.instance);
 
         if delta == 0 {
             // The interrupt code below might glitch if it's called
@@ -292,7 +289,7 @@ impl Timer {
                 panic!("Unhandled negate IRQ!");
             } else {
                 // Pulse interrupt
-                irq_state.assert(interrupt);
+                shared.irq_state().assert(interrupt);
                 self.interrupt = true;
             }
         } else if !self.negate_irq {
@@ -300,15 +297,15 @@ impl Timer {
             self.interrupt = false;
         }
 
-        self.predict_next_sync(tk)
+        self.predict_next_sync(shared)
     }
 
-    fn predict_next_sync(&mut self, tk: &mut TimeKeeper) {
+    fn predict_next_sync(&mut self, shared: &mut SharedState) {
         // XXX add support for wrap IRQ
 
         if !self.target_irq {
             // No IRQ enabled, we don't need to be called back.
-            tk.no_sync_needed(self.instance);
+            shared.tk().no_sync_needed(self.instance);
             return;
         }
 
@@ -328,14 +325,14 @@ impl Timer {
         // Round up to the next CPU cycle
         let delta = FracCycles::from_fp(delta).ceil();
 
-        tk.set_next_sync_delta(self.instance, delta);
+        shared.tk().set_next_sync_delta(self.instance, delta);
     }
 
     /// Return true if the timer relies on the GPU for the clock
     /// source or synchronization
     pub fn needs_gpu(&self) -> bool {
         if self.use_sync {
-            println!("Sync mode not supported!");
+            warn!("Sync mode not supported!");
         }
 
         self.clock_source.clock(self.instance).needs_gpu()
@@ -394,7 +391,7 @@ impl Timer {
         }
 
         if self.use_sync {
-            println!("Sync mode is not supported: {:?}", self);
+            warn!("Sync mode is not supported: {:?}", self);
         }
     }
 

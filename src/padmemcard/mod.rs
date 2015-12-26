@@ -1,8 +1,10 @@
 //! Gamepad and memory card controller emulation
 
 use memory::Addressable;
-use memory::interrupts::{Interrupt, InterruptState};
-use timekeeper::{TimeKeeper, Peripheral, Cycles};
+use interrupt::Interrupt;
+use timekeeper::{Peripheral, Cycles};
+use shared::SharedState;
+
 use self::gamepad::GamePad;
 
 pub mod gamepad;
@@ -78,11 +80,10 @@ impl PadMemCard {
     }
 
     pub fn store<T: Addressable>(&mut self,
-                                 tk: &mut TimeKeeper,
-                                 irq_state: &mut InterruptState,
+                                 shared: &mut SharedState,
                                  offset: u32,
                                  val: u32) {
-        self.sync(tk, irq_state);
+        self.sync(shared);
 
         match offset {
             0  => {
@@ -91,7 +92,7 @@ impl PadMemCard {
                            T::size());
                 }
 
-                self.send_command(tk, val as u8);
+                self.send_command(shared, val as u8);
             }
             8  => self.set_mode(val as u8),
             10 => {
@@ -99,7 +100,7 @@ impl PadMemCard {
                     // Byte access behaves like a halfword
                     panic!("Unhandled byte gamepad control access");
                 }
-                self.set_control(irq_state, val as u16);
+                self.set_control(shared, val as u16);
             }
             14 => self.baud_div = val as u16,
             _ => panic!("Unhandled write to gamepad register {} {:04x}",
@@ -108,10 +109,10 @@ impl PadMemCard {
     }
 
     pub fn load<T: Addressable>(&mut self,
-                                tk: &mut TimeKeeper,
-                                irq_state: &mut InterruptState,
+                                shared: &mut SharedState,
                                 offset: u32) -> u32 {
-        self.sync(tk, irq_state);
+
+        self.sync(shared);
 
         match offset {
             0 => {
@@ -138,21 +139,23 @@ impl PadMemCard {
     }
 
     pub fn sync(&mut self,
-                tk: &mut TimeKeeper,
-                irq_state: &mut InterruptState) {
-        let delta = tk.sync(Peripheral::Gpu);
+                shared: &mut SharedState) {
+
+        let delta = shared.tk().sync(Peripheral::PadMemCard);
 
         match self.bus {
-            BusState::Idle => tk.no_sync_needed(Peripheral::PadMemCard),
+            BusState::Idle =>
+                shared.tk().no_sync_needed(Peripheral::PadMemCard),
             BusState::Transfer(r, dsr, delay) => {
                 if delta < delay {
                     let delay = delay - delta;
                     self.bus = BusState::Transfer(r, dsr, delay);
 
                     if self.dsr_it {
-                        tk.set_next_sync_delta(Peripheral::PadMemCard, delay);
+                        shared.tk().set_next_sync_delta(Peripheral::PadMemCard,
+                                                        delay);
                     } else {
-                        tk.no_sync_needed(Peripheral::PadMemCard);
+                        shared.tk().no_sync_needed(Peripheral::PadMemCard);
                     }
                 } else {
                     // We reached the end of the transfer
@@ -171,6 +174,8 @@ impl PadMemCard {
                         if self.dsr_it {
                             if !self.interrupt {
                                 // Rising edge of the interrupt
+                                let irq_state = shared.irq_state();
+
                                 irq_state.assert(Interrupt::PadMemCard);
                             }
 
@@ -199,7 +204,7 @@ impl PadMemCard {
                         self.bus = BusState::Idle;
                     }
 
-                    tk.no_sync_needed(Peripheral::PadMemCard);
+                    shared.tk().no_sync_needed(Peripheral::PadMemCard);
                 }
             }
             BusState::Dsr(delay) => {
@@ -211,7 +216,7 @@ impl PadMemCard {
                     self.dsr = false;
                     self.bus = BusState::Idle;
                 }
-                tk.no_sync_needed(Peripheral::PadMemCard);
+                shared.tk().no_sync_needed(Peripheral::PadMemCard);
             }
         }
     }
@@ -221,7 +226,7 @@ impl PadMemCard {
         [ self.pad1.profile(), self.pad2.profile() ]
     }
 
-    fn send_command(&mut self, tk: &mut TimeKeeper, cmd: u8) {
+    fn send_command(&mut self, shared: &mut SharedState, cmd: u8) {
         if !self.tx_en {
             // It should be stored in the FIFO and sent when tx_en is
             // set (I think)
@@ -230,7 +235,7 @@ impl PadMemCard {
 
         if self.bus.is_busy() {
             // I suppose the transfer should be queued in the TX FIFO?
-            println!("Gamepad command {:x} while bus is busy!", cmd);
+            warn!("Gamepad command {:x} while bus is busy!", cmd);
         }
 
         let (response, dsr) =
@@ -253,7 +258,7 @@ impl PadMemCard {
 
         // XXX For now pretend that the DSR pulse follows
         // immediately after the last byte, probably not accurate.
-        tk.set_next_sync_delta(Peripheral::PadMemCard, tx_duration);
+        shared.tk().set_next_sync_delta(Peripheral::PadMemCard, tx_duration);
     }
 
     fn stat(&self) -> u32 {
@@ -292,7 +297,7 @@ impl PadMemCard {
         ctrl
     }
 
-    fn set_control(&mut self, irq_state: &mut InterruptState, ctrl: u16) {
+    fn set_control(&mut self, shared: &mut SharedState, ctrl: u16) {
         if ctrl & 0x40 != 0 {
             // Soft reset
             self.baud_div = 0;
@@ -324,10 +329,10 @@ impl PadMemCard {
                     // which will be seen by the edge-triggered top
                     // level interrupt controller. So I guess this
                     // shouldn't happen?
-                    println!("Gamepad interrupt acknowledge while DSR is active");
+                    warn!("Gamepad interrupt acknowledge while DSR is active");
 
                     self.interrupt = true;
-                    irq_state.assert(Interrupt::PadMemCard);
+                    shared.irq_state().assert(Interrupt::PadMemCard);
                 }
             }
 

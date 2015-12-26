@@ -7,31 +7,22 @@
 
 PlayStation emulator in the Rust programing language.
 
+This repository only contains the source code for the core of the
+emulator. The OpenGL renderer and the libretro interface is is the
+[rustation-libretro](https://github.com/simias/rustation-libretro)
+repository.
+
 The focus of this emulator is to write code that's clean, accurate and
 hopefully easy to understand. There's no plugin infrastructure, the
 emulator is monolithic.
 
-Performance is pretty poor but it should be enough to run close to
-realtime on a modern CPU (there's no framelimiting implemented at the
-moment).
-
-The current frontend code is built around SDL2. The plan once the
-emulator starts to become usable is to turn it into a libretro core so
-that it could be played in
-[RetroArch](https://github.com/libretro/RetroArch) for instance.
+Performance is pretty poor at the moment but it should be enough to
+run close to realtime on a modern CPU.
 
 For the time being it can only boot a few games. Crash Bandicoot
 (Japanese version) is mostly playable, although I've had random
 crashes. Some other games (like Spyro) freeze after or during the
 intro.
-
-The GPU rendering is implemented using OpenGL through the [glium
-API](https://github.com/tomaka/glium), the idea is to allow things
-like increased internal resolution, texture replacement and other
-enhancements down the line. Using modern OpenGL it should be possible
-to write a flexible yet reasonably accurate renderer. At least that's
-the theory, there's quite a lot of work to do before it reaches a
-playable state.
 
 If you have any questions, in particular if something in the code is
 not clear or properly commented don't hesitate to fill an issue.
@@ -49,8 +40,8 @@ PlayStation. We'll see if this turns out to be a good idea...
 * Basic GTE support (ported from mednafen PSX)
 * Instruction cache
 * Interrupts
-* Very basic GPU (no semi-transparency or mask bit emulation)
-* Timers
+* Basic GPU (no semi-transparency or mask bit emulation)
+* Timers (incomplete)
 * DMA
 * Debugger
 * CDROM controller (missing many commands)
@@ -58,7 +49,7 @@ PlayStation. We'll see if this turns out to be a good idea...
 
 ## Todo list
 
-* Most of the GPU
+* Many things in the GPU
 * MDEC
 * SPU
 * Memory card
