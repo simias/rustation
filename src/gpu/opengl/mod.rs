@@ -68,7 +68,7 @@ impl Renderer {
         // displayed at any given moment, several display modes are
         // supported by the console.
         let output_width = 1024;
-        let output_height = 768;
+        let output_height = 512;
 
         let video_subsystem = sdl_context.video().unwrap();
 
@@ -474,13 +474,13 @@ impl Renderer {
         // We sample `fb_out` onto the screen
         let vertices =
             VertexBuffer::new(&self.window,
-                              &[Vertex { position: [0., -1.0],
+                              &[Vertex { position: [-1., -1.0],
                                          fb_coord: [0, 512] },
                                 Vertex { position: [1.0, -1.0],
                                          fb_coord: [1024, 512] },
-                                Vertex { position: [0.0, -0.5],
+                                Vertex { position: [-1.0, 1.],
                                          fb_coord: [0, 0] },
-                                Vertex { position: [1.0, -0.5],
+                                Vertex { position: [1.0, 1.],
                                          fb_coord: [1024, 0] }])
             .unwrap();
 
@@ -494,7 +494,7 @@ impl Renderer {
 
         let uniforms = uniform! {
             fb: sampler,
-            alpha: 0.7f32,
+            alpha: 1.0f32,
             depth_24bpp: 0,
         };
 

@@ -3,9 +3,12 @@
 use memory::Addressable;
 use memory::interrupts::{Interrupt, InterruptState};
 use timekeeper::{TimeKeeper, Peripheral, Cycles};
+
 use self::gamepad::GamePad;
+use self::memcard::MemCard;
 
 pub mod gamepad;
+pub mod memcard;
 
 pub struct PadMemCard {
     /// Serial clock divider. The LSB is read/write but is not used,
@@ -54,6 +57,7 @@ pub struct PadMemCard {
     pad2: GamePad,
     /// Bus state machine
     bus: BusState,
+    mem1: MemCard,
 }
 
 impl PadMemCard {
@@ -73,6 +77,7 @@ impl PadMemCard {
             rx_not_empty: false,
             pad1: GamePad::new(gamepad::Type::Digital),
             pad2: GamePad::new(gamepad::Type::Disconnected),
+            mem1: MemCard::new(),
             bus: BusState::Idle,
         }
     }
@@ -236,7 +241,13 @@ impl PadMemCard {
         let (response, dsr) =
             if self.select {
                 match self.target {
-                    Target::PadMemCard1 => self.pad1.send_command(cmd),
+                    Target::PadMemCard1 => {
+                        let (rp, dp) = self.pad1.send_command(cmd);
+
+                        let (rm, dm) = self.mem1.send_command(cmd);
+
+                        (rp & rm, dp | dm)
+                    }
                     Target::PadMemCard2 => self.pad2.send_command(cmd),
                 }
             } else {
@@ -362,6 +373,7 @@ impl PadMemCard {
                 // sure how it influences the select line. I assume
                 // only the targeted slot is selected?
                 self.pad1.select();
+                self.mem1.select();
             }
         }
     }
