@@ -9,7 +9,7 @@ pub struct Spu {
     shadow_registers: [u16; 0x100],
 
     /// SPU RAM: 256k 16bit samples
-    ram: [u16; 256 * 1024],
+    ram: Box<[u16; 256 * 1024]>,
     /// Write pointer in the SPU RAM
     ram_index: u32,
 }
@@ -18,7 +18,7 @@ impl Spu {
     pub fn new() -> Spu {
         Spu {
             shadow_registers: [0; 0x100],
-            ram: [0xbad; 256 * 1024],
+            ram: Box::new([0xbad; 256 * 1024]),
             ram_index: 0,
         }
     }
