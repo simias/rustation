@@ -5,7 +5,6 @@ use std::fmt::{Display, Formatter, Error};
 
 use memory::{Interconnect, Addressable, Byte, HalfWord, Word};
 use shared::SharedState;
-use padmemcard::gamepad;
 use gpu::renderer::Renderer;
 use interrupt::InterruptState;
 
@@ -80,6 +79,16 @@ impl Cpu {
             branch:     false,
             delay_slot: false,
         }
+    }
+
+    /// Return a reference to the interconnect
+    pub fn interconnect(&self) -> &Interconnect {
+        &self.inter
+    }
+
+    /// Return a mutable reference to the interconnect
+    pub fn interconnect_mut(&mut self) -> &mut Interconnect {
+        &mut self.inter
     }
 
     /// Run the emulator until the start of the next frame
@@ -380,10 +389,6 @@ impl Cpu {
         self.pc = pc;
         self.next_pc = self.pc.wrapping_add(4);
         self.delay_slot = false;
-    }
-
-    pub fn pad_profiles(&mut self) -> [&mut gamepad::Profile; 2] {
-        self.inter.pad_profiles()
     }
 
     /// Decode `instruction`'s opcode and run the function

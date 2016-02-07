@@ -15,7 +15,6 @@ use spu::Spu;
 use cdrom::CdRom;
 use cdrom::disc::Disc;
 use padmemcard::PadMemCard;
-use padmemcard::gamepad;
 
 /// Global interconnect
 pub struct Interconnect {
@@ -84,8 +83,14 @@ impl Interconnect {
         self.cache_control
     }
 
-    pub fn pad_profiles(&mut self) -> [&mut gamepad::Profile; 2] {
-        self.pad_memcard.pad_profiles()
+    /// Return a reference to the GPU instance
+    pub fn gpu(&self) -> &Gpu {
+        &self.gpu
+    }
+
+    /// Return a mutable reference to the PadMemCard instance
+    pub fn pad_memcard_mut(&mut self) -> &mut PadMemCard {
+        &mut self.pad_memcard
     }
 
     /// Interconnect: load instruction at `PC`. Only the RAM and BIOS

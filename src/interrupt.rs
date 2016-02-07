@@ -1,5 +1,5 @@
 /// The PlayStation supports 10 interrupts
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Interrupt {
     /// Display in vertical blanking
     VBlank = 0,

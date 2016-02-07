@@ -351,6 +351,10 @@ impl Gpu {
         shared.tk().set_next_sync_delta(Peripheral::Gpu, delta);
     }
 
+    pub fn display_vram_start(&self) -> (u16, u16) {
+        (self.display_vram_x_start, self.display_vram_y_start)
+    }
+
     /// Return true if we're currently in the video blanking period
     fn in_vblank(&self) -> bool {
         self.display_line < self.display_line_start ||
