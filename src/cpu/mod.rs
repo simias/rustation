@@ -1592,9 +1592,7 @@ impl Instruction {
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        try!(write!(f, "{:08x}", self.0));
-
-        Ok(())
+        write!(f, "{:08x}", self.0)
     }
 }
 

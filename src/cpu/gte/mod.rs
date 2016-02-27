@@ -10,7 +10,6 @@ mod tests;
 #[derive(Debug)]
 pub struct Gte {
     // Control registers
-    /// Background color red component: signed 20.12
     /// Screen offset X: signed 16.16
     ofx: i32,
     /// Screen offset Y: signed 16.16
