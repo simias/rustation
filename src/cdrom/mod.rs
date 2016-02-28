@@ -2,9 +2,11 @@ use memory::Addressable;
 use timekeeper::{Peripheral, Cycles};
 use interrupt::Interrupt;
 use shared::SharedState;
+use arrayvec::ArrayVec;
+use cdimage::sector::Sector;
+use cdimage::msf::Msf;
 
-use self::disc::{Disc, Region, XaSector};
-use self::disc::msf::Msf;
+use self::disc::{Disc, Region};
 
 pub mod disc;
 
@@ -29,7 +31,7 @@ pub struct CdRom {
     /// interrupt is active
     on_ack: fn (&mut CdRom) -> CommandState,
     /// Currently loaded disc or None if no disc is present
-    disc: Option<(Disc)>,
+    disc: Option<Disc>,
     /// Target of the next seek command
     seek_target: Msf,
     /// True if `seek_target` has been set but no seek took place
@@ -42,16 +44,16 @@ pub struct CdRom {
     double_speed: bool,
     /// If true Send ADPCM samples to the SPU
     xa_adpcm_to_spu: bool,
-    /// Sector in the RX buffer
-    rx_sector: XaSector,
+    /// Data RX buffer
+    rx_buffer: [u8; 2352],
+    /// Raw sector read from the disc image
+    sector: Sector,
     /// When this bit is set the data RX buffer is active, otherwise
     /// it's reset. The software is supposed to reset it between
     /// sectors.
     rx_active: bool,
     /// Index of the next byte to be read in the RX sector
     rx_index: u16,
-    /// Offset of `rx_index` in the sector buffer
-    rx_offset: u16,
     /// Index of the last byte to be read in the RX sector
     rx_len: u16,
     /// If true we read the whole sector except for the sync bytes
@@ -100,10 +102,10 @@ impl CdRom {
             position: Msf::zero(),
             double_speed: false,
             xa_adpcm_to_spu: false,
-            rx_sector: XaSector::new(),
+            sector: Sector::empty(),
+            rx_buffer: [0; 2352],
             rx_active: false,
             rx_index: 0,
-            rx_offset: 0,
             rx_len: 0,
             read_whole_sector: true,
             sector_size_override: false,
@@ -339,9 +341,7 @@ impl CdRom {
             panic!("Unhandled CDROM long read");
         }
 
-        let pos = self.rx_offset + self.rx_index;
-
-        let b = self.rx_sector.data_byte(pos);
+        let b = self.rx_buffer[self.rx_index as usize];
 
         if self.rx_active {
             self.rx_index += 1;
@@ -366,21 +366,12 @@ impl CdRom {
     fn do_seek(&mut self) {
         // Make sure we don't end up in track1's pregap, I don't know
         // if it's ever useful? Needs special handling at least...
-        if self.seek_target < Msf::from_bcd(0x00, 0x02, 0x00) {
+        if self.seek_target < Msf::from_bcd(0x00, 0x02, 0x00).unwrap() {
             panic!("Seek to track. 1 pregap: {}", self.seek_target);
         }
 
         self.position = self.seek_target;
         self.seek_target_pending = false;
-    }
-
-    /// Retrieve the current disc or panic if there's none. Used in
-    /// functions that should not be reached if a disc is not present.
-    fn disc_or_die(&mut self) -> &mut Disc {
-        match self.disc {
-            Some(ref mut d) => d,
-            None => unreachable!(),
-        }
     }
 
     /// Called when a new sector has been read.
@@ -392,20 +383,49 @@ impl CdRom {
 
         let position = self.position;
 
-        self.rx_sector =
-            match self.disc_or_die().read_data_sector(position) {
-                Ok(s) => s,
-                Err(e) => panic!("Couldn't read sector: {}", e),
-            };
+        // Read the sector at `position`
+        match self.disc {
+            Some(ref mut d) =>
+                if let Err(e) = d.image().read_sector(&mut self.sector,
+                                                      position) {
+                    panic!("Couldn't read sector: {}", e);
+                },
+            None => panic!("Sector read without a disc"),
+        }
 
-        if self.read_whole_sector {
-            // Read the entire sector except for the sync pattern
-            self.rx_offset = 12;
-            self.rx_len = 2340;
-        } else {
-            // Read 2048 bytes after the Mode2 XA sub-header
-            self.rx_offset = 24;
-            self.rx_len = 2048;
+        {
+            // Extract the data we need from the sector.
+            let data =
+                if self.read_whole_sector {
+                    // Read the entire sector except for the 12bits sync pattern
+
+                    let data =
+                        match self.sector.data_2352() {
+                            Ok(d) => d,
+                            Err(e) =>
+                                panic!("Failed to read whole sector {}: {}",
+                                       position, e),
+                        };
+
+                    // Skip the sync pattern
+                    &data[12..]
+                } else {
+                    // Read 2048 bytes after the Mode2 XA sub-header
+
+                    // XXX what about mode 2 form 2 sectors?
+                    match self.sector.mode2_xa_form1_payload() {
+                        Ok(d) => d as &[u8],
+                        Err(e) =>
+                            panic!("Failed to read sector {}: {}", position, e),
+                    }
+                };
+
+            // Copy data into the RX buffer
+            for (i, &b) in data.iter().enumerate() {
+                self.rx_buffer[i] = b;
+            }
+
+            self.rx_len = data.len() as u16;
         }
 
         // XXX in reality the interrupt should happen roughly 1969
@@ -418,7 +438,11 @@ impl CdRom {
 
         // Move on to the next segment.
         // XXX what happens when we're at the last one?
-        self.position = self.position.next();
+        self.position =
+            match self.position.next() {
+                Some(m) => m,
+                None => panic!("MSF overflow!"),
+            };
     }
 
     fn check_async_event(&mut self, shared: &mut SharedState) {
@@ -693,7 +717,13 @@ impl CdRom {
         let s = self.params.pop();
         let f = self.params.pop();
 
-        self.seek_target = Msf::from_bcd(m, s, f);
+        self.seek_target =
+            match Msf::from_bcd(m, s, f) {
+                Some(m) => m,
+                None => panic!("Invalid MSF in set loc: {:02x}:{:02x}:{:02x}",
+                               m, s, f),
+            };
+
         self.seek_target_pending = true;
 
         match self.disc {
@@ -862,9 +892,8 @@ impl CdRom {
 
     /// Get the current position of the drive head by returning the
     /// contents of the Q subchannel
-    /// XXX handle libcrypt subchannel data
     fn cmd_get_loc_p(&mut self) -> CommandState {
-        if self.position < Msf::from_bcd(0x00, 0x02, 0x00) {
+        if self.position < Msf::from_bcd(0x00, 0x02, 0x00).unwrap() {
             // The values returned in the track 01 pregap are strange,
             // The absolute MSF seems correct but the track MSF looks
             // like garbage.
@@ -874,25 +903,35 @@ impl CdRom {
             panic!("GetLocP while in track1 pregap");
         }
 
+        // Fixme: All this data should be extracted from the
+        // subchannel Q (when available in cdimage).
+
+        let metadata = self.sector.metadata();
+
         // The position returned by get_loc_p seems to be ahead of the
         // currently read sector *sometimes*. Probably because of the
-        // way the subchannel data is buffered?
-        let abs_msf = self.position.next();
+        // way the subchannel data is buffered? Let's not worry about
+        // it for now.
+        let abs_msf = metadata.msf;
 
         // Position within the current track
-        // XXX For now only one track/index is supported, we just need
-        // to substract 2 seconds
-        let track_msf = self.position - Msf::from_bcd(0x00, 0x02, 0x00);
+        let track_msf = metadata.track_msf;
 
-        let track = 0x01;
-        let index = 0x01;
+        let track = metadata.track;
+        let index = metadata.index;
 
         let (track_m, track_s, track_f) = track_msf.into_bcd();
 
         let (abs_m, abs_s, abs_f) = abs_msf.into_bcd();
 
-        let response = Fifo::from_bytes(
-            &[track, index, track_m, track_s, track_f, abs_m, abs_s, abs_f]);
+        let response_bcd: ArrayVec<[_; 8]> = [track, index,
+                                              track_m, track_s, track_f,
+                                              abs_m, abs_s, abs_f]
+            .iter()
+            .map(|v| v.bcd())
+            .collect();
+
+        let response = Fifo::from_bytes(&response_bcd);
 
         CommandState::RxPending(32_000,
                                 32_000 + 16816,

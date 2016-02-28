@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate log;
 extern crate shaman;
+extern crate cdimage;
+extern crate arrayvec;
 
 pub mod gpu;
 pub mod cdrom;
@@ -9,7 +11,6 @@ pub mod memory;
 pub mod cpu;
 pub mod shared;
 pub mod padmemcard;
-
 
 mod interrupt;
 mod timekeeper;

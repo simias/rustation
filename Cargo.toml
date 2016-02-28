@@ -2,7 +2,7 @@
 
 name = "rustation"
 # Exported as VERSION and VERSION_CSTR in the library
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
 
 description = "A PlayStation emulator"
@@ -17,7 +17,11 @@ keywords = ["emulator", "playstation"]
 
 shaman = "0.1.0"
 log = "0.3.4"
+arrayvec = "0.3.15"
 
 [lib]
 name = "rustation"
 crate-type = ["rlib"]
+
+[dependencies.cdimage]
+path = "cdimage"
