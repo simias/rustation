@@ -1,4 +1,5 @@
 use super::Gte;
+use super::precision::NativeVertex;
 
 #[test]
 fn gte_lzcr() {
@@ -13,12 +14,12 @@ fn gte_lzcr() {
         (0xfffc0ffe, 14),
     ];
 
-    let mut gte = Gte::new();
+    let mut gte: Gte<NativeVertex> = Gte::new();
 
     for &(lzcs, lzcr) in &expected {
         gte.set_data(30, lzcs);
 
-        let r = gte.data(31);
+        let r = gte.data(31).0;
 
         assert!(r == lzcr);
     }
@@ -59,7 +60,7 @@ struct Config {
 }
 
 impl Config {
-    fn make_gte(&self) -> Gte {
+    fn make_gte(&self) -> Gte<NativeVertex> {
         let mut gte = Gte::new();
 
         for &(reg, val) in self.controls {
@@ -92,7 +93,7 @@ impl Config {
         gte
     }
 
-    fn validate(&self, gte: Gte) {
+    fn validate(&self, gte: Gte<NativeVertex>) {
         let mut error_count = 0u32;
 
         for &(reg, val) in self.controls {
@@ -106,7 +107,7 @@ impl Config {
         }
 
         for &(reg, val) in self.data {
-            let v = gte.data(reg as u32);
+            let v = gte.data(reg as u32).0;
 
             if v != val {
                 println!("Data register {}: expected 0x{:08x} got 0x{:08x}",
