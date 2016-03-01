@@ -16,7 +16,6 @@ impl Ram {
         Ram { data: Box::new([0xca; RAM_SIZE]) }
     }
 
-
     /// Fetch the little endian value at `offset`
     pub fn load<T: Addressable>(&self, offset: u32) -> u32 {
         // The two MSB are ignored, the 2MB RAM is mirorred four times
@@ -84,3 +83,64 @@ const RAM_SIZE: usize = 2 * 1024 * 1024;
 
 /// ScatchPad (data cache used as fast RAM): 1Kilobyte
 const SCRATCH_PAD_SIZE: usize = 1024;
+
+#[test]
+fn ram_read() {
+    use super::{Word, HalfWord, Byte};
+
+    let mut ram = Ram::new();
+
+    ram.store::<Word>(0, 0x12345678);
+    ram.store::<Word>(32, 0x0abcdef0);
+
+    assert!(ram.load::<Word>(0) == 0x12345678);
+
+    assert!(ram.load::<Word>(32) == 0x0abcdef0);
+
+    assert!(ram.load::<HalfWord>(0) == 0x5678);
+    assert!(ram.load::<HalfWord>(2) == 0x1234);
+
+    assert!(ram.load::<HalfWord>(32) == 0xdef0);
+    assert!(ram.load::<HalfWord>(34) == 0x0abc);
+
+    assert!(ram.load::<Byte>(0) == 0x78);
+    assert!(ram.load::<Byte>(1) == 0x56);
+    assert!(ram.load::<Byte>(2) == 0x34);
+    assert!(ram.load::<Byte>(3) == 0x12);
+
+    assert!(ram.load::<Byte>(32) == 0xf0);
+    assert!(ram.load::<Byte>(33) == 0xde);
+    assert!(ram.load::<Byte>(34) == 0xbc);
+    assert!(ram.load::<Byte>(35) == 0x0a);
+}
+
+#[test]
+fn ram_write() {
+    use super::{Word, HalfWord, Byte};
+
+    let mut ram = Ram::new();
+
+    ram.store::<Word>(32, 0x12345678);
+    ram.store::<HalfWord>(32, 0xabcd);
+    assert!(ram.load::<Word>(32) == 0x1234abcd);
+
+    ram.store::<Word>(32, 0x12345678);
+    ram.store::<HalfWord>(34, 0xabcd);
+    assert!(ram.load::<Word>(32) == 0xabcd5678);
+
+    ram.store::<Word>(32, 0x12345678);
+    ram.store::<Byte>(32, 0xab);
+    assert!(ram.load::<Word>(32) == 0x123456ab);
+
+    ram.store::<Word>(32, 0x12345678);
+    ram.store::<Byte>(33, 0xab);
+    assert!(ram.load::<Word>(32) == 0x1234ab78);
+
+    ram.store::<Word>(32, 0x12345678);
+    ram.store::<Byte>(34, 0xab);
+    assert!(ram.load::<Word>(32) == 0x12ab5678);
+
+    ram.store::<Word>(32, 0x12345678);
+    ram.store::<Byte>(35, 0xab);
+    assert!(ram.load::<Word>(32) == 0xab345678);
+}
