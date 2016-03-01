@@ -50,7 +50,7 @@ impl Disc {
         // On the discs I've tried we always have an ASCII license
         // string in the first 76 data bytes. We'll see if it holds
         // true for all the discs out there...
-        let license_blob = &try!(sector.mode2_xa_form1_payload())[0..76];
+        let license_blob = &try!(sector.mode2_xa_payload())[0..76];
 
         // There are spaces everywhere in the license string
         // (including in the middle of some words), let's clean it up

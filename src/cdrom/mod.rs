@@ -411,13 +411,22 @@ impl CdRom {
                     &data[12..]
                 } else {
                     // Read 2048 bytes after the Mode2 XA sub-header
+                    let data =
+                        match self.sector.mode2_xa_payload() {
+                            Ok(d) => d as &[u8],
+                            Err(e) =>
+                                panic!("Failed to read sector {}: {}", position, e),
+                        };
 
-                    // XXX what about mode 2 form 2 sectors?
-                    match self.sector.mode2_xa_form1_payload() {
-                        Ok(d) => d as &[u8],
-                        Err(e) =>
-                            panic!("Failed to read sector {}: {}", position, e),
+                    if data.len() > 2048 {
+                        // This is a Mode 2 Form 2 sector, it has more
+                        // data and no error correction. It probably
+                        // shouldn't be read without
+                        // `read_whole_sector` being set.
+                        warn!("Form 2 sector partial read");
                     }
+
+                    &data[0..2048]
                 };
 
             // Copy data into the RX buffer
