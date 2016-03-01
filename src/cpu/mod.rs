@@ -11,6 +11,7 @@ use debugger::Debugger;
 
 use self::cop0::{Cop0, Exception};
 use self::gte::Gte;
+use self::gte::precision::PreciseVertex;
 
 /// CPU state
 pub struct Cpu {
@@ -36,7 +37,7 @@ pub struct Cpu {
     /// Coprocessor 0: System control
     cop0: Cop0,
     /// Coprocessor 2: Geometry Transform Engine
-    gte: Gte,
+    gte: Gte<PreciseVertex>,
     /// Load initiated by the current instruction (will take effect
     /// after the load delay slot)
     load: (RegisterIndex, u32),

@@ -2,13 +2,19 @@
 
 use std::{i16, u16};
 
+use self::precision::{SubpixelPrecision, PreciseCoord};
+
+pub mod precision;
+
 mod divider;
 
 #[cfg(test)]
 mod tests;
 
+/// Geometry Transform Engine state. The generic parameter `T` is used
+/// to handle increased precision coordinates (or lack thereof).
 #[derive(Debug)]
-pub struct Gte {
+pub struct Gte<T> {
     // Control registers
     /// Screen offset X: signed 16.16
     ofx: i32,
@@ -48,8 +54,9 @@ pub struct Gte {
     rgb: (u8, u8, u8, u8),
     /// Accumulators for intermediate results, 4 x signed halfwords
     ir: [i16; 4],
-    /// XY fifo: 4 x 2 x signed halfwords
-    xy_fifo: [(i16, i16); 4],
+    /// XY fifo: 4 x 2 x signed halfwords. Contains the increased
+    /// precision data alongside the native
+    xy_fifo: [(i16, i16, T); 4],
     /// Z fifo: 4 x unsigned halfwords
     z_fifo: [u16; 4],
     /// RGB color FIFO
@@ -63,8 +70,9 @@ pub struct Gte {
     reg_23: u32,
 }
 
-impl Gte {
-    pub fn new() -> Gte {
+impl<T: SubpixelPrecision> Gte<T> {
+
+    pub fn new() -> Gte<T> {
         // It seems that none of the registers are reset even when I
         // reboot the whole system. So the initial register values
         // probably don't matter much.
@@ -84,7 +92,7 @@ impl Gte {
             rgb: (0, 0, 0, 0),
             otz: 0,
             ir: [0; 4],
-            xy_fifo: [(0, 0); 4],
+            xy_fifo: [(0, 0, T::empty()); 4],
             z_fifo: [0; 4],
             rgb_fifo: [(0, 0, 0, 0); 3],
             lzcs: 0,
@@ -460,7 +468,7 @@ impl Gte {
         };
 
         let xy_to_u32 = | xy | -> u32 {
-            let (x, y) = xy;
+            let (x, y, _) = xy;
 
             let x = x as u16;
             let y = y as u16;
@@ -548,11 +556,11 @@ impl Gte {
             (r, g, b, x)
         };
 
-        let val_to_xy = || -> (i16, i16) {
+        let val_to_xy = || -> (i16, i16, T) {
             let x = val as i16;
             let y = (val >> 16) as i16;
 
-            (x, y)
+            (x, y, T::empty())
         };
 
         match reg {
@@ -641,9 +649,11 @@ impl Gte {
 
     /// Normal clipping
     fn cmd_nclip(&mut self) {
-        let (x0, y0) = self.xy_fifo[0];
-        let (x1, y1) = self.xy_fifo[1];
-        let (x2, y2) = self.xy_fifo[2];
+        // XXX Should we use the increased precision values instead?
+
+        let (x0, y0, _) = self.xy_fifo[0];
+        let (x1, y1, _) = self.xy_fifo[1];
+        let (x2, y2, _) = self.xy_fifo[2];
 
         // Convert to 32bits
         let (x0, y0) = (x0 as i32, y0 as i32);
@@ -1099,7 +1109,8 @@ impl Gte {
     }
 
     fn mac_to_rgb_fifo(&mut self) {
-        fn mac_to_color(gte: &mut Gte, mac: i32, which: u8) -> u8 {
+        fn mac_to_color<T>(gte: &mut Gte<T>, mac: i32, which: u8) -> u8
+            where T: SubpixelPrecision {
             let c = mac >> 4;
 
             if c < 0 {
@@ -1237,18 +1248,20 @@ impl Gte {
         // Compute the projection factor by dividing projection plane
         // distance by the Z coordinate
 
-        // Projection factor: 1.16 unsigned
-        let projection_factor =
+        // Projection factor: native 1.16 unsigned and the
+        // PreciseCoord version for subpixel precision
+        let (projection_factor, precise_projection_factor) =
             if z_saturated > self.h / 2 {
                 // GTE-specific division algorithm for dist /
                 // z. Returns a saturated 17bit value.
-                divider::divide(self.h, z_saturated)
+                (divider::divide(self.h, z_saturated),
+                 self.h as PreciseCoord / z_saturated as PreciseCoord)
             } else {
                 // If the Z coordinate is smaller than or equal to
                 // half the projection plane distance we clip it
                 self.set_flag(17);
 
-                0x1ffff
+                (0x1ffff, 1.9999)
             };
 
         // Work in 64bits to detect overflows
@@ -1268,9 +1281,20 @@ impl Gte {
         let screen_x = (screen_x >> 16) as i32;
         let screen_y = (screen_y >> 16) as i32;
 
+        // Projection using the PreciseCoord values for subpixel
+        // precision
+        let x = self.ir[1] as PreciseCoord;
+        let y = self.ir[2] as PreciseCoord;
+        let ofx = self.ofx as PreciseCoord / 0x10000 as PreciseCoord;
+        let ofy = self.ofy as PreciseCoord / 0x10000 as PreciseCoord;
+
+        let precise_x = ofx + x * precise_projection_factor;
+        let precise_y = ofy + y * precise_projection_factor;
+
         // Push onto the XY FIFO
         self.xy_fifo[3] = (self.i32_to_i11_saturate(0, screen_x),
-                           self.i32_to_i11_saturate(1, screen_y));
+                           self.i32_to_i11_saturate(1, screen_y),
+                           T::new(precise_x, precise_y, z_saturated));
 
         self.xy_fifo[0] = self.xy_fifo[1];
         self.xy_fifo[1] = self.xy_fifo[2];
