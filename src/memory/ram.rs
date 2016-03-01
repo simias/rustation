@@ -5,15 +5,14 @@ pub struct Ram {
     /// RAM buffer. Boxed in order not to overflow the stack at the
     /// construction site. Might change once "placement new" is
     /// available.
-    data: Box<[u8; RAM_SIZE]>
+    data: Box<[u32; RAM_SIZE_WORDS]>
 }
 
 impl Ram {
 
     /// Instantiate main RAM with garbage values
     pub fn new() -> Ram {
-
-        Ram { data: box_array![0xca; RAM_SIZE] }
+        Ram { data: box_array![0xca; RAM_SIZE_WORDS] }
     }
 
     /// Fetch the little endian value at `offset`
@@ -22,13 +21,12 @@ impl Ram {
         // over the first 8MB of address space
         let offset = (offset & 0x1fffff) as usize;
 
-        let mut v = 0;
+        let word_addr = offset >> 2;
+        let align = (offset & 3) * 8;
 
-        for i in 0..T::size() as usize {
-            v |= (self.data[offset + i] as u32) << (i * 8)
-        }
+        let word = self.data[word_addr] >> align;
 
-        v
+        word & T::mask()
     }
 
     /// Store the 32bit little endian word `val` into `offset`
@@ -37,9 +35,15 @@ impl Ram {
         // over the first 8MB of address space
         let offset = (offset & 0x1fffff) as usize;
 
-        for i in 0..T::size() as usize {
-            self.data[offset + i] = (val >> (i * 8)) as u8;
-        }
+        let word_addr = offset >> 2;
+        let align = (offset & 3) * 8;
+
+        let mask = T::mask() << align;
+        let val = (val << align) & mask;
+
+        let word = self.data[word_addr];
+
+        self.data[word_addr] = (word & !mask) | val;
     }
 }
 
@@ -80,6 +84,9 @@ impl ScratchPad {
 
 /// Main PlayStation RAM: 2Megabytes
 const RAM_SIZE: usize = 2 * 1024 * 1024;
+
+/// RAM_SIZE in 32bit word unit
+const RAM_SIZE_WORDS: usize = RAM_SIZE / 4;
 
 /// ScatchPad (data cache used as fast RAM): 1Kilobyte
 const SCRATCH_PAD_SIZE: usize = 1024;
