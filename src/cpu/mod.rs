@@ -1,5 +1,6 @@
 mod cop0;
-mod gte;
+
+pub mod gte;
 
 use std::fmt::{Display, Formatter, Error};
 
@@ -11,10 +12,10 @@ use debugger::Debugger;
 
 use self::cop0::{Cop0, Exception};
 use self::gte::Gte;
-use self::gte::precision::PreciseVertex;
+use self::gte::precision::SubpixelPrecision;
 
 /// CPU state
-pub struct Cpu {
+pub struct Cpu<T> {
     /// The program counter register: points to the next instruction
     pc: u32,
     /// Next value for the PC, used to simulate the branch delay slot
@@ -37,7 +38,7 @@ pub struct Cpu {
     /// Coprocessor 0: System control
     cop0: Cop0,
     /// Coprocessor 2: Geometry Transform Engine
-    gte: Gte<PreciseVertex>,
+    gte: Gte<T>,
     /// Load initiated by the current instruction (will take effect
     /// after the load delay slot)
     load: (RegisterIndex, u32),
@@ -48,10 +49,10 @@ pub struct Cpu {
     delay_slot: bool,
 }
 
-impl Cpu {
+impl<T: SubpixelPrecision> Cpu<T> {
 
     /// Create a new CPU instance
-    pub fn new(inter: Interconnect) -> Cpu {
+    pub fn new(inter: Interconnect) -> Cpu<T> {
         // Not sure what the reset values are...
         let mut regs = [0xdeadbeef; 32];
 
@@ -76,16 +77,6 @@ impl Cpu {
             branch:     false,
             delay_slot: false,
         }
-    }
-
-    /// Return a reference to the interconnect
-    pub fn interconnect(&self) -> &Interconnect {
-        &self.inter
-    }
-
-    /// Return a mutable reference to the interconnect
-    pub fn interconnect_mut(&mut self) -> &mut Interconnect {
-        &mut self.inter
     }
 
     /// Run the emulator until the start of the next frame
@@ -228,20 +219,20 @@ impl Cpu {
     }
 
     /// Memory read
-    fn load<T: Addressable>(&mut self,
+    fn load<A: Addressable>(&mut self,
                             debugger: &mut Debugger,
                             shared: &mut SharedState,
                             addr: u32) -> u32 {
         debugger.memory_read(self, addr);
 
-        self.inter.load::<T>(shared, addr)
+        self.inter.load::<A>(shared, addr)
     }
 
     /// Memory read with as little side-effect as possible. Used for
     /// debugging.
-    pub fn examine<T: Addressable>(&mut self, addr: u32) -> u32 {
+    pub fn examine<A: Addressable>(&mut self, addr: u32) -> u32 {
 
-        self.inter.load::<T>(&mut SharedState::new(), addr)
+        self.inter.load::<A>(&mut SharedState::new(), addr)
     }
 
     /// Memory write
@@ -254,7 +245,7 @@ impl Cpu {
     /// On the real console the CPU always puts the entire 32bit register
     /// value on the bus so those devices might end up using all the
     /// bytes in the Word even for smaller widths.
-    fn store<T: Addressable>(&mut self,
+    fn store<A: Addressable>(&mut self,
                              debugger: &mut Debugger,
                              shared: &mut SharedState,
                              renderer: &mut Renderer,
@@ -263,14 +254,14 @@ impl Cpu {
         debugger.memory_write(self, addr);
 
         if self.cop0.cache_isolated() {
-            self.cache_maintenance::<T>(addr, val);
+            self.cache_maintenance::<A>(addr, val);
         } else {
-            self.inter.store::<T>(shared, renderer, addr, val);
+            self.inter.store::<A>(shared, renderer, addr, val);
         }
     }
 
     /// Handle writes when the cache is isolated
-    pub fn cache_maintenance<T: Addressable>(&mut self, addr: u32, val: u32) {
+    pub fn cache_maintenance<A: Addressable>(&mut self, addr: u32, val: u32) {
         // Implementing full cache emulation requires handling many
         // corner cases. For now I'm just going to add support for
         // cache invalidation which is the only use case for cache
@@ -282,7 +273,7 @@ impl Cpu {
             panic!("Cache maintenance while instruction cache is disabled");
         }
 
-        if T::size() != 4 || val != 0 {
+        if A::size() != 4 || val != 0 {
             panic!("Unsupported write while cache is isolated: {:08x}",
                    val);
         }
@@ -1566,7 +1557,7 @@ impl Cpu {
                 2 => (cur_mem & 0x0000ffff) | (v << 16),
                 3 => (cur_mem & 0x00ffffff) | (v << 24),
                 _ => unreachable!(),
-        };
+            };
 
         self.delayed_load();
 

@@ -1,6 +1,7 @@
 use std::net::TcpListener;
 
 use cpu::Cpu;
+use cpu::gte::precision::SubpixelPrecision;
 use self::gdb::GdbRemote;
 
 mod gdb;
@@ -53,7 +54,8 @@ impl Debugger {
         self.set_step();
     }
 
-    pub fn debug(&mut self, cpu: &mut Cpu) {
+    pub fn debug<T>(&mut self, cpu: &mut Cpu<T>)
+        where T: SubpixelPrecision {
         // If stepping was requested we can reset the flag here, this
         // way we won't "double step" if we're entering debug mode for
         // an other reason (data watchpoint for instance)
@@ -117,7 +119,8 @@ impl Debugger {
     /// Called by the CPU when it's about to execute a new
     /// instruction. This function is called before *all* CPU
     /// instructions so it needs to be as fast as possible.
-    pub fn pc_change(&mut self, cpu: &mut Cpu) {
+    pub fn pc_change<T>(&mut self, cpu: &mut Cpu<T>)
+        where T: SubpixelPrecision {
         // Check if stepping was requested or if we encountered a
         // breakpoint
         if self.step || self.breakpoints.contains(&cpu.pc()) {
@@ -141,7 +144,8 @@ impl Debugger {
     }
 
     /// Called by the CPU when it's about to load a value from memory.
-    pub fn memory_read(&mut self, cpu: &mut Cpu, addr: u32) {
+    pub fn memory_read<T>(&mut self, cpu: &mut Cpu<T>, addr: u32)
+        where T: SubpixelPrecision {
         // XXX: how should we handle unaligned watchpoints? For
         // instance if we have a watchpoint on address 1 and the CPU
         // executes a `load32 at` address 0, should we break? Also,
@@ -168,7 +172,8 @@ impl Debugger {
     }
 
     /// Called by the CPU when it's about to load a value from memory.
-    pub fn memory_write(&mut self, cpu: &mut Cpu, addr: u32) {
+    pub fn memory_write<T>(&mut self, cpu: &mut Cpu<T>, addr: u32)
+        where T: SubpixelPrecision {
         // XXX: same remark as memory_read for unaligned stores
         if self.write_watchpoints.contains(&addr) {
             info!("Write watchpoint triggered at 0x{:08x}", addr);
