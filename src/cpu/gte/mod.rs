@@ -453,9 +453,10 @@ impl<T: SubpixelPrecision> Gte<T> {
         }
     }
 
-    /// Return the value of one of the "data" registers. Used by the
-    /// MFC2 and SWC2 opcodes
-    pub fn data(&self, reg: u32) -> u32 {
+    /// Return the value of one of the "data" registers along with the
+    /// associated subpixel precise data. Used by the MFC2 and SWC2
+    /// opcodes
+    pub fn data(&self, reg: u32) -> (u32, T) {
         let rgbx_to_u32 = | rgbx | -> u32 {
             let (r, g, b, x) = rgbx;
 
@@ -467,80 +468,86 @@ impl<T: SubpixelPrecision> Gte<T> {
             r | (g << 8) | (b << 16) | (x << 24)
         };
 
-        let xy_to_u32 = | xy | -> u32 {
-            let (x, y, _) = xy;
+        let xy_to_u32 = | xy | -> (u32, T) {
+            let (x, y, p) = xy;
 
             let x = x as u16;
             let y = y as u16;
 
-            (x as u32) | ((y as u32) << 16)
+            ((x as u32) | ((y as u32) << 16), p)
         };
 
-        match reg {
-            0 => {
-                let v0 = self.v[0][0] as u16 as u32;
-                let v1 = self.v[0][1] as u16 as u32;
+        let d =
+            match reg {
+                0 => {
+                    let v0 = self.v[0][0] as u16 as u32;
+                    let v1 = self.v[0][1] as u16 as u32;
 
-                v0 | v1 << 16
-            },
-            1 => self.v[0][2] as u32,
-            2 => {
-                let v0 = self.v[1][0] as u16 as u32;
-                let v1 = self.v[1][1] as u16 as u32;
+                    v0 | v1 << 16
+                },
+                1 => self.v[0][2] as u32,
+                2 => {
+                    let v0 = self.v[1][0] as u16 as u32;
+                    let v1 = self.v[1][1] as u16 as u32;
 
-                v0 | v1 << 16
-            },
-            3 => self.v[1][2] as u32,
-            4 => {
-                let v0 = self.v[2][0] as u16 as u32;
-                let v1 = self.v[2][1] as u16 as u32;
+                    v0 | v1 << 16
+                },
+                3 => self.v[1][2] as u32,
+                4 => {
+                    let v0 = self.v[2][0] as u16 as u32;
+                    let v1 = self.v[2][1] as u16 as u32;
 
-                v0 | v1 << 16
-            },
-            5 => self.v[2][2] as u32,
-            6 => rgbx_to_u32(self.rgb),
-            7 => self.otz as u32,
-            8 => self.ir[0] as u32,
-            9 => self.ir[1] as u32,
-            10 => self.ir[2] as u32,
-            11 => self.ir[3] as u32,
-            12 => xy_to_u32(self.xy_fifo[0]),
-            13 => xy_to_u32(self.xy_fifo[1]),
-            14 => xy_to_u32(self.xy_fifo[2]),
-            15 => xy_to_u32(self.xy_fifo[3]),
-            16 => self.z_fifo[0] as u32,
-            17 => self.z_fifo[1] as u32,
-            18 => self.z_fifo[2] as u32,
-            19 => self.z_fifo[3] as u32,
-            20 => rgbx_to_u32(self.rgb_fifo[0]),
-            21 => rgbx_to_u32(self.rgb_fifo[1]),
-            22 => rgbx_to_u32(self.rgb_fifo[2]),
-            23 => self.reg_23,
-            24 => self.mac[0] as u32,
-            25 => self.mac[1] as u32,
-            26 => self.mac[2] as u32,
-            27 => self.mac[3] as u32,
-            28 | 29 => {
-                let saturate = | v | {
-                    if v < 0 {
-                        0
-                    } else if v > 0x1f {
-                        0x1f
-                    } else {
-                        v as u32
-                    }
-                };
+                    v0 | v1 << 16
+                },
+                5 => self.v[2][2] as u32,
+                6 => rgbx_to_u32(self.rgb),
+                7 => self.otz as u32,
+                8 => self.ir[0] as u32,
+                9 => self.ir[1] as u32,
+                10 => self.ir[2] as u32,
+                11 => self.ir[3] as u32,
 
-                let a = saturate(self.ir[1] >> 7);
-                let b = saturate(self.ir[2] >> 7);
-                let c = saturate(self.ir[3] >> 7);
+                // Return subpixel precise data for the XY FIFO
+                12 => return xy_to_u32(self.xy_fifo[0]),
+                13 => return xy_to_u32(self.xy_fifo[1]),
+                14 => return xy_to_u32(self.xy_fifo[2]),
+                15 => return xy_to_u32(self.xy_fifo[3]),
 
-                a | (b << 5) | (c << 10)
-            }
-            30 => self.lzcs,
-            31 => self.lzcr as u32,
-            _  => panic!("Unhandled GTE data register {}", reg),
-        }
+                16 => self.z_fifo[0] as u32,
+                17 => self.z_fifo[1] as u32,
+                18 => self.z_fifo[2] as u32,
+                19 => self.z_fifo[3] as u32,
+                20 => rgbx_to_u32(self.rgb_fifo[0]),
+                21 => rgbx_to_u32(self.rgb_fifo[1]),
+                22 => rgbx_to_u32(self.rgb_fifo[2]),
+                23 => self.reg_23,
+                24 => self.mac[0] as u32,
+                25 => self.mac[1] as u32,
+                26 => self.mac[2] as u32,
+                27 => self.mac[3] as u32,
+                28 | 29 => {
+                    let saturate = | v | {
+                        if v < 0 {
+                            0
+                        } else if v > 0x1f {
+                            0x1f
+                        } else {
+                            v as u32
+                        }
+                    };
+
+                    let a = saturate(self.ir[1] >> 7);
+                    let b = saturate(self.ir[2] >> 7);
+                    let c = saturate(self.ir[3] >> 7);
+
+                    a | (b << 5) | (c << 10)
+                }
+                30 => self.lzcs,
+                31 => self.lzcr as u32,
+                _  => panic!("Unhandled GTE data register {}", reg),
+            };
+
+        (d, T::empty())
     }
 
     /// Store value in one of the "data" registers. Used by the

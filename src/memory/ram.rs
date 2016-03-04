@@ -1,36 +1,23 @@
+use cpu::gte::precision::SubpixelPrecision;
+
 use super::Addressable;
 
 /// RAM
-pub struct Ram {
+pub struct Ram<T> {
     /// RAM buffer. Boxed in order not to overflow the stack at the
     /// construction site. Might change once "placement new" is
     /// available.
-    data: Box<[u32; RAM_SIZE_WORDS]>
+    data: Box<[(u32, T); RAM_SIZE_WORDS]>
 }
 
-impl Ram {
-
+impl<T: SubpixelPrecision> Ram<T> {
     /// Instantiate main RAM with garbage values
-    pub fn new() -> Ram {
-        Ram { data: box_array![0xca; RAM_SIZE_WORDS] }
-    }
-
-    /// Fetch the little endian value at `offset`
-    pub fn load<T: Addressable>(&self, offset: u32) -> u32 {
-        // The two MSB are ignored, the 2MB RAM is mirorred four times
-        // over the first 8MB of address space
-        let offset = (offset & 0x1fffff) as usize;
-
-        let word_addr = offset >> 2;
-        let align = (offset & 3) * 8;
-
-        let word = self.data[word_addr] >> align;
-
-        word & T::mask()
+    pub fn new() -> Ram<T> {
+        Ram { data: box_array![(0xca, T::empty()); RAM_SIZE_WORDS] }
     }
 
     /// Store the 32bit little endian word `val` into `offset`
-    pub fn store<T: Addressable>(&mut self, offset: u32, val: u32) {
+    pub fn store<A: Addressable>(&mut self, offset: u32, val: u32) {
         // The two MSB are ignored, the 2MB RAM is mirorred four times
         // over the first 8MB of address space
         let offset = (offset & 0x1fffff) as usize;
@@ -38,12 +25,37 @@ impl Ram {
         let word_addr = offset >> 2;
         let align = (offset & 3) * 8;
 
-        let mask = T::mask() << align;
+        let mask = A::mask() << align;
         let val = (val << align) & mask;
 
-        let word = self.data[word_addr];
+        let word = self.data[word_addr].0;
 
-        self.data[word_addr] = (word & !mask) | val;
+        self.data[word_addr] = ((word & !mask) | val, T::empty());
+    }
+
+    /// Store a word in RAM alongside its associated subpixel data
+    pub fn store_precise(&mut self, offset: u32, val: (u32, T)) {
+        let offset = (offset & 0x1fffff) as usize;
+
+        let word_addr = offset >> 2;
+
+        self.data[word_addr] = val;
+    }
+}
+
+impl<T> Ram<T> {
+    /// Fetch the little endian value at `offset`
+    pub fn load<A: Addressable>(&self, offset: u32) -> u32 {
+        // The two MSB are ignored, the 2MB RAM is mirorred four times
+        // over the first 8MB of address space
+        let offset = (offset & 0x1fffff) as usize;
+
+        let word_addr = offset >> 2;
+        let align = (offset & 3) * 8;
+
+        let word = self.data[word_addr].0 >> align;
+
+        word & A::mask()
     }
 }
 
@@ -93,9 +105,10 @@ const SCRATCH_PAD_SIZE: usize = 1024;
 
 #[test]
 fn ram_read() {
+    use cpu::gte::precision::NativeVertex;
     use super::{Word, HalfWord, Byte};
 
-    let mut ram = Ram::new();
+    let mut ram: Ram<NativeVertex> = Ram::new();
 
     ram.store::<Word>(0, 0x12345678);
     ram.store::<Word>(32, 0x0abcdef0);
@@ -123,9 +136,10 @@ fn ram_read() {
 
 #[test]
 fn ram_write() {
+    use cpu::gte::precision::NativeVertex;
     use super::{Word, HalfWord, Byte};
 
-    let mut ram = Ram::new();
+    let mut ram: Ram<NativeVertex> = Ram::new();
 
     ram.store::<Word>(32, 0x12345678);
     ram.store::<HalfWord>(32, 0xabcd);

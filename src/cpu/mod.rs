@@ -23,8 +23,10 @@ pub struct Cpu<T> {
     /// Address of the instruction currently being executed. Used for
     /// setting the EPC in exceptions.
     current_pc: u32,
-    /// General Purpose Registers. The first entry must always contain 0
-    regs: [u32; 32],
+    /// General Purpose Registers. The first entry must always contain
+    /// 0. Contains subpixel precision data from the GTE when moving
+    /// data from a GTE register to a CPU register.
+    regs: [(u32, T); 32],
     /// HI register for division remainder and multiplication high
     /// result
     hi: u32,
@@ -34,14 +36,14 @@ pub struct Cpu<T> {
     /// Instruction Cache (256 4-word cachelines)
     icache: [ICacheLine; 0x100],
     /// Memory interface
-    inter: Interconnect,
+    inter: Interconnect<T>,
     /// Coprocessor 0: System control
     cop0: Cop0,
     /// Coprocessor 2: Geometry Transform Engine
     gte: Gte<T>,
     /// Load initiated by the current instruction (will take effect
     /// after the load delay slot)
-    load: (RegisterIndex, u32),
+    load: (RegisterIndex, (u32, T)),
     /// Set by the current instruction if a branch occured and the
     /// next instruction will be in the delay slot.
     branch: bool,
@@ -52,12 +54,12 @@ pub struct Cpu<T> {
 impl<T: SubpixelPrecision> Cpu<T> {
 
     /// Create a new CPU instance
-    pub fn new(inter: Interconnect) -> Cpu<T> {
+    pub fn new(inter: Interconnect<T>) -> Cpu<T> {
         // Not sure what the reset values are...
-        let mut regs = [0xdeadbeef; 32];
+        let mut regs = [(0xdeadbeef, T::empty()); 32];
 
         // ... but R0 is hardwired to 0
-        regs[0] = 0;
+        regs[0] = (0, T::empty());
 
         // Reset value for the PC, beginning of BIOS memory
         let pc = 0xbfc00000;
@@ -73,7 +75,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
             inter:      inter,
             cop0:       Cop0::new(),
             gte:        Gte::new(),
-            load:       (RegisterIndex(0), 0),
+            load:       (RegisterIndex(0), (0, T::empty())),
             branch:     false,
             delay_slot: false,
         }
@@ -218,48 +220,6 @@ impl<T: SubpixelPrecision> Cpu<T> {
         }
     }
 
-    /// Memory read
-    fn load<A: Addressable>(&mut self,
-                            debugger: &mut Debugger,
-                            shared: &mut SharedState,
-                            addr: u32) -> u32 {
-        debugger.memory_read(self, addr);
-
-        self.inter.load::<A>(shared, addr)
-    }
-
-    /// Memory read with as little side-effect as possible. Used for
-    /// debugging.
-    pub fn examine<A: Addressable>(&mut self, addr: u32) -> u32 {
-
-        self.inter.load::<A>(&mut SharedState::new(), addr)
-    }
-
-    /// Memory write
-    ///
-    /// We always pass around 32bit values even for Byte and HalfWord
-    /// access because some devices ignore the requested width when
-    /// writing to their registers and might use more than what we
-    /// expect.
-    ///
-    /// On the real console the CPU always puts the entire 32bit register
-    /// value on the bus so those devices might end up using all the
-    /// bytes in the Word even for smaller widths.
-    fn store<A: Addressable>(&mut self,
-                             debugger: &mut Debugger,
-                             shared: &mut SharedState,
-                             renderer: &mut Renderer,
-                             addr: u32,
-                             val: u32) {
-        debugger.memory_write(self, addr);
-
-        if self.cop0.cache_isolated() {
-            self.cache_maintenance::<A>(addr, val);
-        } else {
-            self.inter.store::<A>(shared, renderer, addr, val);
-        }
-    }
-
     /// Handle writes when the cache is isolated
     pub fn cache_maintenance<A: Addressable>(&mut self, addr: u32, val: u32) {
         // Implementing full cache emulation requires handling many
@@ -323,17 +283,28 @@ impl<T: SubpixelPrecision> Cpu<T> {
         self.next_pc = self.pc.wrapping_add(4);
     }
 
+    /// Return the value of a register and its associated subpixel data
+    fn precise_reg(&self, index: RegisterIndex) -> (u32, T) {
+        self.regs[index.0 as usize]
+    }
+
+    /// Set the value of a register including the subpixel precision
+    /// data
+    fn set_reg_precise(&mut self, index: RegisterIndex, val: (u32, T)) {
+        self.regs[index.0 as usize] = val;
+
+        // Make sure R0 is always 0
+        self.regs[0] = (0, T::empty());
+    }
+
     /// Retrieve the value of a general purpose register
     fn reg(&self, index: RegisterIndex) -> u32 {
-        self.regs[index.0 as usize]
+        self.precise_reg(index).0
     }
 
     /// Set the value of a general purpose register
     fn set_reg(&mut self, index: RegisterIndex, val: u32) {
-        self.regs[index.0 as usize] = val;
-
-        // Make sure R0 is always 0
-        self.regs[0] = 0;
+        self.set_reg_precise(index, (val, T::empty()))
     }
 
     /// Execute any pending delayed load. Should be called in every
@@ -342,16 +313,22 @@ impl<T: SubpixelPrecision> Cpu<T> {
     fn delayed_load(&mut self) {
         let (reg, val) = self.load;
 
-        self.set_reg(reg, val);
+        self.set_reg_precise(reg, val);
 
         // We reset the load to target register 0 for the next
         // instruction
-        self.load = (RegisterIndex(0), 0);
+        self.load = (RegisterIndex(0), (0, T::empty()));
     }
 
     /// Get the value of all general purpose registers
-    pub fn regs(&self) -> &[u32] {
-        &self.regs
+    pub fn regs(&self) -> [u32; 32] {
+        let mut regs = [0; 32];
+
+        for (i, &(v, _)) in self.regs.iter().enumerate() {
+            regs[i] = v;
+        }
+
+        regs
     }
 
     pub fn sr(&self) -> u32 {
@@ -1112,7 +1089,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
 
         self.delayed_load();
 
-        self.load = (cpu_r, v)
+        self.load = (cpu_r, (v, T::empty()))
     }
 
     /// Move To Coprocessor 0
@@ -1206,7 +1183,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
 
         self.delayed_load();
 
-        self.load = (cpu_r, v)
+        self.load = (cpu_r, (v, T::empty()))
     }
 
     /// Move To Coprocessor 2 Data register
@@ -1259,7 +1236,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
         self.delayed_load();
 
         // Put the load in the delay slot
-        self.load = (t, v as u32);
+        self.load = (t, (v as u32, T::empty()));
     }
 
     /// Load Halfword (signed)
@@ -1280,7 +1257,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
         self.delayed_load();
 
         // Put the load in the delay slot
-        self.load = (t, v as u32);
+        self.load = (t, (v as u32, T::empty()));
     }
 
     /// Load Word Left (little-endian only implementation)
@@ -1319,7 +1296,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
         };
 
         // Put the load in the delay slot
-        self.load = (t, v);
+        self.load = (t, (v, T::empty()));
     }
 
     /// Load Word
@@ -1341,7 +1318,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
             let v = self.load::<Word>(debugger, shared, addr);
 
             // Put the load in the delay slot
-            self.load = (t, v);
+            self.load = (t, (v, T::empty()));
         } else {
             self.exception(Exception::LoadAddressError);
         }
@@ -1364,7 +1341,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
         self.delayed_load();
 
         // Put the load in the delay slot
-        self.load = (t, v as u32);
+        self.load = (t, (v as u32, T::empty()));
     }
 
     /// Load Halfword Unsigned
@@ -1386,7 +1363,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
             let v = self.load::<HalfWord>(debugger, shared, addr);
 
             // Put the load in the delay slot
-            self.load = (t, v as u32);
+            self.load = (t, (v as u32, T::empty()));
         } else {
             self.exception(Exception::LoadAddressError);
         }
@@ -1428,7 +1405,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
         };
 
         // Put the load in the delay slot
-        self.load = (t, v);
+        self.load = (t, (v, T::empty()));
     }
 
     /// Store Byte
@@ -1519,13 +1496,13 @@ impl<T: SubpixelPrecision> Cpu<T> {
         let s = instruction.s();
 
         let addr = self.reg(s).wrapping_add(i);
-        let v    = self.reg(t);
+        let v    = self.precise_reg(t);
 
         self.delayed_load();
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            self.store::<Word>(debugger, shared, renderer, addr, v);
+            self.store_precise(debugger, shared, renderer, addr, v);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1646,7 +1623,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            self.store::<Word>(debugger, shared, renderer, addr, v);
+            self.store_precise(debugger, shared, renderer, addr, v);
         } else {
             self.exception(Exception::LoadAddressError);
         }
@@ -1658,6 +1635,73 @@ impl<T: SubpixelPrecision> Cpu<T> {
 
         // Not supported by this coprocessor
         self.exception(Exception::CoprocessorError);
+    }
+
+    /// Return a reference to the interconnect
+    pub fn interconnect(&self) -> &Interconnect<T> {
+        &self.inter
+    }
+
+    /// Return a mutable reference to the interconnect
+    pub fn interconnect_mut(&mut self) -> &mut Interconnect<T> {
+        &mut self.inter
+    }
+
+    /// Memory read
+    fn load<A: Addressable>(&mut self,
+                            debugger: &mut Debugger,
+                            shared: &mut SharedState,
+                            addr: u32) -> u32 {
+        debugger.memory_read(self, addr);
+
+        self.inter.load::<A>(shared, addr)
+    }
+
+    /// Memory read with as little side-effect as possible. Used for
+    /// debugging.
+    pub fn examine<A: Addressable>(&mut self, addr: u32) -> u32 {
+
+        self.inter.load::<A>(&mut SharedState::new(), addr)
+    }
+
+    /// Memory write
+    ///
+    /// We always pass around 32bit values even for Byte and HalfWord
+    /// access because some devices ignore the requested width when
+    /// writing to their registers and might use more than what we
+    /// expect.
+    ///
+    /// On the real console the CPU always puts the entire 32bit register
+    /// value on the bus so those devices might end up using all the
+    /// bytes in the Word even for smaller widths.
+    fn store<A: Addressable>(&mut self,
+                             debugger: &mut Debugger,
+                             shared: &mut SharedState,
+                             renderer: &mut Renderer,
+                             addr: u32,
+                             val: u32) {
+        debugger.memory_write(self, addr);
+
+        if self.cop0.cache_isolated() {
+            self.cache_maintenance::<A>(addr, val);
+        } else {
+            self.inter.store::<A>(shared, renderer, addr, val);
+        }
+    }
+
+    fn store_precise(&mut self,
+                     debugger: &mut Debugger,
+                     shared: &mut SharedState,
+                     renderer: &mut Renderer,
+                     addr: u32,
+                     val: (u32, T)) {
+        debugger.memory_write(self, addr);
+
+        if self.cop0.cache_isolated() {
+            self.cache_maintenance::<Word>(addr, val.0);
+        } else {
+            self.inter.store_precise(shared, renderer, addr, val);
+        }
     }
 }
 

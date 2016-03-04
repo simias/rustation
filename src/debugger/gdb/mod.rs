@@ -236,7 +236,7 @@ impl GdbRemote {
         let mut reply = Reply::new();
 
         // Send general purpose registers
-        for &r in cpu.regs() {
+        for &r in &cpu.regs() {
             reply.push_u32(r);
         }
 

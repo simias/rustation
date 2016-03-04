@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate arrayref;
 extern crate shaman;
 extern crate cdimage;
 extern crate arrayvec;
