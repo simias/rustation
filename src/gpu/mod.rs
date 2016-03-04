@@ -1740,7 +1740,7 @@ impl ImageBuffer {
             top_left: (0, 0),
             resolution: (0, 0),
             index: 0,
-            buffer: Box::new([0; 1024 * 512]),
+            buffer: box_array![0; 1024 * 512],
         }
     }
 

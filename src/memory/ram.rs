@@ -13,7 +13,7 @@ impl Ram {
     /// Instantiate main RAM with garbage values
     pub fn new() -> Ram {
 
-        Ram { data: Box::new([0xca; RAM_SIZE]) }
+        Ram { data: box_array![0xca; RAM_SIZE] }
     }
 
     /// Fetch the little endian value at `offset`

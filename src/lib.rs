@@ -4,6 +4,9 @@ extern crate shaman;
 extern crate cdimage;
 extern crate arrayvec;
 
+#[macro_use]
+mod box_array;
+
 pub mod gpu;
 pub mod cdrom;
 pub mod bios;

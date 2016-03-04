@@ -18,7 +18,7 @@ impl Spu {
     pub fn new() -> Spu {
         Spu {
             shadow_registers: [0; 0x100],
-            ram: Box::new([0xbad; 256 * 1024]),
+            ram: box_array![0xbad; 256 * 1024],
             ram_index: 0,
         }
     }
