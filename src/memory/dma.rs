@@ -126,7 +126,7 @@ impl Dma {
 
 /// Per-channel data
 #[derive(Clone,Copy)]
-struct Channel {
+pub struct Channel {
     /// If true the channel is enabled and the copy can take place
     /// depending on the condition mandated by the `sync` mode.
     enable: bool,

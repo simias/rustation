@@ -10,7 +10,7 @@ use self::reply::Reply;
 
 mod reply;
 
-type GdbResult = Result<(), ()>;
+pub type GdbResult = Result<(), ()>;
 
 pub struct GdbRemote {
     remote: TcpStream,
