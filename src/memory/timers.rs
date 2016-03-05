@@ -1,8 +1,10 @@
 use timekeeper::{Cycles, FracCycles, Peripheral};
 use gpu::Gpu;
-use super::Addressable;
+use cpu::gte::precision::SubpixelPrecision;
 use interrupt::Interrupt;
 use shared::SharedState;
+
+use super::Addressable;
 
 #[derive(Debug)]
 pub struct Timers {
@@ -27,13 +29,14 @@ impl Timers {
         }
     }
 
-    pub fn store<T: Addressable>(&mut self,
-                                 shared: &mut SharedState,
-                                 gpu: &mut Gpu,
-                                 offset: u32,
-                                 val: u32) {
+    pub fn store<A, T>(&mut self,
+                       shared: &mut SharedState,
+                       gpu: &mut Gpu<T>,
+                       offset: u32,
+                       val: u32)
+        where A: Addressable, T: SubpixelPrecision {
 
-        if T::size() == 1 {
+        if A::size() == 1 {
             panic!("Unhandled byte timer store");
         }
 
@@ -85,9 +88,10 @@ impl Timers {
 
     /// Called by the GPU when the video timings change since it can
     /// affect the timers that use them.
-    pub fn video_timings_changed(&mut self,
-                                 shared: &mut SharedState,
-                                 gpu: &Gpu) {
+    pub fn video_timings_changed<T>(&mut self,
+                                    shared: &mut SharedState,
+                                    gpu: &Gpu<T>)
+        where T: SubpixelPrecision {
 
         for t in &mut self.timers {
             if t.needs_gpu() {
@@ -186,7 +190,8 @@ impl Timer {
     ///
     /// If the GPU is needed for the timings it must be synchronized
     /// before this function is called.
-    fn reconfigure(&mut self, shared: &mut SharedState, gpu: &Gpu) {
+    fn reconfigure<T>(&mut self, shared: &mut SharedState, gpu: &Gpu<T>)
+        where T: SubpixelPrecision {
 
         match self.clock_source.clock(self.instance) {
             Clock::SysClock => {

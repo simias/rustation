@@ -552,7 +552,8 @@ impl<T: SubpixelPrecision> Gte<T> {
 
     /// Store value in one of the "data" registers. Used by the
     /// MTC2 and LWC2 opcodes
-    pub fn set_data(&mut self, reg: u32, val: u32) {
+    pub fn set_data(&mut self, reg: u32, precise_val: (u32, T)) {
+        let val = precise_val.0;
 
         let val_to_rgbx = || -> (u8, u8, u8, u8) {
             let r = val as u8;
@@ -567,7 +568,7 @@ impl<T: SubpixelPrecision> Gte<T> {
             let x = val as i16;
             let y = (val >> 16) as i16;
 
-            (x, y, T::empty())
+            (x, y, precise_val.1)
         };
 
         match reg {

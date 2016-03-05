@@ -23,13 +23,13 @@ pub trait Renderer {
 }
 
 pub struct Vertex {
-    pub position: [i16; 2],
+    pub position: [f32; 3],
     pub color: [u8; 3],
     pub texture_coord: [u16; 2],
 }
 
 impl Vertex {
-    pub fn new(position: [i16; 2], color: [u8; 3]) -> Vertex {
+    pub fn new(position: [f32; 3], color: [u8; 3]) -> Vertex {
         Vertex {
             position: position,
             color: color,
@@ -38,7 +38,7 @@ impl Vertex {
         }
     }
 
-    pub fn new_textured(position: [i16; 2],
+    pub fn new_textured(position: [f32; 3],
                         color: [u8; 3],
                         texture_coord: [u16; 2]) -> Vertex {
         Vertex {

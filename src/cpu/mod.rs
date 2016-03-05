@@ -1191,13 +1191,12 @@ impl<T: SubpixelPrecision> Cpu<T> {
         let cpu_r = instruction.t();
         let cop_r = instruction.d().0;
 
-        let v = self.reg(cpu_r);
+        let v = self.precise_reg(cpu_r);
 
         self.delayed_load();
 
         self.gte.set_data(cop_r, v);
     }
-
 
     /// Move To Coprocessor 2 Control register
     fn op_ctc2(&mut self, instruction: Instruction) {
@@ -1315,10 +1314,10 @@ impl<T: SubpixelPrecision> Cpu<T> {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            let v = self.load::<Word>(debugger, shared, addr);
+            let v = self.load_precise(debugger, shared, addr);
 
             // Put the load in the delay slot
-            self.load = (t, (v, T::empty()));
+            self.load = (t, v);
         } else {
             self.exception(Exception::LoadAddressError);
         }
@@ -1573,7 +1572,7 @@ impl<T: SubpixelPrecision> Cpu<T> {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            let v = self.load::<Word>(debugger, shared, addr);
+            let v = self.load_precise(debugger, shared, addr);
 
             // Send to coprocessor
             self.gte.set_data(cop_r, v);
@@ -1657,9 +1656,20 @@ impl<T: SubpixelPrecision> Cpu<T> {
         self.inter.load::<A>(shared, addr)
     }
 
+    /// Memory read
+    fn load_precise(&mut self,
+                    debugger: &mut Debugger,
+                    shared: &mut SharedState,
+                    addr: u32) -> (u32, T) {
+        debugger.memory_read(self, addr);
+
+        self.inter.load_precise(shared, addr)
+    }
+
     /// Memory read with as little side-effect as possible. Used for
     /// debugging.
-    pub fn examine<A: Addressable>(&mut self, addr: u32) -> u32 {
+    pub fn examine<A: Addressable>(&mut self,
+                                   addr: u32) -> u32 {
 
         self.inter.load::<A>(&mut SharedState::new(), addr)
     }

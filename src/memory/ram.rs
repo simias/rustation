@@ -33,6 +33,19 @@ impl<T: SubpixelPrecision> Ram<T> {
         self.data[word_addr] = ((word & !mask) | val, T::empty());
     }
 
+    /// Retrieve a word in RAM alongside its associated subpixel data
+    pub fn load_precise(&mut self, offset: u32) -> (u32, T) {
+        let offset = (offset & 0x1fffff) as usize;
+
+        let word_addr = offset >> 2;
+
+        let r = self.data[word_addr];
+
+        println!("RAM Load precise {:08x} {}", offset, r.1.get_precise().is_some());
+
+        r
+    }
+
     /// Store a word in RAM alongside its associated subpixel data
     pub fn store_precise(&mut self, offset: u32, val: (u32, T)) {
         let offset = (offset & 0x1fffff) as usize;

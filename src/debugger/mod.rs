@@ -42,7 +42,7 @@ impl Debugger {
             client: None,
             resume: true,
             step: false,
-            breakpoints: Vec::new(),
+            breakpoints: vec![0x80050b3c],
             read_watchpoints: Vec::new(),
             write_watchpoints: Vec::new(),
         }
@@ -103,7 +103,7 @@ impl Debugger {
 
     /// Add a breakpoint that will trigger when the instruction at
     /// `addr` is about to be executed.
-    fn add_breakpoint(&mut self, addr: u32) {
+    pub fn add_breakpoint(&mut self, addr: u32) {
         // Make sure we're not adding the same address twice
         if !self.breakpoints.contains(&addr) {
             self.breakpoints.push(addr);
@@ -112,7 +112,7 @@ impl Debugger {
 
     /// Delete breakpoint at `addr`. Does nothing if there was no
     /// breakpoint set for this address.
-    fn del_breakpoint(&mut self, addr: u32) {
+    pub fn del_breakpoint(&mut self, addr: u32) {
         self.breakpoints.retain(|&a| a != addr);
     }
 
@@ -130,7 +130,7 @@ impl Debugger {
 
     /// Add a breakpoint that will trigger when the CPU attempts to
     /// read from `addr`
-    fn add_read_watchpoint(&mut self, addr: u32) {
+    pub fn add_read_watchpoint(&mut self, addr: u32) {
         // Make sure we're not adding the same address twice
         if !self.read_watchpoints.contains(&addr) {
             self.read_watchpoints.push(addr);
@@ -139,7 +139,7 @@ impl Debugger {
 
     /// Delete read watchpoint at `addr`. Does nothing if there was no
     /// breakpoint set for this address.
-    fn del_read_watchpoint(&mut self, addr: u32) {
+    pub fn del_read_watchpoint(&mut self, addr: u32) {
         self.read_watchpoints.retain(|&a| a != addr);
     }
 
@@ -158,7 +158,7 @@ impl Debugger {
 
     /// Add a breakpoint that will trigger when the CPU attempts to
     /// write to `addr`
-    fn add_write_watchpoint(&mut self, addr: u32) {
+    pub fn add_write_watchpoint(&mut self, addr: u32) {
         // Make sure we're not adding the same address twice
         if !self.write_watchpoints.contains(&addr) {
             self.write_watchpoints.push(addr);
@@ -167,7 +167,7 @@ impl Debugger {
 
     /// Delete write watchpoint at `addr`. Does nothing if there was no
     /// breakpoint set for this address.
-    fn del_write_watchpoint(&mut self, addr: u32) {
+    pub fn del_write_watchpoint(&mut self, addr: u32) {
         self.write_watchpoints.retain(|&a| a != addr);
     }
 

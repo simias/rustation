@@ -28,7 +28,7 @@ pub struct Interconnect<T> {
     /// DMA registers
     dma: Dma,
     /// Graphics Processor Unit
-    gpu: Gpu,
+    gpu: Gpu<T>,
     /// Sound Processing Unit
     spu: Spu,
     /// System timers
@@ -48,7 +48,7 @@ pub struct Interconnect<T> {
 
 impl<T: SubpixelPrecision> Interconnect<T> {
 
-    pub fn new(bios: Bios, gpu: Gpu, disc: Option<Disc>) -> Interconnect<T> {
+    pub fn new(bios: Bios, gpu: Gpu<T>, disc: Option<Disc>) -> Interconnect<T> {
         Interconnect {
             bios: bios,
             ram: Ram::new(),
@@ -86,7 +86,7 @@ impl<T: SubpixelPrecision> Interconnect<T> {
     }
 
     /// Return a reference to the GPU instance
-    pub fn gpu(&self) -> &Gpu {
+    pub fn gpu(&self) -> &Gpu<T> {
         &self.gpu
     }
 
@@ -110,6 +110,22 @@ impl<T: SubpixelPrecision> Interconnect<T> {
         }
 
         panic!("unhandled instruction load at address {:08x}", pc);
+    }
+
+    /// Interconnect: load precise value at `addr`
+    pub fn load_precise(&mut self,
+                        shared: &mut SharedState,
+                        addr: u32) -> (u32, T) {
+
+        let abs_addr = map::mask_region(addr);
+
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            shared.tk().tick(5);
+
+            return self.ram.load_precise(offset);
+        }
+
+        (self.load::<Word>(shared, addr), T::empty())
     }
 
     /// Interconnect: load value at `addr`
@@ -214,6 +230,15 @@ impl<T: SubpixelPrecision> Interconnect<T> {
             return;
         }
 
+        if let Some(offset) = map::GPU.contains(abs_addr) {
+            self.gpu.store_precise(shared,
+                                   renderer,
+                                   &mut self.timers,
+                                   offset,
+                                   val);
+            return;
+        }
+
         // Fallback on the regular word store if we don't have
         // anything to do with the precise data
         self.store::<Word>(shared, renderer, addr, val.0);
@@ -265,10 +290,10 @@ impl<T: SubpixelPrecision> Interconnect<T> {
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            self.timers.store::<A>(shared,
-                                   &mut self.gpu,
-                                   offset,
-                                   val);
+            self.timers.store::<A, T>(shared,
+                                      &mut self.gpu,
+                                      offset,
+                                      val);
             return;
         }
 
@@ -486,7 +511,9 @@ impl<T: SubpixelPrecision> Interconnect<T> {
             while remsz > 0 {
                 addr = (addr + 4) & 0x1ffffc;
 
-                let command = self.ram.load::<Word>(addr);
+                println!("DMA load precise {:08x}", addr);
+
+                let command = self.ram.load_precise(addr);
 
                 // Send command to the GPU
                 self.gpu.gp0(renderer, command);
@@ -537,7 +564,7 @@ impl<T: SubpixelPrecision> Interconnect<T> {
 
             match channel.direction() {
                 Direction::FromRam => {
-                    let src_word = self.ram.load::<Word>(cur_addr);
+                    let src_word = self.ram.load_precise(cur_addr);
 
                     match port {
                         Port::Gpu => self.gpu.gp0(renderer, src_word),

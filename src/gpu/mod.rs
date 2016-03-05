@@ -1,15 +1,16 @@
-use memory::Addressable;
+use memory::{Addressable, Word};
 use memory::timers::Timers;
 use shared::SharedState;
 use interrupt::Interrupt;
 use timekeeper::{Peripheral, Cycles, FracCycles};
+use cpu::gte::precision::SubpixelPrecision;
 
 use self::renderer::{Renderer, Vertex, PrimitiveAttributes};
 use self::renderer::{BlendMode, SemiTransparencyMode, TextureDepth};
 
 pub mod renderer;
 
-pub struct Gpu {
+pub struct Gpu<T> {
     /// Draw mode for rectangles, dithering enable and a few other
     /// things
     draw_mode: u16,
@@ -74,13 +75,13 @@ pub struct Gpu {
     /// DMA request direction
     dma_direction: DmaDirection,
     /// Handler function for GP0 writes
-    gp0_handler: fn (&mut Gpu, &mut Renderer, u32),
+    gp0_handler: fn (&mut Gpu<T>, &mut Renderer, (u32, T)),
     /// Buffer containing the current GP0 command
-    gp0_command: CommandBuffer,
+    gp0_command: CommandBuffer<T>,
     /// Remaining number of words to fetch for the current GP0 command
     gp0_words_remaining: u32,
     /// Current GP0 command attributes
-    gp0_attributes: Gp0Attributes,
+    gp0_attributes: Gp0Attributes<T>,
     /// True when the GP0 interrupt has been requested
     gp0_interrupt: bool,
     /// True when the VBLANK interrupt is high
@@ -99,13 +100,13 @@ pub struct Gpu {
     read_word: u32,
     /// When drawing polylines we must keep track of the previous
     /// vertex position and color
-    polyline_prev: ([i16; 2], [u8; 3]),
+    polyline_prev: ([f32; 3], [u8; 3]),
     /// Image buffer for texture uploads
     load_buffer: ImageBuffer,
 }
 
-impl Gpu {
-    pub fn new(standard: VideoClock) -> Gpu {
+impl<T: SubpixelPrecision> Gpu<T> {
+    pub fn new(standard: VideoClock) -> Gpu<T> {
         let dummy_gp0 =
             Gp0Attributes::new(Gpu::gp0_nop, false, BlendMode::None, false);
 
@@ -151,7 +152,7 @@ impl Gpu {
             display_line_tick: 0,
             standard: standard,
             read_word: 0,
-            polyline_prev: ([0; 2], [0; 3]),
+            polyline_prev: ([0.; 3], [0; 3]),
             load_buffer: ImageBuffer::new(),
         }
     }
@@ -374,12 +375,12 @@ impl Gpu {
         (self.display_vram_y_start + offset) & 0x1ff
     }
 
-    pub fn load<T: Addressable>(&mut self,
+    pub fn load<A: Addressable>(&mut self,
                                 shared: &mut SharedState,
                                 offset: u32) -> u32 {
 
-        if T::size() != 4 {
-            panic!("Unhandled GPU load ({})", T::size());
+        if A::size() != 4 {
+            panic!("Unhandled GPU load ({})", A::size());
         }
 
         self.sync(shared);
@@ -394,28 +395,45 @@ impl Gpu {
         r
     }
 
-    pub fn store<T: Addressable>(&mut self,
+    pub fn store_precise(&mut self,
+                         shared: &mut SharedState,
+                         renderer: &mut Renderer,
+                         timers: &mut Timers,
+                         offset: u32,
+                         val: (u32, T)) {
+
+        match offset {
+            0 => {
+                println!("Store precise GP0 {}", val.1.get_precise().is_some());
+                self.gp0(renderer, val);
+            }
+            _ => self.store::<Word>(shared, renderer, timers, offset, val.0),
+        }
+    }
+
+
+    pub fn store<A: Addressable>(&mut self,
                                  shared: &mut SharedState,
                                  renderer: &mut Renderer,
                                  timers: &mut Timers,
                                  offset: u32,
                                  val: u32) {
 
-        if T::size() != 4 {
-            panic!("Unhandled GPU load ({})", T::size());
+        if A::size() != 4 {
+            panic!("Unhandled GPU load ({})", A::size());
         }
 
         self.sync(shared);
 
         match offset {
-            0 => self.gp0(renderer, val),
+            0 => self.gp0(renderer, (val, T::empty())),
             4 => self.gp1(shared, renderer, val, timers),
             _ => unreachable!(),
         }
     }
 
     /// Dispatch to the current GP0 handler method
-    pub fn gp0(&mut self, renderer: &mut Renderer, val: u32) {
+    pub fn gp0(&mut self, renderer: &mut Renderer, val: (u32, T)) {
         (self.gp0_handler)(self, renderer, val);
     }
 
@@ -485,7 +503,7 @@ impl Gpu {
     }
 
     /// GP0 handler method: handle a command word
-    fn gp0_handle_command(&mut self, renderer: &mut Renderer, val: u32) {
+    fn gp0_handle_command(&mut self, renderer: &mut Renderer, val: (u32, T)) {
         let (len, attributes) = self.gp0_parse_command(val);
 
         self.gp0_words_remaining = len;
@@ -499,7 +517,7 @@ impl Gpu {
     }
 
     /// GP0 handler method: handle a command parameter
-    fn gp0_handle_parameter(&mut self, renderer: &mut Renderer, val: u32) {
+    fn gp0_handle_parameter(&mut self, renderer: &mut Renderer, val: (u32, T)) {
         self.gp0_command.push_word(val);
         self.gp0_words_remaining -= 1;
 
@@ -518,9 +536,11 @@ impl Gpu {
     }
 
     /// GP0 handler method: handle shaded polyline color word
-    fn gp0_handle_shaded_polyline_color(&mut self, _: &mut Renderer, val: u32) {
+    fn gp0_handle_shaded_polyline_color(&mut self,
+                                        _: &mut Renderer,
+                                        val: (u32, T)) {
         self.gp0_handler =
-            if is_polyline_end_marker(val) {
+            if is_polyline_end_marker(val.0) {
                 // We found the end-of-polyline marker, we're done.
                 Gpu::gp0_handle_command
             } else {
@@ -535,7 +555,7 @@ impl Gpu {
     /// GP0 handler method: handle shaded polyline vertex word
     fn gp0_handle_shaded_polyline_vertex(&mut self,
                                          renderer: &mut Renderer,
-                                         val: u32) {
+                                         val: (u32, T)) {
         // We don't test for the end-of-polyline marker here because
         // it only works in color words for shaded polylines.
 
@@ -564,8 +584,8 @@ impl Gpu {
     /// GP0 handler method: handle monochrome polyline position word
     fn gp0_handle_monochrome_polyline_vertex(&mut self,
                                              renderer: &mut Renderer,
-                                             val: u32) {
-        if is_polyline_end_marker(val) {
+                                             val: (u32, T)) {
+        if is_polyline_end_marker(val.0) {
             // We found the end-of-polyline marker, we're done.
             self.gp0_handler = Gpu::gp0_handle_command;
             return;
@@ -590,12 +610,12 @@ impl Gpu {
 
 
     /// Parse GP0 command and return its length in words and attributes
-    fn gp0_parse_command(&self, gp0: u32) -> (u32, Gp0Attributes) {
-        let opcode = gp0 >> 24;
+    fn gp0_parse_command(&self, gp0: (u32, T)) -> (u32, Gp0Attributes<T>) {
+        let opcode = gp0.0 >> 24;
 
         let dither = self.dither();
 
-        let (len, cback, dither): (u32, fn(&mut Gpu, &mut Renderer), bool) =
+        let (len, cback, dither): (u32, fn(&mut Gpu<T>, &mut Renderer), bool) =
             match opcode {
                 0x00 => (1,  Gpu::gp0_nop, false),
                 0x01 => (1,  Gpu::gp0_clear_cache, false),
@@ -655,7 +675,7 @@ impl Gpu {
                 0xe4 => (1,  Gpu::gp0_drawing_area_bottom_right, false),
                 0xe5 => (1,  Gpu::gp0_drawing_offset, false),
                 0xe6 => (1,  Gpu::gp0_mask_bit_setting, false),
-                _    => panic!("Unhandled GP0 command {:08x}", gp0),
+                _    => panic!("Unhandled GP0 command {:08x}", gp0.0),
             };
 
         let textured = opcode & 0x4 != 0;
@@ -699,8 +719,8 @@ impl Gpu {
     /// GP0(0x02): Fill rectangle
     /// *Not* affected by mask setting unlike other rect commands
     fn gp0_fill_rect(&mut self, renderer: &mut Renderer) {
-        let top_left = gp0_position(self.gp0_command[1]);
-        let size = gp0_position(self.gp0_command[2]);
+        let top_left = gp0_position_native(self.gp0_command[1]);
+        let size = gp0_position_native(self.gp0_command[2]);
 
         let color = gp0_color(self.gp0_command[0]);
 
@@ -746,8 +766,8 @@ impl Gpu {
     /// Gp0(0x80): Copy rectangle
     fn gp0_copy_rect(&mut self, _: &mut Renderer) {
         let size = gp0_position(self.gp0_command[3]);
-        let src_top_left = gp0_position(self.gp0_command[1]);
-        let dst_top_left = gp0_position(self.gp0_command[2]);
+        let src_top_left = gp0_position_native(self.gp0_command[1]);
+        let dst_top_left = gp0_position_native(self.gp0_command[2]);
 
         // XXX Implement me
         debug!("Copy Rectangle {:?} {:?} {:?}",
@@ -826,8 +846,8 @@ impl Gpu {
     fn gp0_textured_triangle(&mut self, renderer: &mut Renderer) {
         let color = gp0_color(self.gp0_command[0]);
 
-        self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
-        self.gp0_attributes.set_draw_params(self.gp0_command[4] >> 16);
+        self.gp0_attributes.set_clut(self.gp0_command[2].0 >> 16);
+        self.gp0_attributes.set_draw_params(self.gp0_command[4].0 >> 16);
 
         let vertices = [
             Vertex::new_textured(gp0_position(self.gp0_command[1]),
@@ -849,8 +869,8 @@ impl Gpu {
     fn gp0_textured_quad(&mut self, renderer: &mut Renderer) {
         let color = gp0_color(self.gp0_command[0]);
 
-        self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
-        self.gp0_attributes.set_draw_params(self.gp0_command[4] >> 16);
+        self.gp0_attributes.set_clut(self.gp0_command[2].0 >> 16);
+        self.gp0_attributes.set_draw_params(self.gp0_command[4].0 >> 16);
 
         let vertices = [
             Vertex::new_textured(gp0_position(self.gp0_command[1]),
@@ -948,8 +968,8 @@ impl Gpu {
     /// Draw a textured shaded triangle
     fn gp0_textured_shaded_triangle(&mut self, renderer: &mut Renderer) {
 
-        self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
-        self.gp0_attributes.set_draw_params(self.gp0_command[5] >> 16);
+        self.gp0_attributes.set_clut(self.gp0_command[2].0 >> 16);
+        self.gp0_attributes.set_draw_params(self.gp0_command[5].0 >> 16);
 
         let vertices = [
             Vertex::new_textured(gp0_position(self.gp0_command[1]),
@@ -970,8 +990,8 @@ impl Gpu {
     /// Draw a textured shaded quad
     fn gp0_textured_shaded_quad(&mut self, renderer: &mut Renderer) {
 
-        self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
-        self.gp0_attributes.set_draw_params(self.gp0_command[5] >> 16);
+        self.gp0_attributes.set_clut(self.gp0_command[2].0 >> 16);
+        self.gp0_attributes.set_draw_params(self.gp0_command[5].0 >> 16);
 
         let vertices = [
             Vertex::new_textured(gp0_position(self.gp0_command[1]),
@@ -1001,11 +1021,16 @@ impl Gpu {
         let top_left = gp0_position(self.gp0_command[1]);
         let color = gp0_color(self.gp0_command[0]);
 
+        let width = width as f32;
+        let height = height as f32;
+
+        let z = top_left[2];
+
         let vertices = [
             Vertex::new(top_left, color),
-            Vertex::new([top_left[0] + width, top_left[1]], color),
-            Vertex::new([top_left[0], top_left[1] + height], color),
-            Vertex::new([top_left[0] + width, top_left[1] + height], color),
+            Vertex::new([top_left[0] + width, top_left[1], z], color),
+            Vertex::new([top_left[0], top_left[1] + height, z], color),
+            Vertex::new([top_left[0] + width, top_left[1] + height, z], color),
         ];
 
         renderer.push_quad(self.gp0_attributes.primitive_attributes(),
@@ -1020,7 +1045,7 @@ impl Gpu {
         // Rectangles draw params are set with the "Draw Mode" command
         self.gp0_attributes.set_draw_params(self.draw_mode as u32);
 
-        self.gp0_attributes.set_clut(self.gp0_command[2] >> 16);
+        self.gp0_attributes.set_clut(self.gp0_command[2].0 >> 16);
 
         let top_left = gp0_position(self.gp0_command[1]);
 
@@ -1028,19 +1053,24 @@ impl Gpu {
 
         let color = gp0_color(self.gp0_command[0]);
 
+        let w = width as f32;
+        let h = height as f32;
+
+        let z = top_left[2];
+
         let vertices = [
             Vertex::new_textured(top_left,
                                  color,
                                  tex_top_left),
-            Vertex::new_textured([top_left[0] + width, top_left[1]],
+            Vertex::new_textured([top_left[0] + w, top_left[1], z],
                                  color,
                                  [tex_top_left[0] + width as u16,
                                   tex_top_left[1]]),
-            Vertex::new_textured([top_left[0], top_left[1] + height],
+            Vertex::new_textured([top_left[0], top_left[1] + h, z],
                                  color,
                                  [tex_top_left[0],
                                   tex_top_left[1] + height as u16]),
-            Vertex::new_textured([top_left[0] + width, top_left[1] + height],
+            Vertex::new_textured([top_left[0] + w, top_left[1] + h, z],
                                  color,
                                  [tex_top_left[0] + width as u16,
                                   tex_top_left[1] + height as u16]),
@@ -1052,14 +1082,14 @@ impl Gpu {
 
     /// Draw a textured rectangle
     fn gp0_textured_rect(&mut self, renderer: &mut Renderer) {
-        let size = gp0_position(self.gp0_command[3]);
+        let size = gp0_position_native(self.gp0_command[3]);
 
         self.gp0_rect_sized_textured(renderer, size[0], size[1]);
     }
 
     /// Draw a monochrome rectangle
     fn gp0_monochrome_rect(&mut self, renderer: &mut Renderer) {
-        let size = gp0_position(self.gp0_command[2]);
+        let size = gp0_position_native(self.gp0_command[2]);
 
         self.gp0_rect_sized(renderer, size[0], size[1]);
     }
@@ -1089,13 +1119,13 @@ impl Gpu {
     fn gp0_image_load(&mut self, _: &mut Renderer) {
         // Parameter 1 contains the location of the target location's
         // top-left corner in VRAM
-        let pos = self.gp0_command[1];
+        let pos = self.gp0_command[1].0;
 
         let x = pos as u16;
         let y = (pos >> 16) as u16;
 
         // Parameter 2 contains the image resolution
-        let res = self.gp0_command[2];
+        let res = self.gp0_command[2].0;
 
         let width  = res & 0xffff;
         let height = res >> 16;
@@ -1123,8 +1153,11 @@ impl Gpu {
     }
 
     /// GP0 handler method: handle image load
-    fn gp0_handle_image_load(&mut self, renderer: &mut Renderer, word: u32) {
-        self.load_buffer.push_gp0_word(word);
+    fn gp0_handle_image_load(&mut self,
+                             renderer: &mut Renderer,
+                             word: (u32, T)) {
+
+        self.load_buffer.push_gp0_word(word.0);
 
         self.gp0_words_remaining -= 1;
 
@@ -1141,7 +1174,7 @@ impl Gpu {
     /// GP0(0xC0): Image Store
     fn gp0_image_store(&mut self, _: &mut Renderer) {
         // Parameter 2 contains the image resolution
-        let res = self.gp0_command[2];
+        let res = self.gp0_command[2].0;
 
         let width  = res & 0xffff;
         let height = res >> 16;
@@ -1151,12 +1184,12 @@ impl Gpu {
 
     /// GP0(0xE1): Draw Mode
     fn gp0_draw_mode(&mut self, _: &mut Renderer) {
-        self.draw_mode = self.gp0_command[0] as u16;
+        self.draw_mode = self.gp0_command[0].0 as u16;
     }
 
     /// GP0(0xE2): Set Texture Window
     fn gp0_texture_window(&mut self, _: &mut Renderer) {
-        let val = self.gp0_command[0];
+        let val = self.gp0_command[0].0;
 
         self.texture_window_x_mask = (val & 0x1f) as u8;
         self.texture_window_y_mask = ((val >> 5) & 0x1f) as u8;
@@ -1166,7 +1199,7 @@ impl Gpu {
 
     /// GP0(0xE3): Set Drawing Area top left
     fn gp0_drawing_area_top_left(&mut self, renderer: &mut Renderer) {
-        let val = self.gp0_command[0];
+        let val = self.gp0_command[0].0;
 
         self.drawing_area_top = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_left = (val & 0x3ff) as u16;
@@ -1176,7 +1209,7 @@ impl Gpu {
 
     /// GP0(0xE4): Set Drawing Area bottom right
     fn gp0_drawing_area_bottom_right(&mut self, renderer: &mut Renderer) {
-        let val = self.gp0_command[0];
+        let val = self.gp0_command[0].0;
 
         self.drawing_area_bottom = ((val >> 10) & 0x3ff) as u16;
         self.drawing_area_right = (val & 0x3ff) as u16;
@@ -1194,7 +1227,7 @@ impl Gpu {
 
     /// GP0(0xE5): Set Drawing Offset
     fn gp0_drawing_offset(&mut self, renderer: &mut Renderer) {
-        let val = self.gp0_command[0];
+        let val = self.gp0_command[0].0;
 
         let x = (val & 0x7ff) as u16;
         let y = ((val >> 11) & 0x7ff) as u16;
@@ -1210,7 +1243,7 @@ impl Gpu {
 
     /// GP0(0xE6): Set Mask Bit Setting
     fn gp0_mask_bit_setting(&mut self, _: &mut Renderer) {
-        let val = self.gp0_command[0];
+        let val = self.gp0_command[0].0;
 
         self.force_set_mask_bit = (val & 1) != 0;
         self.preserve_masked_pixels = (val & 2) != 0;
@@ -1563,18 +1596,18 @@ enum DmaDirection {
 }
 
 /// Buffer holding multi-word fixed-length GP0 command parameters
-struct CommandBuffer {
+struct CommandBuffer<T> {
     /// Command buffer: the longuest possible command is GP0(0x3E)
     /// which takes 12 parameters
-    buffer: [u32; 12],
+    buffer: [(u32, T); 12],
     /// Number of words queued in buffer
     len:    u8,
 }
 
-impl CommandBuffer {
-    fn new() -> CommandBuffer {
+impl<T: SubpixelPrecision> CommandBuffer<T> {
+    fn new() -> CommandBuffer<T> {
         CommandBuffer {
-            buffer: [0; 12],
+            buffer: [(0, T::empty()); 12],
             len:    0,
         }
     }
@@ -1584,17 +1617,17 @@ impl CommandBuffer {
         self.len = 0;
     }
 
-    fn push_word(&mut self, word: u32) {
+    fn push_word(&mut self, word: (u32, T)) {
         self.buffer[self.len as usize] = word;
 
         self.len += 1;
     }
 }
 
-impl ::std::ops::Index<usize> for CommandBuffer {
-    type Output = u32;
+impl<T> ::std::ops::Index<usize> for CommandBuffer<T> {
+    type Output = (u32, T);
 
-    fn index<'a>(&'a self, index: usize) -> &'a u32 {
+    fn index<'a>(&'a self, index: usize) -> &'a (u32, T) {
         if index >= self.len as usize {
             panic!("Command buffer index out of range: {} ({})",
                    index, self.len);
@@ -1607,21 +1640,21 @@ impl ::std::ops::Index<usize> for CommandBuffer {
 /// Attributes of the various GP0 commands. Some attributes don't make
 /// sense for certain commands but those will just be ignored by the
 /// `parser_callback`
-struct Gp0Attributes {
+struct Gp0Attributes<T> {
     /// Method called when all the parameters have been received.
-    callback: fn(&mut Gpu, &mut Renderer),
+    callback: fn(&mut Gpu<T>, &mut Renderer),
     /// If the command draws a primitive this will contain its
     /// attributes. Otherwise it should be ignored.
     primitive_attributes: PrimitiveAttributes,
 }
 
-impl Gp0Attributes {
+impl<T: SubpixelPrecision> Gp0Attributes<T> {
     /// Builder for GP0 commands that just need a parser and ignore
     /// the other attributes.
-    fn new(callback: fn(&mut Gpu, &mut Renderer),
+    fn new(callback: fn(&mut Gpu<T>, &mut Renderer),
            semi_transparent: bool,
            blend_mode: BlendMode,
-           dither: bool) -> Gp0Attributes {
+           dither: bool) -> Gp0Attributes<T> {
 
         Gp0Attributes {
             callback: callback,
@@ -1684,20 +1717,45 @@ impl Gp0Attributes {
     }
 }
 
+/// Attempt to retrieve the x, y and z coordinates of the vertex using
+/// the subpixel precise data. If no subpixel precise data is
+/// available use the native x and y coordinates instead and set z to
+/// 0.
+fn gp0_position<T: SubpixelPrecision>(pos: (u32, T)) -> [f32; 3] {
+    // Use subpixel data if available
+    match pos.1.get_precise() {
+        Some((x, y, z)) => {
+            [x as f32, y as f32, z as f32]
+        },
+        None => {
+            let pos = pos.0;
 
+            let x = pos as i16;
+            let y = (pos >> 16) as i16;
+
+            [0., 0., 0.]
+            //[x as f32, y as f32, 0.]
+        }
+    }
+}
 
 /// Parse a position as written in the GP0 register and return it as
 /// an array of two `i16`
-fn gp0_position(pos: u32) -> [i16; 2] {
+fn gp0_position_native<T: SubpixelPrecision>(pos: (u32, T)) -> [i16; 2] {
+    let pos = pos.0;
+
     let x = pos as i16;
     let y = (pos >> 16) as i16;
 
     [x, y]
 }
 
+
 /// Parse a color as written in the GP0 register and return it as
 /// an array of 3 `u8`
-fn gp0_color(col: u32) -> [u8; 3] {
+fn gp0_color<T: SubpixelPrecision>(col: (u32, T)) -> [u8; 3] {
+    let col = col.0;
+
     let r = col as u8;
     let g = (col >> 8) as u8;
     let b = (col >> 16) as u8;
@@ -1707,7 +1765,9 @@ fn gp0_color(col: u32) -> [u8; 3] {
 
 /// Parse a texture coordinate coordinates written in the GP0
 /// register. Values are offset within the current texture page.
-fn gp0_texture_coordinates(gp0: u32) -> [u16; 2] {
+fn gp0_texture_coordinates<T: SubpixelPrecision>(gp0: (u32, T)) -> [u16; 2] {
+    let gp0 = gp0.0;
+
     let x = gp0 & 0xff;
     // Y coord is either 0 or 256
     let y = (gp0 >> 8) & 0xff;
