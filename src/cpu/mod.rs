@@ -22,10 +22,6 @@ pub struct Cpu {
     current_pc: u32,
     /// General Purpose Registers. The first entry must always contain 0
     regs: [u32; 32],
-    /// 2nd set of registers used to emulate the load delay slot
-    /// accurately. They contain the output of the current
-    /// instruction.
-    out_regs: [u32; 32],
     /// HI register for division remainder and multiplication high
     /// result
     hi: u32,
@@ -68,7 +64,6 @@ impl Cpu {
             next_pc:    pc.wrapping_add(4),
             current_pc: 0,
             regs:       regs,
-            out_regs:   regs,
             hi:         0xdeadbeef,
             lo:         0xdeadbeef,
             icache:     [ICacheLine::new(); 0x100],
@@ -136,16 +131,6 @@ impl Cpu {
         self.pc         = self.next_pc;
         self.next_pc    = self.pc.wrapping_add(4);
 
-        // Execute the pending load (if any, otherwise it will load
-        // `R0` which is a NOP). `set_reg` works only on `out_regs` so
-        // this operation won't be visible by the next instruction.
-        let (reg, val) = self.load;
-        self.set_reg(reg, val);
-
-        // We reset the load to target register 0 for the next
-        // instruction
-        self.load = (RegisterIndex(0), 0);
-
         // If the last instruction was a branch then we're in the
         // delay slot
         self.delay_slot = self.branch;
@@ -163,9 +148,6 @@ impl Cpu {
             // No interrupt pending, run the current instruction
             self.decode_and_execute(instruction, shared, renderer);
         }
-
-        // Copy the output registers as input for the next instruction
-        self.regs = self.out_regs;
     }
 
     /// Fetch the instruction at `current_pc` through the instruction
@@ -233,7 +215,7 @@ impl Cpu {
             // Cache disabled, fetch directly from memory. Takes 4
             // cycles on average.
             shared.tk().tick(4);
-            
+
             Instruction(self.inter.load_instruction(pc))
         }
     }
@@ -341,15 +323,30 @@ impl Cpu {
         self.next_pc = self.pc.wrapping_add(4);
     }
 
+    /// Retrieve the value of a general purpose register
     fn reg(&self, index: RegisterIndex) -> u32 {
         self.regs[index.0 as usize]
     }
 
+    /// Set the value of a general purpose register
     fn set_reg(&mut self, index: RegisterIndex, val: u32) {
-        self.out_regs[index.0 as usize] = val;
+        self.regs[index.0 as usize] = val;
 
         // Make sure R0 is always 0
-        self.out_regs[0] = 0;
+        self.regs[0] = 0;
+    }
+
+    /// Execute any pending delayed load. Should be called in every
+    /// instruction *after* the input registers are read but *before*
+    /// the output registers are written
+    fn delayed_load(&mut self) {
+        let (reg, val) = self.load;
+
+        self.set_reg(reg, val);
+
+        // We reset the load to target register 0 for the next
+        // instruction
+        self.load = (RegisterIndex(0), 0);
     }
 
     /// Get the value of all general purpose registers
@@ -476,7 +473,10 @@ impl Cpu {
 
     /// Illegal instruction
     fn op_illegal(&mut self, instruction: Instruction) {
+        self.delayed_load();
+
         warn!("Illegal instruction {}!", instruction);
+
         self.exception(Exception::IllegalInstruction);
     }
 
@@ -487,6 +487,8 @@ impl Cpu {
         let d = instruction.d();
 
         let v = self.reg(t) << i;
+
+        self.delayed_load();
 
         self.set_reg(d, v);
     }
@@ -499,6 +501,8 @@ impl Cpu {
 
         let v = self.reg(t) >> i;
 
+        self.delayed_load();
+
         self.set_reg(d, v);
     }
 
@@ -509,6 +513,8 @@ impl Cpu {
         let d = instruction.d();
 
         let v = (self.reg(t) as i32) >> i;
+
+        self.delayed_load();
 
         self.set_reg(d, v as u32);
     }
@@ -522,6 +528,8 @@ impl Cpu {
         // Shift amount is truncated to 5 bits
         let v = self.reg(t) << (self.reg(s) & 0x1f);
 
+        self.delayed_load();
+
         self.set_reg(d, v);
     }
 
@@ -534,6 +542,8 @@ impl Cpu {
         // Shift amount is truncated to 5 bits
         let v = self.reg(t) >> (self.reg(s) & 0x1f);
 
+        self.delayed_load();
+
         self.set_reg(d, v);
     }
 
@@ -545,6 +555,8 @@ impl Cpu {
 
         // Shift amount is truncated to 5 bits
         let v = (self.reg(t) as i32) >> (self.reg(s) & 0x1f);
+
+        self.delayed_load();
 
         self.set_reg(d, v as u32);
     }
@@ -570,6 +582,8 @@ impl Cpu {
         // xor takes care of that.
         let test = test ^ is_bgez;
 
+        self.delayed_load();
+
         if test != 0 {
             if is_link {
                 let ra = self.next_pc;
@@ -588,6 +602,8 @@ impl Cpu {
 
         self.next_pc = self.reg(s);
 
+        self.delayed_load();
+
         self.branch = true;
     }
 
@@ -598,21 +614,27 @@ impl Cpu {
 
         let ra = self.next_pc;
 
+        self.next_pc = self.reg(s);
+
+        self.delayed_load();
+
         // Store return address in `d`
         self.set_reg(d, ra);
-
-        self.next_pc = self.reg(s);
 
         self.branch = true;
     }
 
     /// System Call
     fn op_syscall(&mut self, _: Instruction) {
+        self.delayed_load();
+
         self.exception(Exception::SysCall);
     }
 
     /// Break
     fn op_break(&mut self, _: Instruction) {
+        self.delayed_load();
+
         // Should I do something special with the debugger here? Might
         // be convenient if somebody wants to debug with the BREAK
         // instruction in custom code.
@@ -625,6 +647,8 @@ impl Cpu {
 
         let hi = self.hi;
 
+        self.delayed_load();
+
         self.set_reg(d, hi);
     }
 
@@ -633,6 +657,8 @@ impl Cpu {
         let s = instruction.s();
 
         self.hi = self.reg(s);
+
+        self.delayed_load();
     }
 
     /// Move From LO
@@ -640,6 +666,8 @@ impl Cpu {
         let d = instruction.d();
 
         let lo = self.lo;
+
+        self.delayed_load();
 
         self.set_reg(d, lo);
     }
@@ -649,6 +677,8 @@ impl Cpu {
         let s = instruction.s();
 
         self.lo = self.reg(s);
+
+        self.delayed_load();
     }
 
     /// Multiply (signed)
@@ -658,6 +688,8 @@ impl Cpu {
 
         let a = (self.reg(s) as i32) as i64;
         let b = (self.reg(t) as i32) as i64;
+
+        self.delayed_load();
 
         let v = (a * b) as u64;
 
@@ -673,6 +705,8 @@ impl Cpu {
         let a = self.reg(s) as u64;
         let b = self.reg(t) as u64;
 
+        self.delayed_load();
+
         let v = a * b;
 
         self.hi = (v >> 32) as u32;
@@ -686,6 +720,8 @@ impl Cpu {
 
         let n = self.reg(s) as i32;
         let d = self.reg(t) as i32;
+
+        self.delayed_load();
 
         if d == 0 {
             // Division by zero, results are bogus
@@ -714,6 +750,8 @@ impl Cpu {
         let n = self.reg(s);
         let d = self.reg(t);
 
+        self.delayed_load();
+
         if d == 0 {
             // Division by zero, results are bogus
             self.hi = n;
@@ -733,6 +771,8 @@ impl Cpu {
         let s = self.reg(s) as i32;
         let t = self.reg(t) as i32;
 
+        self.delayed_load();
+
         match s.checked_add(t) {
             Some(v) => self.set_reg(d, v as u32),
             None    => self.exception(Exception::Overflow),
@@ -747,6 +787,8 @@ impl Cpu {
 
         let v = self.reg(s).wrapping_add(self.reg(t));
 
+        self.delayed_load();
+
         self.set_reg(d, v);
     }
 
@@ -758,6 +800,8 @@ impl Cpu {
 
         let s = self.reg(s) as i32;
         let t = self.reg(t) as i32;
+
+        self.delayed_load();
 
         match s.checked_sub(t) {
             Some(v) => self.set_reg(d, v as u32),
@@ -773,6 +817,8 @@ impl Cpu {
 
         let v = self.reg(s).wrapping_sub(self.reg(t));
 
+        self.delayed_load();
+
         self.set_reg(d, v);
     }
 
@@ -783,6 +829,8 @@ impl Cpu {
         let t = instruction.t();
 
         let v = self.reg(s) & self.reg(t);
+
+        self.delayed_load();
 
         self.set_reg(d, v);
     }
@@ -795,6 +843,8 @@ impl Cpu {
 
         let v = self.reg(s) | self.reg(t);
 
+        self.delayed_load();
+
         self.set_reg(d, v);
     }
 
@@ -805,6 +855,8 @@ impl Cpu {
         let t = instruction.t();
 
         let v = self.reg(s) ^ self.reg(t);
+
+        self.delayed_load();
 
         self.set_reg(d, v);
     }
@@ -817,6 +869,8 @@ impl Cpu {
 
         let v = !(self.reg(s) | self.reg(t));
 
+        self.delayed_load();
+
         self.set_reg(d, v);
     }
 
@@ -828,6 +882,8 @@ impl Cpu {
 
         let s = self.reg(s) as i32;
         let t = self.reg(t) as i32;
+
+        self.delayed_load();
 
         let v = s < t;
 
@@ -842,6 +898,8 @@ impl Cpu {
 
         let v = self.reg(s) < self.reg(t);
 
+        self.delayed_load();
+
         self.set_reg(d, v as u32);
     }
 
@@ -852,16 +910,18 @@ impl Cpu {
         self.next_pc = (self.pc & 0xf0000000) | (i << 2);
 
         self.branch = true;
+
+        self.delayed_load();
     }
 
     /// Jump And Link
     fn op_jal(&mut self, instruction: Instruction) {
         let ra = self.next_pc;
 
+        self.op_j(instruction);
+
         // Store return address in R31
         self.set_reg(RegisterIndex(31), ra);
-
-        self.op_j(instruction);
 
         self.branch = true;
     }
@@ -875,6 +935,8 @@ impl Cpu {
         if self.reg(s) == self.reg(t) {
             self.branch(i);
         }
+
+        self.delayed_load();
     }
 
     /// Branch if Not Equal
@@ -886,6 +948,8 @@ impl Cpu {
         if self.reg(s) != self.reg(t) {
             self.branch(i);
         }
+
+        self.delayed_load();
     }
 
     /// Branch if Less than or Equal to Zero
@@ -898,6 +962,8 @@ impl Cpu {
         if v <= 0 {
             self.branch(i);
         }
+
+        self.delayed_load();
     }
 
     /// Branch if Greater Than Zero
@@ -910,6 +976,8 @@ impl Cpu {
         if v > 0 {
             self.branch(i);
         }
+
+        self.delayed_load();
     }
 
     /// Add Immediate and check for signed overflow
@@ -919,6 +987,8 @@ impl Cpu {
         let s = instruction.s();
 
         let s = self.reg(s) as i32;
+
+        self.delayed_load();
 
         match s.checked_add(i) {
             Some(v) => self.set_reg(t, v as u32),
@@ -934,6 +1004,8 @@ impl Cpu {
 
         let v = self.reg(s).wrapping_add(i);
 
+        self.delayed_load();
+
         self.set_reg(t, v);
     }
 
@@ -944,6 +1016,8 @@ impl Cpu {
         let t = instruction.t();
 
         let v = (self.reg(s) as i32) < i;
+
+        self.delayed_load();
 
         self.set_reg(t, v as u32);
     }
@@ -956,6 +1030,8 @@ impl Cpu {
 
         let v = self.reg(s) < i;
 
+        self.delayed_load();
+
         self.set_reg(t, v as u32);
     }
 
@@ -966,6 +1042,8 @@ impl Cpu {
         let s = instruction.s();
 
         let v = self.reg(s) & i;
+
+        self.delayed_load();
 
         self.set_reg(t, v);
     }
@@ -978,6 +1056,8 @@ impl Cpu {
 
         let v = self.reg(s) | i;
 
+        self.delayed_load();
+
         self.set_reg(t, v);
     }
 
@@ -989,6 +1069,8 @@ impl Cpu {
 
         let v = self.reg(s) ^ i;
 
+        self.delayed_load();
+
         self.set_reg(t, v);
     }
 
@@ -999,6 +1081,8 @@ impl Cpu {
 
         // Low 16bits are set to 0
         let v = i << 16;
+
+        self.delayed_load();
 
         self.set_reg(t, v);
     }
@@ -1025,6 +1109,8 @@ impl Cpu {
             _  => panic!("Unhandled read from cop0r{}", cop_r),
         };
 
+        self.delayed_load();
+
         self.load = (cpu_r, v)
     }
 
@@ -1034,6 +1120,8 @@ impl Cpu {
         let cop_r = instruction.d().0;
 
         let v = self.reg(cpu_r);
+
+        self.delayed_load();
 
         match cop_r {
             3 | 5 | 6 | 7 | 9 | 11  => // Breakpoints registers
@@ -1051,6 +1139,8 @@ impl Cpu {
 
     /// Return From Exception
     fn op_rfe(&mut self, instruction: Instruction) {
+        self.delayed_load();
+
         // There are other instructions with the same encoding but all
         // are virtual memory related and the PlayStation doesn't
         // implement them. Still, let's make sure we're not running
@@ -1064,6 +1154,8 @@ impl Cpu {
 
     /// Coprocessor 1 opcode (does not exist on the PlayStation)
     fn op_cop1(&mut self, _: Instruction) {
+        self.delayed_load();
+
         self.exception(Exception::CoprocessorError);
     }
 
@@ -1075,7 +1167,6 @@ impl Cpu {
         // it seems that one has to wait at least two cycles (tested
         // with two nops) after raising the flag in the status
         // register before the GTE can be accessed.
-
         let cop_opcode = instruction.cop_opcode();
 
         if cop_opcode & 0x10 != 0 {
@@ -1100,6 +1191,8 @@ impl Cpu {
 
         let v = self.gte.data(cop_r);
 
+        self.delayed_load();
+
         self.load = (cpu_r, v)
     }
 
@@ -1110,6 +1203,8 @@ impl Cpu {
 
         let v = self.gte.control(cop_r);
 
+        self.delayed_load();
+
         self.load = (cpu_r, v)
     }
 
@@ -1119,6 +1214,8 @@ impl Cpu {
         let cop_r = instruction.d().0;
 
         let v = self.reg(cpu_r);
+
+        self.delayed_load();
 
         self.gte.set_data(cop_r, v);
     }
@@ -1131,11 +1228,15 @@ impl Cpu {
 
         let v = self.reg(cpu_r);
 
+        self.delayed_load();
+
         self.gte.set_control(cop_r, v);
     }
 
     /// Coprocessor 3 opcode (does not exist on the PlayStation)
     fn op_cop3(&mut self, _: Instruction) {
+        self.delayed_load();
+
         self.exception(Exception::CoprocessorError);
     }
 
@@ -1152,6 +1253,8 @@ impl Cpu {
 
         // Cast as i8 to force sign extension
         let v = self.load::<Byte>(shared, addr) as i8;
+
+        self.delayed_load();
 
         // Put the load in the delay slot
         self.load = (t, v as u32);
@@ -1171,6 +1274,8 @@ impl Cpu {
         // Cast as i16 to force sign extension
         let v = self.load::<HalfWord>(shared, addr) as i16;
 
+        self.delayed_load();
+
         // Put the load in the delay slot
         self.load = (t, v as u32);
     }
@@ -1189,7 +1294,9 @@ impl Cpu {
         // This instruction bypasses the load delay restriction: this
         // instruction will merge the new contents with the value
         // currently being loaded if need be.
-        let cur_v = self.out_regs[t.0 as usize];
+        self.delayed_load();
+
+        let cur_v = self.reg(t);
 
         // Next we load the *aligned* word containing the first
         // addressed byte
@@ -1222,6 +1329,8 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
+        self.delayed_load();
+
         // Address must be 32bit aligned
         if addr % 4 == 0 {
             let v = self.load::<Word>(shared, addr);
@@ -1246,6 +1355,8 @@ impl Cpu {
 
         let v = self.load::<Byte>(shared, addr);
 
+        self.delayed_load();
+
         // Put the load in the delay slot
         self.load = (t, v as u32);
     }
@@ -1260,6 +1371,8 @@ impl Cpu {
         let s = instruction.s();
 
         let addr = self.reg(s).wrapping_add(i);
+
+        self.delayed_load();
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
@@ -1286,7 +1399,9 @@ impl Cpu {
         // This instruction bypasses the load delay restriction: this
         // instruction will merge the new contents with the value
         // currently being loaded if need be.
-        let cur_v = self.out_regs[t.0 as usize];
+        self.delayed_load();
+
+        let cur_v = self.reg(t);
 
         // Next we load the *aligned* word containing the first
         // addressed byte
@@ -1321,6 +1436,8 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v    = self.reg(t);
 
+        self.delayed_load();
+
         self.store::<Byte>(shared, renderer, addr, v);
     }
 
@@ -1336,6 +1453,8 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
         let v    = self.reg(t);
+
+        self.delayed_load();
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
@@ -1372,6 +1491,8 @@ impl Cpu {
                 _ => unreachable!(),
             };
 
+        self.delayed_load();
+
         self.store::<Word>(shared, renderer, addr, mem);
     }
 
@@ -1387,6 +1508,8 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
         let v    = self.reg(t);
+
+        self.delayed_load();
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
@@ -1423,17 +1546,23 @@ impl Cpu {
                 _ => unreachable!(),
         };
 
+        self.delayed_load();
+
         self.store::<Word>(shared, renderer, addr, mem);
     }
 
     /// Load Word in Coprocessor 0
     fn op_lwc0(&mut self, _: Instruction) {
+        self.delayed_load();
+
         // Not supported by this coprocessor
         self.exception(Exception::CoprocessorError);
     }
 
     /// Load Word in Coprocessor 1
     fn op_lwc1(&mut self, _: Instruction) {
+        self.delayed_load();
+
         // Not supported by this coprocessor
         self.exception(Exception::CoprocessorError);
     }
@@ -1448,6 +1577,8 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
+        self.delayed_load();
+
         // Address must be 32bit aligned
         if addr % 4 == 0 {
             let v = self.load::<Word>(shared, addr);
@@ -1461,18 +1592,24 @@ impl Cpu {
 
     /// Load Word in Coprocessor 3
     fn op_lwc3(&mut self, _: Instruction) {
+        self.delayed_load();
+
         // Not supported by this coprocessor
         self.exception(Exception::CoprocessorError);
     }
 
     /// Store Word in Coprocessor 0
     fn op_swc0(&mut self, _: Instruction) {
+        self.delayed_load();
+
         // Not supported by this coprocessor
         self.exception(Exception::CoprocessorError);
     }
 
     /// Store Word in Coprocessor 1
     fn op_swc1(&mut self, _: Instruction) {
+        self.delayed_load();
+
         // Not supported by this coprocessor
         self.exception(Exception::CoprocessorError);
     }
@@ -1489,6 +1626,8 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v = self.gte.data(cop_r);
 
+        self.delayed_load();
+
         // Address must be 32bit aligned
         if addr % 4 == 0 {
             self.store::<Word>(shared, renderer, addr, v);
@@ -1499,6 +1638,8 @@ impl Cpu {
 
     /// Store Word in Coprocessor 3
     fn op_swc3(&mut self, _: Instruction) {
+        self.delayed_load();
+
         // Not supported by this coprocessor
         self.exception(Exception::CoprocessorError);
     }
