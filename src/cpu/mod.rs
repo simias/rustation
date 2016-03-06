@@ -7,6 +7,7 @@ use memory::{Interconnect, Addressable, Byte, HalfWord, Word};
 use shared::SharedState;
 use gpu::renderer::Renderer;
 use interrupt::InterruptState;
+use debugger::Debugger;
 
 use self::cop0::{Cop0, Exception};
 use self::gte::Gte;
@@ -88,17 +89,19 @@ impl Cpu {
 
     /// Run the emulator until the start of the next frame
     pub fn run_until_next_frame(&mut self,
+                                debugger: &mut Debugger,
                                 shared: &mut SharedState,
                                 renderer: &mut Renderer) {
         let frame = shared.frame();
 
         while frame == shared.frame() {
-            self.run_next_instruction(shared, renderer);
+            self.run_next_instruction(debugger, shared, renderer);
         }
     }
 
     /// Run a single CPU instruction and return
     pub fn run_next_instruction(&mut self,
+                                debugger: &mut Debugger,
                                 shared: &mut SharedState,
                                 renderer: &mut Renderer) {
 
@@ -113,7 +116,7 @@ impl Cpu {
         self.current_pc = self.pc;
 
         // Debugger entrypoint: used for code breakpoints and stepping
-        shared.debugger().pc_change(self);
+        debugger.pc_change(self);
 
         if self.current_pc % 4 != 0 {
             // PC is not correctly aligned!
@@ -141,12 +144,15 @@ impl Cpu {
             if instruction.is_gte_op() {
                 // GTE instructions get executed even if an interrupt
                 // occurs
-                self.decode_and_execute(instruction, shared, renderer);
+                self.decode_and_execute(debugger,
+                                        instruction,
+                                        shared,
+                                        renderer);
             }
             self.exception(Exception::Interrupt);
         } else {
             // No interrupt pending, run the current instruction
-            self.decode_and_execute(instruction, shared, renderer);
+            self.decode_and_execute(debugger, instruction, shared, renderer);
         }
     }
 
@@ -222,9 +228,10 @@ impl Cpu {
 
     /// Memory read
     fn load<T: Addressable>(&mut self,
+                            debugger: &mut Debugger,
                             shared: &mut SharedState,
                             addr: u32) -> u32 {
-        shared.debugger().memory_read(self, addr);
+        debugger.memory_read(self, addr);
 
         self.inter.load::<T>(shared, addr)
     }
@@ -247,11 +254,12 @@ impl Cpu {
     /// value on the bus so those devices might end up using all the
     /// bytes in the Word even for smaller widths.
     fn store<T: Addressable>(&mut self,
+                             debugger: &mut Debugger,
                              shared: &mut SharedState,
                              renderer: &mut Renderer,
                              addr: u32,
                              val: u32) {
-        shared.debugger().memory_write(self, addr);
+        debugger.memory_write(self, addr);
 
         if self.cop0.cache_isolated() {
             self.cache_maintenance::<T>(addr, val);
@@ -390,6 +398,7 @@ impl Cpu {
 
     /// Decode `instruction`'s opcode and run the function
     fn decode_and_execute(&mut self,
+                          debugger: &mut Debugger,
                           instruction: Instruction,
                           shared: &mut SharedState,
                           renderer: &mut Renderer) {
@@ -447,25 +456,25 @@ impl Cpu {
             0b010001 => self.op_cop1(instruction),
             0b010010 => self.op_cop2(instruction),
             0b010011 => self.op_cop3(instruction),
-            0b100000 => self.op_lb(instruction, shared),
-            0b100001 => self.op_lh(instruction, shared),
-            0b100010 => self.op_lwl(instruction, shared),
-            0b100011 => self.op_lw(instruction, shared),
-            0b100100 => self.op_lbu(instruction, shared),
-            0b100101 => self.op_lhu(instruction, shared),
-            0b100110 => self.op_lwr(instruction, shared),
-            0b101000 => self.op_sb(instruction, shared, renderer),
-            0b101001 => self.op_sh(instruction, shared, renderer),
-            0b101010 => self.op_swl(instruction, shared, renderer),
-            0b101011 => self.op_sw(instruction, shared, renderer),
-            0b101110 => self.op_swr(instruction, shared, renderer),
+            0b100000 => self.op_lb(instruction, debugger, shared),
+            0b100001 => self.op_lh(instruction, debugger, shared),
+            0b100010 => self.op_lwl(instruction, debugger, shared),
+            0b100011 => self.op_lw(instruction, debugger, shared),
+            0b100100 => self.op_lbu(instruction, debugger, shared),
+            0b100101 => self.op_lhu(instruction, debugger, shared),
+            0b100110 => self.op_lwr(instruction, debugger, shared),
+            0b101000 => self.op_sb(instruction, debugger, shared, renderer),
+            0b101001 => self.op_sh(instruction, debugger, shared, renderer),
+            0b101010 => self.op_swl(instruction, debugger, shared, renderer),
+            0b101011 => self.op_sw(instruction, debugger, shared, renderer),
+            0b101110 => self.op_swr(instruction, debugger, shared, renderer),
             0b110000 => self.op_lwc0(instruction),
             0b110001 => self.op_lwc1(instruction),
-            0b110010 => self.op_lwc2(instruction, shared),
+            0b110010 => self.op_lwc2(instruction, debugger, shared),
             0b110011 => self.op_lwc3(instruction),
             0b111000 => self.op_swc0(instruction),
             0b111001 => self.op_swc1(instruction),
-            0b111010 => self.op_swc2(instruction, shared, renderer),
+            0b111010 => self.op_swc2(instruction, debugger, shared, renderer),
             0b111011 => self.op_swc3(instruction),
             _        => self.op_illegal(instruction),
         }
@@ -1243,6 +1252,7 @@ impl Cpu {
     /// Load Byte (signed)
     fn op_lb(&mut self,
              instruction: Instruction,
+             debugger: &mut Debugger,
              shared: &mut SharedState) {
 
         let i = instruction.imm_se();
@@ -1252,7 +1262,7 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         // Cast as i8 to force sign extension
-        let v = self.load::<Byte>(shared, addr) as i8;
+        let v = self.load::<Byte>(debugger, shared, addr) as i8;
 
         self.delayed_load();
 
@@ -1263,6 +1273,7 @@ impl Cpu {
     /// Load Halfword (signed)
     fn op_lh(&mut self,
              instruction: Instruction,
+             debugger: &mut Debugger,
              shared: &mut SharedState) {
 
         let i = instruction.imm_se();
@@ -1272,7 +1283,7 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         // Cast as i16 to force sign extension
-        let v = self.load::<HalfWord>(shared, addr) as i16;
+        let v = self.load::<HalfWord>(debugger, shared, addr) as i16;
 
         self.delayed_load();
 
@@ -1283,6 +1294,7 @@ impl Cpu {
     /// Load Word Left (little-endian only implementation)
     fn op_lwl(&mut self,
               instruction: Instruction,
+              debugger: &mut Debugger,
               shared: &mut SharedState) {
 
         let i = instruction.imm_se();
@@ -1301,7 +1313,7 @@ impl Cpu {
         // Next we load the *aligned* word containing the first
         // addressed byte
         let aligned_addr = addr & !3;
-        let aligned_word = self.load::<Word>(shared, aligned_addr);
+        let aligned_word = self.load::<Word>(debugger, shared, aligned_addr);
 
         // Depending on the address alignment we fetch the 1, 2, 3 or
         // 4 *most* significant bytes and put them in the target
@@ -1321,6 +1333,7 @@ impl Cpu {
     /// Load Word
     fn op_lw(&mut self,
              instruction: Instruction,
+             debugger: &mut Debugger,
              shared: &mut SharedState) {
 
         let i = instruction.imm_se();
@@ -1333,7 +1346,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            let v = self.load::<Word>(shared, addr);
+            let v = self.load::<Word>(debugger, shared, addr);
 
             // Put the load in the delay slot
             self.load = (t, v);
@@ -1345,6 +1358,7 @@ impl Cpu {
     /// Load Byte Unsigned
     fn op_lbu(&mut self,
               instruction: Instruction,
+              debugger: &mut Debugger,
               shared: &mut SharedState) {
 
         let i = instruction.imm_se();
@@ -1353,7 +1367,7 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
-        let v = self.load::<Byte>(shared, addr);
+        let v = self.load::<Byte>(debugger, shared, addr);
 
         self.delayed_load();
 
@@ -1364,6 +1378,7 @@ impl Cpu {
     /// Load Halfword Unsigned
     fn op_lhu(&mut self,
               instruction: Instruction,
+              debugger: &mut Debugger,
               shared: &mut SharedState) {
 
         let i = instruction.imm_se();
@@ -1376,7 +1391,7 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            let v = self.load::<HalfWord>(shared, addr);
+            let v = self.load::<HalfWord>(debugger, shared, addr);
 
             // Put the load in the delay slot
             self.load = (t, v as u32);
@@ -1388,6 +1403,7 @@ impl Cpu {
     /// Load Word Right (little-endian only implementation)
     fn op_lwr(&mut self,
               instruction: Instruction,
+              debugger: &mut Debugger,
               shared: &mut SharedState) {
 
         let i = instruction.imm_se();
@@ -1406,7 +1422,7 @@ impl Cpu {
         // Next we load the *aligned* word containing the first
         // addressed byte
         let aligned_addr = addr & !3;
-        let aligned_word = self.load::<Word>(shared, aligned_addr);
+        let aligned_word = self.load::<Word>(debugger, shared, aligned_addr);
 
         // Depending on the address alignment we fetch the 1, 2, 3 or
         // 4 *least* significant bytes and put them in the target
@@ -1426,6 +1442,7 @@ impl Cpu {
     /// Store Byte
     fn op_sb(&mut self,
              instruction: Instruction,
+             debugger: &mut Debugger,
              shared: &mut SharedState,
              renderer: &mut Renderer) {
 
@@ -1438,12 +1455,13 @@ impl Cpu {
 
         self.delayed_load();
 
-        self.store::<Byte>(shared, renderer, addr, v);
+        self.store::<Byte>(debugger, shared, renderer, addr, v);
     }
 
     /// Store Halfword
     fn op_sh(&mut self,
              instruction: Instruction,
+             debugger: &mut Debugger,
              shared: &mut SharedState,
              renderer: &mut Renderer) {
 
@@ -1458,7 +1476,7 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            self.store::<HalfWord>(shared, renderer, addr, v);
+            self.store::<HalfWord>(debugger, shared, renderer, addr, v);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1467,6 +1485,7 @@ impl Cpu {
     /// Store Word Left (little-endian only implementation)
     fn op_swl(&mut self,
               instruction: Instruction,
+              debugger: &mut Debugger,
               shared: &mut SharedState,
               renderer: &mut Renderer) {
 
@@ -1480,7 +1499,7 @@ impl Cpu {
         let aligned_addr = addr & !3;
         // Load the current value for the aligned word at the target
         // address
-        let cur_mem = self.load::<Word>(shared, aligned_addr);
+        let cur_mem = self.load::<Word>(debugger, shared, aligned_addr);
 
         let mem =
             match addr & 3 {
@@ -1493,12 +1512,13 @@ impl Cpu {
 
         self.delayed_load();
 
-        self.store::<Word>(shared, renderer, addr, mem);
+        self.store::<Word>(debugger, shared, renderer, addr, mem);
     }
 
     /// Store Word
     fn op_sw(&mut self,
              instruction: Instruction,
+             debugger: &mut Debugger,
              shared: &mut SharedState,
              renderer: &mut Renderer) {
 
@@ -1513,7 +1533,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            self.store::<Word>(shared, renderer, addr, v);
+            self.store::<Word>(debugger, shared, renderer, addr, v);
         } else {
             self.exception(Exception::StoreAddressError);
         }
@@ -1522,6 +1542,7 @@ impl Cpu {
     /// Store Word Right (little-endian only implementation)
     fn op_swr(&mut self,
               instruction: Instruction,
+              debugger: &mut Debugger,
               shared: &mut SharedState,
               renderer: &mut Renderer) {
 
@@ -1535,7 +1556,7 @@ impl Cpu {
         let aligned_addr = addr & !3;
         // Load the current value for the aligned word at the target
         // address
-        let cur_mem = self.load::<Word>(shared, aligned_addr);
+        let cur_mem = self.load::<Word>(debugger, shared, aligned_addr);
 
         let mem =
             match addr & 3 {
@@ -1548,7 +1569,7 @@ impl Cpu {
 
         self.delayed_load();
 
-        self.store::<Word>(shared, renderer, addr, mem);
+        self.store::<Word>(debugger, shared, renderer, addr, mem);
     }
 
     /// Load Word in Coprocessor 0
@@ -1570,7 +1591,9 @@ impl Cpu {
     /// Load Word in Coprocessor 2
     fn op_lwc2(&mut self,
                instruction: Instruction,
+               debugger: &mut Debugger,
                shared: &mut SharedState) {
+
         let i = instruction.imm_se();
         let cop_r = instruction.t().0;
         let s = instruction.s();
@@ -1581,7 +1604,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            let v = self.load::<Word>(shared, addr);
+            let v = self.load::<Word>(debugger, shared, addr);
 
             // Send to coprocessor
             self.gte.set_data(cop_r, v);
@@ -1617,6 +1640,7 @@ impl Cpu {
     /// Store Word in Coprocessor 2
     fn op_swc2(&mut self,
                instruction: Instruction,
+               debugger: &mut Debugger,
                shared: &mut SharedState,
                renderer: &mut Renderer) {
         let i = instruction.imm_se();
@@ -1630,7 +1654,7 @@ impl Cpu {
 
         // Address must be 32bit aligned
         if addr % 4 == 0 {
-            self.store::<Word>(shared, renderer, addr, v);
+            self.store::<Word>(debugger, shared, renderer, addr, v);
         } else {
             self.exception(Exception::LoadAddressError);
         }

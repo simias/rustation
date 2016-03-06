@@ -14,11 +14,11 @@ pub mod memory;
 pub mod cpu;
 pub mod shared;
 pub mod padmemcard;
+pub mod debugger;
 
 mod interrupt;
 mod timekeeper;
 mod spu;
-mod debugger;
 
 /// Version of the rustation library set in Cargo.toml
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
