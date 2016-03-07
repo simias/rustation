@@ -47,6 +47,12 @@ impl Debugger {
         }
     }
 
+    /// Signal a "break" which will put the emulator in debug mode at
+    /// the next instruction
+    pub fn trigger_break(&mut self) {
+        self.set_step();
+    }
+
     pub fn debug(&mut self, cpu: &mut Cpu) {
         // If stepping was requested we can reset the flag here, this
         // way we won't "double step" if we're entering debug mode for
