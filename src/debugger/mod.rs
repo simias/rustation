@@ -42,7 +42,7 @@ impl Debugger {
             client: None,
             resume: true,
             step: false,
-            breakpoints: vec![0x80050b3c],
+            breakpoints: Vec::new(),
             read_watchpoints: Vec::new(),
             write_watchpoints: Vec::new(),
         }

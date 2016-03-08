@@ -41,8 +41,6 @@ impl<T: SubpixelPrecision> Ram<T> {
 
         let r = self.data[word_addr];
 
-        println!("RAM Load precise {:08x} {}", offset, r.1.get_precise().is_some());
-
         r
     }
 

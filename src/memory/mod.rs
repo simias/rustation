@@ -511,8 +511,6 @@ impl<T: SubpixelPrecision> Interconnect<T> {
             while remsz > 0 {
                 addr = (addr + 4) & 0x1ffffc;
 
-                println!("DMA load precise {:08x}", addr);
-
                 let command = self.ram.load_precise(addr);
 
                 // Send command to the GPU

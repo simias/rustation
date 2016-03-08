@@ -403,10 +403,7 @@ impl<T: SubpixelPrecision> Gpu<T> {
                          val: (u32, T)) {
 
         match offset {
-            0 => {
-                println!("Store precise GP0 {}", val.1.get_precise().is_some());
-                self.gp0(renderer, val);
-            }
+            0 => self.gp0(renderer, val),
             _ => self.store::<Word>(shared, renderer, timers, offset, val.0),
         }
     }
