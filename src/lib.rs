@@ -19,6 +19,7 @@ pub mod debugger;
 mod interrupt;
 mod timekeeper;
 mod spu;
+mod mdec;
 
 /// Version of the rustation library set in Cargo.toml
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");

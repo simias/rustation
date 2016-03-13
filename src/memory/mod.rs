@@ -15,6 +15,7 @@ use spu::Spu;
 use cdrom::CdRom;
 use cdrom::disc::Disc;
 use padmemcard::PadMemCard;
+use mdec::MDec;
 
 /// Global interconnect
 pub struct Interconnect {
@@ -38,6 +39,8 @@ pub struct Interconnect {
     cdrom: CdRom,
     /// Gamepad and memory card controller
     pad_memcard: PadMemCard,
+    /// Motion decoder
+    mdec: MDec,
     /// Contents of the RAM_SIZE register which is probably a
     /// configuration register for the memory controller.
     ram_size: u32,
@@ -58,6 +61,7 @@ impl Interconnect {
             cache_control: CacheControl(0),
             cdrom: CdRom::new(disc),
             pad_memcard: PadMemCard::new(),
+            mdec: MDec::new(),
             ram_size: 0,
             mem_control: [0; 9],
         }
@@ -163,8 +167,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
-            warn!("Unhandled load from MDEC register {:x}", offset);
-            return 0;
+            panic!("Unhandled load from MDEC register {:x}", offset);
         }
 
         if let Some(offset) = map::SPU.contains(abs_addr) {
@@ -257,8 +260,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
-            warn!("Unhandled write to MDEC register {:x}", offset);
-            return;
+            return self.mdec.store::<T>(shared, offset, val);
         }
 
         if let Some(offset) = map::SPU.contains(abs_addr) {
@@ -521,8 +523,7 @@ impl Interconnect {
 
                     match port {
                         Port::Gpu => self.gpu.gp0(renderer, src_word),
-                        // XXX ignore transfers to the MDEC for now
-                        Port::MDecIn => (),
+                        Port::MDecIn => self.mdec.command(src_word),
                         // XXX ignre transfers to the SPU for now
                         Port::Spu => (),
                         _ => panic!("Unhandled DMA destination port {:?}",
@@ -539,8 +540,6 @@ impl Interconnect {
                             // Pointer to the previous entry
                             _ => addr.wrapping_sub(4) & 0x1fffff,
                         },
-                        // XXX to be implemented
-                        Port::MDecOut => 0,
                         Port::Gpu => {
                             // XXX to be implemented
                             debug!("DMA GPU READ");
