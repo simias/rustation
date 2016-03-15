@@ -1231,6 +1231,8 @@ impl Gpu {
 
                 timers.video_timings_changed(shared, self);
                 self.update_display_mode(renderer);
+                self.update_draw_area(renderer);
+                renderer.set_draw_offset(0, 0);
             },
             0x01 => self.gp1_reset_command_buffer(),
             0x02 => self.gp1_acknowledge_irq(),
@@ -1239,12 +1241,12 @@ impl Gpu {
             0x05 => self.gp1_display_vram_start(val),
             0x06 => self.gp1_display_horizontal_range(val),
             0x07 => self.gp1_display_vertical_range(shared,val),
-            0x10 => self.gp1_get_info(val),
             0x08 => {
                 self.gp1_display_mode(shared, val);
                 timers.video_timings_changed(shared, self);
                 self.update_display_mode(renderer);
             }
+            0x10 => self.gp1_get_info(val),
             _    => panic!("Unhandled GP1 command {:08x}", val),
         }
     }
@@ -1274,6 +1276,7 @@ impl Gpu {
         self.drawing_area_top = 0;
         self.drawing_area_right = 0;
         self.drawing_area_bottom = 0;
+        self.drawing_offset = (0, 0);
         self.force_set_mask_bit = false;
         self.preserve_masked_pixels = false;
 
@@ -1296,7 +1299,6 @@ impl Gpu {
         self.display_line = 0;
         self.display_line_tick = 0;
 
-        //self.renderer.set_draw_offset(0, 0);
 
         self.gp1_reset_command_buffer();
         self.gp1_acknowledge_irq();
