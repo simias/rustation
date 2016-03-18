@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+
+# `cargo fetch` needs to write the registry to $HOME somewhere
+# Because of the way pbuilder works, this is not optimal.
+# Therefore, we need to set a temporary path for the cargo registry to be placed
+ifeq ($(BUILDER),pdebuild)
+	export HOME=$(CURDIR)/debian/home-tmp
+endif
+
+%:
+	dh $@ --parallel
+
+override_dh_auto_build:
+	cargo fetch
+	cargo build --release
