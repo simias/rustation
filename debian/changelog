@@ -1,11 +1,5 @@
-libretro-rustation (0.0.1+20160317git+bsos1) brewmaster; urgency=low
-
-  * Initial upload
-
- -- SteamOS Desktop <desktop@steamos>  Thu, 17 Mar 2016 19:14:50 -0400
-
-libretro-rustation (0.0.1) brewmaster; urgency=low
+libretro-rustation (#VER) #DIST; urgency=low
 
   * Dummy changelog
 
- -- SteamOS-Tools Signing Key <mdeguzis@gmail.com>  Tue, 15 Mar 2016 20:28:00 -0500
+ -- Maintainer <maintainer@mail.com>  Tue, 15 Mar 2016 20:28:00 -0500
