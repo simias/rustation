@@ -80,7 +80,7 @@ pub struct PrimitiveAttributes {
 /// Primitive texturing methods
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BlendMode {
-    /// No texture, used
+    /// No texture
     None,
     /// Raw texture
     Raw,
