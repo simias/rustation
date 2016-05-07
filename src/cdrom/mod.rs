@@ -1,3 +1,20 @@
+//! CD-ROM interface
+//!
+//! The PlayStation uses an external controller for decoding and
+//! correcting CD sectors. This controller is similar to the CXD1199AQ
+//! whose datasheet is available online. I try to use the symbolic
+//! names defined in this datasheet where it makes sense.
+//!
+//! This controller communicates asynchronously with a microcontroller
+//! handling actual CD-ROM drive (called the "sub-CPU" in the
+//! CXD1199AQ datasheet).
+//!
+//! Since you can't access the sub-CPU directly from the main CPU it's
+//! pretty difficult to reverse-engineer what's going on exactly
+//! without using an oscilloscope. As a result this implementation is
+//! based on No$'s specs, mednafen's source code and some educated
+//! guesses.
+
 use memory::Addressable;
 use timekeeper::{Peripheral, Cycles};
 use interrupt::Interrupt;
@@ -25,7 +42,9 @@ pub struct CdRom {
     response: Fifo,
     /// Interrupt mask (5 bits)
     irq_mask: u8,
-    /// Interrupt flag (5 bits)
+    /// Interrupt flag (5 bits). The low 3bits are set by the sub-CPU
+    /// (see IrqCode for their meaning). The two other bits are used
+    /// by the decoder.
     irq_flags: u8,
     /// Commands/response are generally stalled as long as the
     /// interrupt is active
@@ -137,10 +156,19 @@ impl CdRom {
                    index)
         };
 
+        // CXD1199AQ Datasheet section 3 documents the host interface
         let val =
             match offset {
-                0 => self.status(),
+                0 => self.host_status(),
                 1 => {
+                    // RESULT register. The CXD1199AQ datasheet says
+                    // that the response FIFO is 8-byte long, however
+                    // the PSX seems to be 16bytes (at least it seems
+                    // to wrap around at the 16th read). May be a
+                    // small upgrade to the IP in order to support
+                    // commands like GetQ which return more than 8
+                    // response bytes.
+
                     if self.response.empty() {
                         warn!("CDROM response FIFO underflow");
                     }
@@ -184,26 +212,31 @@ impl CdRom {
                    val)
         };
 
+        // CXD1199AQ Datasheet section 3 documents the host interface
         match offset {
-            0 => self.set_index(val),
+            0 => self.set_address(val),
             1 =>
                 match index {
                     0 => self.command(shared, val),
+                    // ATV2 register
                     3 => self.mixer.cd_right_to_spu_right = val,
                     _ => unimplemented(),
                 },
             2 =>
                 match index {
                     0 => self.push_param(val),
-                    1 => self.irq_mask(val),
+                    1 => self.set_host_interrupt_mask(val),
+                    // ATV0 register
                     2 => self.mixer.cd_left_to_spu_left = val,
+                    // ATV3 register
                     3 => self.mixer.cd_right_to_spu_left = val,
                     _ => unimplemented(),
                 },
             3 =>
                 match index {
-                    0 => self.config(val),
+                    0 => self.set_host_chip_control(val),
                     1 => {
+                        // HCLRCTL (host clear control) register
                         self.irq_ack(val & 0x1f);
 
                         if val & 0x40 != 0 {
@@ -214,7 +247,9 @@ impl CdRom {
                             panic!("Unhandled CDROM 3.1: {:02x}", val);
                         }
                     }
+                    // ATV1 register
                     2 => self.mixer.cd_left_to_spu_right = val,
+                    // ADPCTL register
                     3 => debug!("CDROM Mixer apply {:02x}", val),
                     _ => unimplemented(),
                 },
@@ -467,20 +502,28 @@ impl CdRom {
         }
     }
 
-    fn status(&mut self) -> u8 {
+    fn host_status(&mut self) -> u8 {
         let mut r = self.index;
 
-        // TODO: "XA-ADPCM fifo empty"
+        // TODO: ADPCM busy (ADPBUSY)
         r |= 0 << 2;
+        // Parameter empty (PRMEMPT)
         r |= (self.params.empty() as u8) << 3;
+        // Parameter write ready (PRMWRDY)
         r |= (!self.params.full() as u8) << 4;
+        // Result read ready (RSLRRDY)
         r |= (!self.response.empty() as u8) << 5;
 
+        // Data request status (DRQSTS)
         let data_available = self.rx_index < self.rx_len;
 
         r |= (data_available as u8) << 6;
 
-        // "Busy" flag
+        // "Busy" flag (BUSYSTS).
+        //
+        // The CXD1199AQ datasheet says it's set high when we write to
+        // the command register and it's cleared when the sub-CPU
+        // asserts the CLRBUSY signal.
         match self.command_state {
             CommandState::RxPending(..) => r |= 1 << 7,
             _ => (),
@@ -512,7 +555,8 @@ impl CdRom {
         }
     }
 
-    fn set_index(&mut self, index: u8) {
+    /// ADDRESS register
+    fn set_address(&mut self, index: u8) {
         self.index = index & 3;
     }
 
@@ -531,10 +575,14 @@ impl CdRom {
         }
     }
 
-    fn config(&mut self, conf: u8) {
+    /// HCHPCTL register
+    fn set_host_chip_control(&mut self, ctrl: u8) {
         let prev_active = self.rx_active;
 
-        self.rx_active = conf & 0x80 != 0;
+        // XXX The CXD1199AQ datasheet says that this bit is set low
+        // "upon completion of the transfer". Need to check if that's
+        // true on the PSX controller as well.
+        self.rx_active = ctrl & 0x80 != 0;
 
         if self.rx_active {
             if !prev_active {
@@ -563,12 +611,17 @@ impl CdRom {
             self.rx_index = (i & !7) + adjust
         }
 
-        if conf & 0x7f != 0 {
-            panic!("CDROM: unhandled config {:02x}", conf);
+        if ctrl & 0x7f != 0 {
+            panic!("CDROM: unhandled HCHPCTL {:02x}", ctrl);
         }
     }
 
-    fn irq_mask(&mut self, val: u8) {
+    /// HINTMSK register
+    fn set_host_interrupt_mask(&mut self, val: u8) {
+        if val & 0x18 != 0 {
+            warn!("CDROM: unhandled IRQ mask: {:02x}", val);
+        }
+
         self.irq_mask = val & 0x1f;
     }
 
