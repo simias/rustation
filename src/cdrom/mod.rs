@@ -372,14 +372,17 @@ impl CdRom {
 
     /// Retreive a single byte from the RX buffer
     fn read_byte(&mut self) -> u8 {
-        if self.rx_index >= self.rx_len {
-            panic!("Unhandled CDROM long read");
-        }
 
         let b = self.rx_buffer[self.rx_index as usize];
 
         if self.rx_active {
             self.rx_index += 1;
+
+            if self.rx_index == self.rx_len {
+                // rx_active clears automatically at the end of the
+                // transfer
+                self.rx_active = false;
+            }
         } else {
             panic!("read byte while !rx_active");
         }
@@ -579,9 +582,6 @@ impl CdRom {
     fn set_host_chip_control(&mut self, ctrl: u8) {
         let prev_active = self.rx_active;
 
-        // XXX The CXD1199AQ datasheet says that this bit is set low
-        // "upon completion of the transfer". Need to check if that's
-        // true on the PSX controller as well.
         self.rx_active = ctrl & 0x80 != 0;
 
         if self.rx_active {
