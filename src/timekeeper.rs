@@ -43,6 +43,10 @@ impl TimeKeeper {
         }
     }
 
+    pub fn now(&self) -> Cycles {
+        self.now
+    }
+
     pub fn tick(&mut self, cycles: Cycles) {
         self.now += cycles;
     }
@@ -63,13 +67,11 @@ impl TimeKeeper {
         }
     }
 
-    /// Set next sync *only* if it's closer than what's already
+    /// Set next sync *only* if it's sooner than what's already
     /// configured.
-    pub fn set_next_sync_delta_if_sooner(&mut self,
-                                         who: Peripheral,
-                                         delta: Cycles) {
-        let date = self.now + delta;
-
+    pub fn maybe_set_next_sync(&mut self,
+                               who: Peripheral,
+                               date: Cycles) {
         let timesheet = &mut self.timesheets[who as usize];
 
         let next_sync = timesheet.next_sync();
@@ -77,6 +79,16 @@ impl TimeKeeper {
         if next_sync > date {
             timesheet.set_next_sync(date);
         }
+    }
+
+    /// Set next sync delta *only* if it's sooner than what's already
+    /// configured.
+    pub fn maybe_set_next_sync_delta(&mut self,
+                                     who: Peripheral,
+                                     delta: Cycles) {
+        let date = self.now + delta;
+
+        self.maybe_set_next_sync(who, date);
     }
 
     /// Called by a peripheral when there's no asynchronous event
