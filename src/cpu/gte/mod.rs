@@ -7,7 +7,7 @@ mod divider;
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug)]
+#[derive(Debug, RustcDecodable, RustcEncodable)]
 pub struct Gte {
     // Control registers
     /// Screen offset X: signed 16.16

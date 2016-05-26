@@ -1,3 +1,5 @@
+use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+
 use memory::Addressable;
 use memory::timers::Timers;
 use shared::SharedState;
@@ -9,6 +11,7 @@ use self::renderer::{BlendMode, SemiTransparencyMode, TextureDepth};
 
 pub mod renderer;
 
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct Gpu {
     /// Draw mode for rectangles, dithering enable and a few other
     /// things
@@ -74,7 +77,7 @@ pub struct Gpu {
     /// DMA request direction
     dma_direction: DmaDirection,
     /// Handler function for GP0 writes
-    gp0_handler: fn (&mut Gpu, &mut Renderer, u32),
+    gp0_handler: Gp0Handler,
     /// Buffer containing the current GP0 command
     gp0_command: CommandBuffer,
     /// Remaining number of words to fetch for the current GP0 command
@@ -140,7 +143,7 @@ impl Gpu {
             display_line_start: 0x10,
             display_line_end: 0x100,
             dma_direction: DmaDirection::Off,
-            gp0_handler: Gpu::gp0_handle_command,
+            gp0_handler: Gp0Handler(Gpu::gp0_handle_command),
             gp0_command: CommandBuffer::new(),
             gp0_words_remaining: 0,
             gp0_attributes: dummy_gp0,
@@ -492,7 +495,7 @@ impl Gpu {
         self.gp0_attributes = attributes;
         self.gp0_command.clear();
 
-        self.gp0_handler = Gpu::gp0_handle_parameter;
+        *self.gp0_handler = Gpu::gp0_handle_parameter;
 
         // Call the parameter handling function for the current word
         self.gp0_handle_parameter(renderer, val);
@@ -512,14 +515,14 @@ impl Gpu {
 
             // Reset GP0 handler. Can be overriden by the callback in
             // certain cases, for instance for image load commands.
-            self.gp0_handler = Gpu::gp0_handle_command;
+            *self.gp0_handler = Gpu::gp0_handle_command;
             (self.gp0_attributes.callback)(self, renderer);
         }
     }
 
     /// GP0 handler method: handle shaded polyline color word
     fn gp0_handle_shaded_polyline_color(&mut self, _: &mut Renderer, val: u32) {
-        self.gp0_handler =
+        *self.gp0_handler =
             if is_polyline_end_marker(val) {
                 // We found the end-of-polyline marker, we're done.
                 Gpu::gp0_handle_command
@@ -558,7 +561,7 @@ impl Gpu {
         self.polyline_prev = (end_pos, end_color);
 
         // We expect the color of the next segment
-        self.gp0_handler = Gpu::gp0_handle_shaded_polyline_color;
+        *self.gp0_handler = Gpu::gp0_handle_shaded_polyline_color;
     }
 
     /// GP0 handler method: handle monochrome polyline position word
@@ -567,7 +570,7 @@ impl Gpu {
                                              val: u32) {
         if is_polyline_end_marker(val) {
             // We found the end-of-polyline marker, we're done.
-            self.gp0_handler = Gpu::gp0_handle_command;
+            *self.gp0_handler = Gpu::gp0_handle_command;
             return;
         }
 
@@ -818,7 +821,7 @@ impl Gpu {
         // the next vertex
         self.polyline_prev = (end_pos, color);
 
-        self.gp0_handler = Gpu::gp0_handle_monochrome_polyline_vertex;
+        *self.gp0_handler = Gpu::gp0_handle_monochrome_polyline_vertex;
     }
 
 
@@ -942,7 +945,7 @@ impl Gpu {
         // the next vertex
         self.polyline_prev = (end_pos, end_color);
 
-        self.gp0_handler = Gpu::gp0_handle_shaded_polyline_color;
+        *self.gp0_handler = Gpu::gp0_handle_shaded_polyline_color;
     }
 
     /// Draw a textured shaded triangle
@@ -1115,7 +1118,7 @@ impl Gpu {
             self.load_buffer.reset(x, y, width as u16, height as u16);
 
             // Use a custom GP0 handler to handle the GP0 image load
-            self.gp0_handler = Gpu::gp0_handle_image_load;
+            *self.gp0_handler = Gpu::gp0_handle_image_load;
         } else {
             warn!("GPU: 0-sized image load");
         }
@@ -1133,8 +1136,12 @@ impl Gpu {
                                 self.load_buffer.resolution(),
                                 self.load_buffer.buffer());
 
+            // Empty the load buffer, not strictly necessary but it'll
+            // save a bit of space in the savestate.
+            self.load_buffer.clear();
+
             // We're done, wait for the next command
-            self.gp0_handler = Gpu::gp0_handle_command;
+            *self.gp0_handler = Gpu::gp0_handle_command;
         }
     }
 
@@ -1312,7 +1319,7 @@ impl Gpu {
     fn gp1_reset_command_buffer(&mut self) {
         self.gp0_command.clear();
         self.gp0_words_remaining = 0;
-        self.gp0_handler = Gpu::gp0_handle_command;
+        *self.gp0_handler = Gpu::gp0_handle_command;
         // XXX should also clear the command FIFO when we implement it
     }
 
@@ -1434,8 +1441,20 @@ impl Gpu {
     }
 }
 
+/// Wrapper around the `gp0_handler` function pointer in order to be
+/// able to serialize it
+callback!(struct Gp0Handler(fn (&mut Gpu, &mut Renderer, u32)) {
+    Gpu::gp0_handle_command,
+    Gpu::gp0_handle_parameter,
+    Gpu::gp0_handle_shaded_polyline_vertex,
+    Gpu::gp0_handle_shaded_polyline_color,
+    Gpu::gp0_handle_monochrome_polyline_vertex,
+    Gpu::gp0_handle_shaded_polyline_color,
+    Gpu::gp0_handle_image_load,
+});
+
 /// Interlaced output splits each frame in two fields
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 enum Field {
     /// Top field (odd lines).
     Top = 1,
@@ -1444,7 +1463,7 @@ enum Field {
 }
 
 /// Video output horizontal resolution
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 struct HorizontalRes(u8);
 
 impl HorizontalRes {
@@ -1520,7 +1539,7 @@ impl HorizontalRes {
 }
 
 /// Video output vertical resolution
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 enum VerticalRes {
     /// 240 lines
     Y240Lines = 0,
@@ -1538,7 +1557,7 @@ impl VerticalRes {
 }
 
 /// Video Modes
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 enum VMode {
     /// NTSC: 480i60H
     Ntsc = 0,
@@ -1547,7 +1566,7 @@ enum VMode {
 }
 
 /// Display area color depth
-#[derive(Clone,Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 enum DisplayDepth {
     /// 15 bits per pixel
     D15Bits = 0,
@@ -1556,7 +1575,7 @@ enum DisplayDepth {
 }
 
 /// Requested DMA direction.
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 enum DmaDirection {
     Off = 0,
     Fifo = 1,
@@ -1565,6 +1584,7 @@ enum DmaDirection {
 }
 
 /// Buffer holding multi-word fixed-length GP0 command parameters
+#[derive(RustcDecodable, RustcEncodable)]
 struct CommandBuffer {
     /// Command buffer: the longuest possible command is GP0(0x3E)
     /// which takes 12 parameters
@@ -1609,9 +1629,10 @@ impl ::std::ops::Index<usize> for CommandBuffer {
 /// Attributes of the various GP0 commands. Some attributes don't make
 /// sense for certain commands but those will just be ignored by the
 /// `parser_callback`
+#[derive(RustcDecodable, RustcEncodable)]
 struct Gp0Attributes {
     /// Method called when all the parameters have been received.
-    callback: fn(&mut Gpu, &mut Renderer),
+    callback: Callback,
     /// If the command draws a primitive this will contain its
     /// attributes. Otherwise it should be ignored.
     primitive_attributes: PrimitiveAttributes,
@@ -1626,7 +1647,7 @@ impl Gp0Attributes {
            dither: bool) -> Gp0Attributes {
 
         Gp0Attributes {
-            callback: callback,
+            callback: Callback(callback),
             primitive_attributes: PrimitiveAttributes {
                 semi_transparent: semi_transparent,
                 semi_transparency_mode: SemiTransparencyMode::Average,
@@ -1686,7 +1707,40 @@ impl Gp0Attributes {
     }
 }
 
-
+/// Wrapper around the Gp0Attributes `callback` function pointer in
+/// order to be able to serialize it
+callback!(struct Callback(fn(&mut Gpu, &mut Renderer)) {
+    Gpu::gp0_nop,
+    Gpu::gp0_clear_cache,
+    Gpu::gp0_fill_rect,
+    Gpu::gp0_monochrome_triangle,
+    Gpu::gp0_textured_triangle,
+    Gpu::gp0_monochrome_quad,
+    Gpu::gp0_textured_quad,
+    Gpu::gp0_shaded_triangle,
+    Gpu::gp0_textured_shaded_triangle,
+    Gpu::gp0_shaded_quad,
+    Gpu::gp0_textured_shaded_quad,
+    Gpu::gp0_monochrome_line,
+    Gpu::gp0_monochrome_polyline,
+    Gpu::gp0_shaded_line,
+    Gpu::gp0_shaded_polyline,
+    Gpu::gp0_monochrome_rect,
+    Gpu::gp0_textured_rect,
+    Gpu::gp0_monochrome_rect_1x1,
+    Gpu::gp0_textured_rect_8x8,
+    Gpu::gp0_monochrome_rect_16x16,
+    Gpu::gp0_textured_rect_16x16,
+    Gpu::gp0_copy_rect,
+    Gpu::gp0_image_load,
+    Gpu::gp0_image_store,
+    Gpu::gp0_draw_mode,
+    Gpu::gp0_texture_window,
+    Gpu::gp0_drawing_area_top_left,
+    Gpu::gp0_drawing_area_bottom_right,
+    Gpu::gp0_drawing_offset,
+    Gpu::gp0_mask_bit_setting
+});
 
 /// Parse a position as written in the GP0 register and return it as
 /// an array of two `i16`
@@ -1733,7 +1787,7 @@ struct ImageBuffer {
     /// Current write position in the buffer
     index: u32,
     /// Pixel buffer. The maximum size is the entire VRAM resolution.
-    buffer: Box<[u16; 1024 * 512]>,
+    buffer: Box<[u16; VRAM_SIZE_PIXELS]>,
 }
 
 impl ImageBuffer {
@@ -1742,8 +1796,14 @@ impl ImageBuffer {
             top_left: (0, 0),
             resolution: (0, 0),
             index: 0,
-            buffer: box_array![0; 1024 * 512],
+            buffer: box_array![0; VRAM_SIZE_PIXELS],
         }
+    }
+
+    fn clear(&mut self) {
+        self.top_left = (0, 0);
+        self.resolution = (0, 0);
+        self.index = 0;
     }
 
     fn top_left(&self) -> (u16, u16) {
@@ -1753,7 +1813,6 @@ impl ImageBuffer {
     fn resolution(&self) -> (u16, u16) {
         self.resolution
     }
-
 
     fn buffer(&self) -> &[u16] {
         // I don't use `index` because it can potentially point one
@@ -1782,15 +1841,90 @@ impl ImageBuffer {
     }
 }
 
+impl Encodable for ImageBuffer {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+
+        s.emit_struct("ImageBuffer", 3, |s| {
+            try!(s.emit_struct_field("top_left", 0,
+                                     |s| self.top_left.encode(s)));
+            try!(s.emit_struct_field("resolution", 1,
+                                     |s| self.resolution.encode(s)));
+
+            // Lastly we only store the part of `buffer` that's
+            // actually used, i.e. up to `index`. That also means we
+            // don't have to store `index` itself.
+            let len = self.index as usize;
+
+            try!(s.emit_struct_field(
+                "buffer", 2,
+                |s| s.emit_seq(
+                    len,
+                    |s| {
+                        for i in 0..len {
+                            try!(s.emit_seq_elt(
+                                i,
+                                |s| self.buffer[i].encode(s)))
+                        }
+
+                        Ok(())
+                    })));
+
+            Ok(())
+        })
+    }
+}
+
+impl Decodable for ImageBuffer {
+    fn decode<D: Decoder>(d: &mut D) -> Result<ImageBuffer, D::Error> {
+        d.read_struct("ImageBuffer", 3, |d| {
+            let mut ib = ImageBuffer::new();
+
+            ib.top_left =
+                try!(d.read_struct_field("top_left", 0,
+                                         Decodable::decode));
+
+            ib.resolution =
+                try!(d.read_struct_field("resolution", 1,
+                                         Decodable::decode));
+            let index =
+                try!(d.read_struct_field(
+                    "buffer",
+                    2,
+                    |d| {
+                        d.read_seq(|d, len| {
+                            if len >= VRAM_SIZE_PIXELS {
+                                return Err(
+                                    d.error("wrong image buffer length"));
+                            }
+
+                            for i in 0..len {
+                                ib.buffer[i] =
+                                    try!(d.read_seq_elt(i, Decodable::decode));
+                            }
+
+                            Ok(len)
+                        })
+                    }));
+
+            ib.index = index as u32;
+
+            Ok(ib)
+        })
+    }
+}
 
 // Width of the VRAM in 16bit pixels
 pub const VRAM_WIDTH_PIXELS: u16 = 1024;
 // Height of the VRAM in lines
 pub const VRAM_HEIGHT: u16 = 512;
 
+// Total number of 16bit pixels in the VRAM
+pub const VRAM_SIZE_PIXELS: usize =
+    VRAM_WIDTH_PIXELS as usize * VRAM_HEIGHT as usize;
+
 /// The are a few hardware differences between PAL and NTSC consoles,
 /// in particular the pixelclock runs slightly slower on PAL consoles.
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 pub enum VideoClock {
     Ntsc,
     Pal,

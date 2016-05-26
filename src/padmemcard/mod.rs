@@ -9,6 +9,7 @@ use self::gamepad::GamePad;
 
 pub mod gamepad;
 
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct PadMemCard {
     /// Serial clock divider. The LSB is read/write but is not used,
     /// This way the hardware divide the CPU clock by half of
@@ -374,7 +375,7 @@ impl PadMemCard {
 
 /// Identifies the target of the serial communication, either the
 /// gamepad/memory card port 0 or 1.
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 enum Target {
     PadMemCard1 = 0,
     PadMemCard2 = 1,
@@ -390,7 +391,7 @@ impl Target {
 }
 
 /// Controller transaction state machine
-#[derive(Debug)]
+#[derive(Debug, RustcDecodable, RustcEncodable)]
 enum BusState {
     /// Bus is idle
     Idle,

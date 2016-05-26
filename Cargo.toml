@@ -18,6 +18,7 @@ keywords = ["emulator", "playstation"]
 shaman = "0.1.0"
 log = "0.3.4"
 arrayvec = "0.3.15"
+rustc-serialize = "0.3.19"
 
 [lib]
 name = "rustation"

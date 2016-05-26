@@ -2,6 +2,7 @@ mod cop0;
 mod gte;
 
 use std::fmt::{Display, Formatter, Error};
+use std::default::Default;
 
 use memory::{Interconnect, Addressable, Byte, HalfWord, Word};
 use shared::SharedState;
@@ -13,6 +14,7 @@ use self::cop0::{Cop0, Exception};
 use self::gte::Gte;
 
 /// CPU state
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct Cpu {
     /// The program counter register: points to the next instruction
     pc: u32,
@@ -30,7 +32,7 @@ pub struct Cpu {
     /// result
     lo: u32,
     /// Instruction Cache (256 4-word cachelines)
-    icache: [ICacheLine; 0x100],
+    icache: ICacheLines,
     /// Memory interface
     inter: Interconnect,
     /// Coprocessor 0: System control
@@ -67,7 +69,7 @@ impl Cpu {
             regs:       regs,
             hi:         0xdeadbeef,
             lo:         0xdeadbeef,
-            icache:     [ICacheLine::new(); 0x100],
+            icache:     ICacheLines::new(),
             inter:      inter,
             cop0:       Cop0::new(),
             gte:        Gte::new(),
@@ -1669,7 +1671,7 @@ impl Cpu {
     }
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 pub struct Instruction(u32);
 
 impl Instruction {
@@ -1761,11 +1763,11 @@ impl Display for Instruction {
     }
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 struct RegisterIndex(u32);
 
 /// Instruction cache line
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 struct ICacheLine {
     /// Tag: high 22bits of the address associated with this cacheline
     /// Valid bits: 3 bit index of the first valid word in line.
@@ -1782,7 +1784,7 @@ impl ICacheLine {
             // Tag is 0, all line valid
             tag_valid: 0x0,
             // BREAK opcode
-            line: [Instruction(0x00bad0d); 4],
+            line: [Instruction(0xbadc0de5); 4],
         }
     }
 
@@ -1822,6 +1824,15 @@ impl ICacheLine {
         self.line[index as usize] = instruction;
     }
 }
+
+impl Default for ICacheLine {
+    fn default() -> ICacheLine {
+        ICacheLine::new()
+    }
+}
+
+/// Serializable container for the cachelines
+buffer!(struct ICacheLines([ICacheLine; 0x100]));
 
 /// PlayStation CPU clock in MHz
 pub const CPU_FREQ_HZ: u32 = 33_868_500;

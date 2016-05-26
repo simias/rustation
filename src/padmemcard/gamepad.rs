@@ -1,3 +1,5 @@
+use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+
 pub struct GamePad {
     /// Gamepad profile
     profile: Box<Profile>,
@@ -57,6 +59,40 @@ impl GamePad {
     /// Return a mutable reference to the underlying gamepad Profile
     pub fn profile(&mut self) -> &mut Profile {
         &mut *self.profile
+    }
+}
+
+impl Encodable for GamePad {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+
+        // We don't store the Profile in the serialized data, we'll
+        // let the frontend reset it
+        s.emit_struct("GamePad", 2, |s| {
+
+            try!(s.emit_struct_field("seq", 0,
+                                     |s| self.seq.encode(s)));
+            try!(s.emit_struct_field("active", 1,
+                                     |s| self.active.encode(s)));
+            
+            Ok(())
+        })
+    }
+}
+
+impl Decodable for GamePad {
+    fn decode<D: Decoder>(d: &mut D) -> Result<GamePad, D::Error> {
+
+        d.read_struct("GamePad", 2, |d| {
+            let mut pad = GamePad::new(Type::Disconnected);
+
+            pad.seq =
+                try!(d.read_struct_field("seq", 0, Decodable::decode));
+
+            pad.active =
+                try!(d.read_struct_field("active", 1, Decodable::decode));
+
+            Ok(pad)
+        })
     }
 }
 

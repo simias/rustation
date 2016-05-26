@@ -18,6 +18,7 @@ use padmemcard::PadMemCard;
 use mdec::MDec;
 
 /// Global interconnect
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct Interconnect {
     /// Basic Input/Output memory
     bios: Bios,
@@ -559,7 +560,7 @@ impl Interconnect {
     }
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy, RustcDecodable, RustcEncodable)]
 pub struct CacheControl(u32);
 
 impl CacheControl {

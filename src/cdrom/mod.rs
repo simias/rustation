@@ -31,6 +31,7 @@ pub mod disc;
 mod simple_rand;
 
 /// CDROM drive, controller and decoder.
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct CdRom {
     /// The CD-ROM interface has four memory-mapped registers. The
     /// first one contains an index which defines the meaning of the
@@ -48,7 +49,7 @@ pub struct CdRom {
     /// Interrupt mask (5 bits)
     irq_mask: u8,
     /// Data RX buffer
-    rx_buffer: [u8; 2352],
+    rx_buffer: RxBuffer,
     /// Raw sector read from the disc image
     sector: Sector,
     /// This bit is set when the program wants to read sector
@@ -120,7 +121,7 @@ impl CdRom {
             command: None,
             irq_flags: 0,
             irq_mask: 0,
-            rx_buffer: [0; 2352],
+            rx_buffer: RxBuffer::new(),
             sector: Sector::empty(),
             rx_active: false,
             sub_cpu: SubCpu::new(),
@@ -1185,7 +1186,7 @@ impl CdRom {
 }
 
 /// 16byte FIFO used to store command arguments and responses
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug, RustcDecodable, RustcEncodable)]
 struct Fifo {
     /// Data buffer
     buffer: [u8; 16],
@@ -1257,7 +1258,11 @@ impl Fifo {
     }
 }
 
+/// RX buffer serializable container
+buffer!(struct RxBuffer([u8; 2352]));
+
 /// CDROM disc state
+#[derive(RustcDecodable, RustcEncodable)]
 enum ReadState {
     Idle,
     /// We're expecting a sector
@@ -1274,7 +1279,7 @@ impl ReadState {
 }
 
 /// Description of the sub-CPU processing sequence
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, RustcDecodable, RustcEncodable)]
 enum SubCpuSequence {
     /// Sub-CPU waits for commands and async events
     Idle,
@@ -1298,6 +1303,7 @@ enum SubCpuSequence {
 }
 
 /// Sub-CPU state. This is an 8bit microcontroller in charge
+#[derive(RustcDecodable, RustcEncodable)]
 struct SubCpu {
     /// Current sub-CPU command state
     sequence: SubCpuSequence,
@@ -1312,7 +1318,7 @@ struct SubCpu {
     /// Async command response. The tuple contains a method pointer to
     /// the asynchronous command handler and the number of CPU cycles
     /// until the asynch handler must be run.
-    async_response: Option<(u32, fn (&mut CdRom) -> u32)>,
+    async_response: Option<(u32, AsyncResponse)>,
 }
 
 impl SubCpu {
@@ -1353,7 +1359,7 @@ impl SubCpu {
                                handler: fn (&mut CdRom) -> u32) {
         assert!(self.async_response.is_none());
 
-        self.async_response = Some((delay, handler));
+        self.async_response = Some((delay, AsyncResponse(handler)));
     }
 
     /// Return true if the sub-CPU is executing a command
@@ -1382,8 +1388,16 @@ impl SubCpu {
     }
 }
 
+callback!(struct AsyncResponse(fn (&mut CdRom) -> u32) {
+    CdRom::async_pause,
+    CdRom::async_init,
+    CdRom::async_seek_l,
+    CdRom::async_read_toc,
+    CdRom::async_get_id,
+});
+
 /// Various IRQ codes used by the sub-CPU
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
 enum IrqCode {
     /// A CD sector has been read and is ready to be processed.
     SectorReady = 1,
@@ -1398,6 +1412,7 @@ enum IrqCode {
 
 /// CD-DA Audio playback mixer. The CDROM's audio stereo output can be
 /// mixed arbitrarily before reaching the SPU stereo input.
+#[derive(RustcDecodable, RustcEncodable)]
 struct Mixer {
     cd_left_to_spu_left: u8,
     cd_left_to_spu_right: u8,

@@ -4,7 +4,7 @@ use super::Addressable;
 use interrupt::Interrupt;
 use shared::SharedState;
 
-#[derive(Debug)]
+#[derive(Debug, RustcDecodable, RustcEncodable)]
 pub struct Timers {
     /// The three timers. They're mostly identical except that they
     /// can each select a unique clock source besides the regular
@@ -113,7 +113,7 @@ impl Timers {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, RustcDecodable, RustcEncodable)]
 struct Timer {
     /// Timer instance (Timer0, 1 or 2)
     instance: Peripheral,
@@ -414,7 +414,7 @@ impl Timer {
 
 /// Various synchronization modes when the timer is not in
 /// free-run.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
 enum Sync {
     /// For timer 1/2: Pause during H/VBlank. For timer 3: Stop counter
     Pause = 0,
@@ -442,7 +442,7 @@ impl Sync {
 
 /// Clock source is stored on two bits. The meaning of those bits
 /// depends on the timer instance.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
 struct ClockSource(u8);
 
 impl ClockSource {
@@ -486,7 +486,7 @@ impl ClockSource {
 
 
 /// The four possible clock sources for the timers
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
 enum Clock {
     /// The CPU clock at ~33.87MHz
     SysClock,

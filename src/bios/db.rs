@@ -5,6 +5,7 @@ use cdrom::disc::Region;
 use shaman::digest::Digest;
 use shaman::sha2::Sha256;
 
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct Metadata {
     pub sha256: [u8; 32],
     pub version_major: u8,
@@ -24,8 +25,12 @@ pub fn lookup(binary: &[u8]) -> Option<&'static Metadata> {
 
     hasher.result(&mut sha256);
 
+    lookup_sha256(&sha256)
+}
+
+pub fn lookup_sha256(sha256: &[u8; 32]) -> Option<&'static Metadata> {
     for md in &DATABASE {
-        if md.sha256 == sha256 {
+        if md.sha256 == *sha256 {
             // Found match
             return Some(md);
         }

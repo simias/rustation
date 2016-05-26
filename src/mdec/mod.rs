@@ -2,6 +2,7 @@ use memory::Addressable;
 use shared::SharedState;
 
 /// Motion Decoder (sometimes called macroblock or movie decoder).
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct MDec {
     dma_in_enable: bool,
     dma_out_enable: bool,
@@ -13,15 +14,15 @@ pub struct MDec {
     current_block: BlockType,
     /// Quantization matrices: 8x8 bytes, first one is for luma, 2nd
     /// is for chroma.
-    quant_matrices: [[u8; 64]; 2],
+    quant_matrices: [QuantMatrix; 2],
     /// Inverse discrete cosine transform matrix. No$ says that "all
     /// known games" use the same values for this matrix, so it could
     /// be possible to optimize the decoding for this particular
     /// table.
-    idct_matrix: [i16; 64],
+    idct_matrix: IdctMatrix,
     /// Callback handling writes to the command register. Returns
     /// `false` when it receives the last word for the command.
-    command_handler: fn (&mut MDec, u32),
+    command_handler: CommandHandler,
     /// Remaining words expected for this command
     command_remaining: u16,
 }
@@ -35,9 +36,10 @@ impl MDec {
             output_signed: false,
             output_bit15: false,
             current_block: BlockType::CrLuma,
-            quant_matrices: [[0; 64]; 2],
-            idct_matrix: [0; 64],
-            command_handler: MDec::handle_command,
+            quant_matrices: [QuantMatrix::new(),
+                             QuantMatrix::new()],
+            idct_matrix: IdctMatrix::new(),
+            command_handler: CommandHandler(MDec::handle_command),
             command_remaining: 1,
         }
     }
@@ -65,7 +67,7 @@ impl MDec {
         (self.command_handler)(self, cmd);
 
         if self.command_remaining == 0 {
-            self.command_handler = MDec::handle_command;
+            *self.command_handler = MDec::handle_command;
             self.command_remaining = 1;
         }
     }
@@ -97,7 +99,7 @@ impl MDec {
             };
 
         self.command_remaining = len;
-        self.command_handler = handler;
+        *self.command_handler = handler;
     }
 
     fn handle_color_quant_matrices(&mut self, cmd: u32) {
@@ -150,14 +152,26 @@ impl MDec {
             self.output_signed = false;
             self.output_bit15 = false;
             self.current_block = BlockType::CrLuma;
-            self.command_handler = MDec::handle_command;
+            *self.command_handler = MDec::handle_command;
             self.command_remaining = 1;
         }
     }
 }
 
+callback!(struct CommandHandler(fn (&mut MDec, u32)) {
+    MDec::handle_command,
+    MDec::handle_color_quant_matrices,
+    MDec::handle_monochrome_quant_matrix,
+});
+
+/// Serializable container for the quantization matrices
+buffer!(struct QuantMatrix([u8; 64]));
+
+/// Serializable container for the IDCT matrix
+buffer!(struct IdctMatrix([i16; 64]));
+
 /// Pixel color depths supported by the MDEC
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RustcDecodable, RustcEncodable)]
 enum OutputDepth {
     D4Bpp = 0,
     D8Bpp = 1,
@@ -166,6 +180,7 @@ enum OutputDepth {
 }
 
 #[allow(dead_code)]
+#[derive(RustcDecodable, RustcEncodable)]
 enum BlockType {
     Y1 = 0,
     Y2 = 1,

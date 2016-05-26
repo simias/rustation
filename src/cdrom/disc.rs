@@ -2,6 +2,8 @@ use cdimage::{Image, CdError};
 use cdimage::msf::Msf;
 use cdimage::sector::Sector;
 
+use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+
 /// PlayStation disc.
 ///
 /// XXX: add support for CD-DA? Not really useful but shouldn't
@@ -84,8 +86,46 @@ impl Disc {
     }
 }
 
+impl Encodable for Disc {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        // XXX We could maybe store something to make sure we're
+        // loading the right disc. A checksum might be a bit overkill,
+        // maybe just the game's serial number or something?
+        s.emit_nil()
+    }
+}
+
+impl Decodable for Disc {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Disc, D::Error> {
+        try!(d.read_nil());
+
+        // Placeholder disc image
+        Ok(Disc {
+            image: Box::new(MissingImage),
+            region: Region::Japan,
+        })
+    }
+}
+
+
+/// Dummy Image implemementation used when deserializing a Disc. Since
+/// we don't want to store the entire disc in the image it will be
+/// missing after a load, it's up to the frontend to make sure to
+/// reload the image.
+struct MissingImage;
+
+impl Image for MissingImage {
+    fn image_format(&self) -> String {
+        panic!("Missing CD image!");
+    }
+
+    fn read_sector(&mut self, _: &mut Sector, _: Msf) -> Result<(), CdError> {
+        panic!("Missing CD image!");
+    }
+}
+
 /// Disc region coding
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 pub enum Region {
     /// Japan (NTSC): SCEI
     Japan,

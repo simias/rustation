@@ -1,3 +1,5 @@
+use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+
 use memory::Addressable;
 
 /// Sound Processing Unit
@@ -217,6 +219,97 @@ impl Spu {
 
         self.ram[index as usize] = val;
         self.ram_index = (index + 1) & 0x3ffff;
+    }
+}
+
+impl Encodable for Spu {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_struct("Spu", 3, |s| {
+            try!(s.emit_struct_field(
+                "shadow_registers", 0,
+                |s| s.emit_seq(
+                    0x100,
+                    |s| {
+                        for i in 0..0x100 {
+                            try!(s.emit_seq_elt(
+                                i,
+                                |s| self.shadow_registers[i].encode(s)));
+                        }
+
+                        Ok(())
+                    })));
+
+            try!(s.emit_struct_field(
+                "ram", 1,
+                |s| s.emit_seq(
+                    256 * 1024,
+                    |s| {
+                        for i in 0..(256 * 1024) {
+                            try!(s.emit_seq_elt(
+                                i,
+                                |s| self.ram[i].encode(s)));
+                        }
+
+                        Ok(())
+                    })));
+
+            try!(s.emit_struct_field("ram_index", 2,
+                                     |s| self.ram_index.encode(s)));
+
+            Ok(())
+        })
+    }
+}
+
+impl Decodable for Spu {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Spu, D::Error> {
+        d.read_struct("Spu", 3, |d| {
+            let mut spu = Spu::new();
+
+            try!(d.read_struct_field(
+                "shadow_registers", 0,
+                |d| {
+                    d.read_seq(|d, len| {
+                        if len != 0x100 {
+                            return Err(
+                                d.error("wrong SPU shadow registers length"));
+                        }
+
+                        for i in 0..len {
+                            spu.shadow_registers[i] =
+                                try!(d.read_seq_elt(i, Decodable::decode));
+                        }
+
+                        Ok(())
+                    })
+                }));
+
+
+            try!(d.read_struct_field(
+                "ram", 1,
+                |d| {
+                    d.read_seq(|d, len| {
+                        if len != 256 * 1024 {
+                            return Err(
+                                d.error("wrong SPU RAM length"));
+                        }
+
+                        for i in 0..len {
+                            spu.ram[i] =
+                                try!(d.read_seq_elt(i, Decodable::decode));
+                        }
+
+                        Ok(())
+                    })
+                }));
+
+            spu.ram_index =
+                try!(d.read_struct_field("ram_index",
+                                         2,
+                                         Decodable::decode));
+
+            Ok(spu)
+        })
     }
 }
 

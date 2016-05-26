@@ -2,6 +2,7 @@ use shared::SharedState;
 use interrupt::Interrupt;
 
 /// Direct Memory Access
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct Dma {
     /// DMA control register
     control: u32,
@@ -125,7 +126,7 @@ impl Dma {
 }
 
 /// Per-channel data
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 pub struct Channel {
     /// If true the channel is enabled and the copy can take place
     /// depending on the condition mandated by the `sync` mode.
@@ -297,21 +298,21 @@ impl Channel {
 }
 
 /// DMA transfer direction
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 pub enum Direction {
     ToRam   = 0,
     FromRam = 1,
 }
 
 /// DMA transfer step
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 pub enum Step {
     Increment = 0,
     Decrement = 1,
 }
 
 /// DMA transfer synchronization mode
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 pub enum Sync {
     /// Transfer starts when the CPU writes to the Trigger bit and
     /// transfers everything at once
@@ -323,7 +324,7 @@ pub enum Sync {
 }
 
 /// The 7 DMA ports
-#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, RustcDecodable, RustcEncodable)]
 pub enum Port {
     /// Macroblock decoder input
     MDecIn = 0,

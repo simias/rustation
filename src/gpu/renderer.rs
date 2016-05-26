@@ -49,6 +49,7 @@ impl Vertex {
     }
 }
 
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct PrimitiveAttributes {
     /// If true then the equation defined by `semi_transparency_mode`
     /// is applied to semi-transparent pixels.
@@ -78,7 +79,7 @@ pub struct PrimitiveAttributes {
 }
 
 /// Primitive texturing methods
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 pub enum BlendMode {
     /// No texture
     None,
@@ -89,7 +90,7 @@ pub enum BlendMode {
 }
 
 /// Semi-transparency modes supported by the PlayStation GPU
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 pub enum SemiTransparencyMode {
     /// Source / 2 + destination / 2
     Average = 0,
@@ -102,7 +103,7 @@ pub enum SemiTransparencyMode {
 }
 
 /// Depth of the pixel values in a texture page
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
 pub enum TextureDepth {
     /// 4 bits per pixel, paletted
     T4Bpp = 0,

@@ -9,6 +9,7 @@
 /// One of the pitfalls of this algorithm is that if the output is
 /// used as a raw 32bit random number (without modulo) it'll never
 /// return 0.
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct SimpleRand {
     state: u32,
 }

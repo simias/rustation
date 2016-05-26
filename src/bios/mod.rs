@@ -1,3 +1,5 @@
+use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+
 use memory::Addressable;
 
 use self::db::Metadata;
@@ -43,6 +45,63 @@ impl Bios {
 
     pub fn metadata(&self) -> &'static Metadata {
         self.metadata
+    }
+}
+
+impl Encodable for Bios {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        // We don't store the full BIOS image in the savestate, mainly
+        // because I want to be able to share and distribute
+        // savestates without having to worry about legal
+        // implications. Let's just serialize the checksum to make
+        // sure we use the correct BIOS when loading the savestate.
+
+        let sha256 = &self.metadata.sha256;
+
+        s.emit_seq(sha256.len(), |s| {
+            for (i, b) in sha256.iter().enumerate() {
+                try!(s.emit_seq_elt(i, |s| b.encode(s)));
+            }
+            Ok(())
+        })
+    }
+}
+
+impl Decodable for Bios {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Bios, D::Error> {
+        d.read_seq(|d, len| {
+            let mut sha256 = [0; 32];
+
+            if len != sha256.len() {
+                return Err(d.error("wrong BIOM checksum length"));
+            }
+
+            for (i, b) in sha256.iter_mut().enumerate() {
+                *b = try!(d.read_seq_elt(i, |d| Decodable::decode(d)))
+            }
+
+            let meta =
+                match db::lookup_sha256(&sha256) {
+                    Some(m) => m,
+                    None => return Err(d.error("unknown BIOS checksum")),
+                };
+
+            // Create an "empty" BIOS instance, only referencing the
+            // metadata. It's up to the caller to fill the blanks.
+            let mut bios =
+                Bios {
+                    data: box_array![0; BIOS_SIZE],
+                    metadata: meta,
+                };
+
+
+            // Store `0xbadb105` in the BIOS for troubleshooting
+            for (i, b) in bios.data.iter_mut().enumerate() {
+                *b = (0xbadb105 >> ((i % 4) * 2)) as u8;
+            }
+
+            Ok(bios)
+        })
     }
 }
 

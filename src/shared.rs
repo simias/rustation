@@ -2,6 +2,7 @@ use timekeeper::TimeKeeper;
 use interrupt::InterruptState;
 
 /// State shared between various modules
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct SharedState {
     tk: TimeKeeper,
     irq_state: InterruptState,

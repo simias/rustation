@@ -1,3 +1,5 @@
+use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+
 use super::Addressable;
 
 /// RAM
@@ -43,6 +45,35 @@ impl Ram {
     }
 }
 
+impl Encodable for Ram {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_seq(self.data.len(), |s| {
+            for (i, b) in self.data.iter().enumerate() {
+                try!(s.emit_seq_elt(i, |s| b.encode(s)));
+            }
+            Ok(())
+        })
+    }
+}
+
+impl Decodable for Ram {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Ram, D::Error> {
+        d.read_seq(|d, len| {
+            if len != RAM_SIZE {
+                return Err(d.error("wrong RAM length"));
+            }
+
+            let mut ram = Ram::new();
+
+            for (i, b) in ram.data.iter_mut().enumerate() {
+                *b = try!(d.read_seq_elt(i, Decodable::decode))
+            }
+
+            Ok(ram)
+        })
+    }
+}
+
 /// ScratchPad memory
 pub struct ScratchPad {
     data: [u8; SCRATCH_PAD_SIZE]
@@ -75,6 +106,35 @@ impl ScratchPad {
         for i in 0..T::size() as usize {
             self.data[offset + i] = (val >> (i * 8)) as u8;
         }
+    }
+}
+
+impl Encodable for ScratchPad {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_seq(SCRATCH_PAD_SIZE, |s| {
+            for i in 0..SCRATCH_PAD_SIZE {
+                try!(s.emit_seq_elt(i, |s| self.data[i].encode(s)));
+            }
+            Ok(())
+        })
+    }
+}
+
+impl Decodable for ScratchPad {
+    fn decode<D: Decoder>(d: &mut D) -> Result<ScratchPad, D::Error> {
+        d.read_seq(|d, len| {
+            if len != SCRATCH_PAD_SIZE {
+                return Err(d.error("wrong SCRATCH_PAD length"));
+            }
+
+            let mut ram = ScratchPad::new();
+
+            for (i, b) in ram.data.iter_mut().enumerate() {
+                *b = try!(d.read_seq_elt(i, Decodable::decode))
+            }
+
+            Ok(ram)
+        })
     }
 }
 

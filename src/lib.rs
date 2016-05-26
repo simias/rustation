@@ -3,9 +3,12 @@ extern crate log;
 extern crate shaman;
 extern crate cdimage;
 extern crate arrayvec;
+extern crate rustc_serialize;
 
 #[macro_use]
 mod box_array;
+#[macro_use]
+mod serializer;
 
 pub mod gpu;
 pub mod cdrom;
