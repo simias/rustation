@@ -98,6 +98,11 @@ impl Interconnect {
         &mut self.pad_memcard
     }
 
+    /// Return a mutable reference to the CdRom controller
+    pub fn cdrom_mut(&mut self) -> &mut CdRom {
+        &mut self.cdrom
+    }
+
     /// Interconnect: load instruction at `PC`. Only the RAM and BIOS
     /// are supported, would it make sense to fetch instructions from
     /// anything else?

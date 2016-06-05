@@ -211,6 +211,20 @@ impl CdRom {
         self.predict_next_sync(shared);
     }
 
+    // Remove the disc. Returns the disc instance, if any.
+    pub fn remove_disc(&mut self) -> Option<Disc> {
+        self.set_disc(None)
+    }
+
+    // Replace the disc, returns the old value. This is mostly meant
+    // to replace the disc when loading savestates, not emulating a
+    // real disc swap.
+    pub fn set_disc(&mut self, mut disc: Option<Disc>) -> Option<Disc> {
+        ::std::mem::swap(&mut self.disc, &mut disc);
+
+        disc
+    }
+
     fn predict_next_sync(&mut self, shared: &mut SharedState) {
         shared.tk().no_sync_needed(Peripheral::CdRom);
 
