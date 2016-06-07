@@ -1,7 +1,7 @@
 use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
 
 pub struct GamePad {
-    /// Gamepad profile
+    /// Gamepad profile. *Not* stored in the savestate.
     profile: Box<Profile>,
     /// Counter keeping track of the current position in the reply
     /// sequence
@@ -11,19 +11,12 @@ pub struct GamePad {
 }
 
 impl GamePad {
-    pub fn new(pad_type: Type) -> GamePad {
-        let profile: Box<Profile> =
-            match pad_type {
-                Type::Disconnected =>
-                    Box::new(DisconnectedProfile),
-                Type::Digital =>
-                    Box::new(DigitalProfile::new()),
-            };
-
+    /// Create a new disconnected GamePad
+    pub fn disconnected() -> GamePad {
         GamePad {
             seq: 0,
             active: true,
-            profile: profile,
+            profile: Box::new(DisconnectedProfile),
         }
     }
 
@@ -34,10 +27,9 @@ impl GamePad {
         self.seq = 0;
     }
 
-    /// The first return value is true if the gamepad issues a DSR
-    /// pulse after the byte is read to notify the controller that
-    /// more data can be read. The 2nd return value is the response
-    /// byte.
+    /// The 2nd return value is the response byte. The 2nd return
+    /// value is true if the gamepad issues a DSR pulse after the byte
+    /// is read to notify the controller that more data can be read.
     pub fn send_command(&mut self, cmd: u8) -> (u8, bool) {
         if !self.active {
             return (0xff, false);
@@ -57,8 +49,12 @@ impl GamePad {
     }
 
     /// Return a mutable reference to the underlying gamepad Profile
-    pub fn profile(&mut self) -> &mut Profile {
+    pub fn profile_mut(&mut self) -> &mut Profile {
         &mut *self.profile
+    }
+
+    pub fn set_profile(&mut self, profile: Box<Profile>) {
+        self.profile = profile
     }
 }
 
@@ -83,7 +79,7 @@ impl Decodable for GamePad {
     fn decode<D: Decoder>(d: &mut D) -> Result<GamePad, D::Error> {
 
         d.read_struct("GamePad", 2, |d| {
-            let mut pad = GamePad::new(Type::Disconnected);
+            let mut pad = GamePad::disconnected();
 
             pad.seq =
                 try!(d.read_struct_field("seq", 0, Decodable::decode));
@@ -96,14 +92,9 @@ impl Decodable for GamePad {
     }
 }
 
-/// GamePad types supported by the emulator
-pub enum Type {
-    /// No gamepad connected
-    Disconnected,
-    /// SCPH-1080: original gamepad without analog sticks
-    Digital,
-}
-
+/// Digital buttons on a PlayStation controller. The value assigned to
+/// each button is the bit position in the 16bit word returned in the
+/// serial protocol
 #[derive(Clone,Copy,Debug)]
 pub enum Button {
     Select = 0,
@@ -147,7 +138,7 @@ pub trait Profile {
 }
 
 /// Dummy profile emulating an empty pad slot
-struct DisconnectedProfile;
+pub struct DisconnectedProfile;
 
 impl Profile for DisconnectedProfile {
     fn handle_command(&mut self, _: u8, _: u8) -> (u8, bool) {
@@ -162,7 +153,7 @@ impl Profile for DisconnectedProfile {
 /// SCPH-1080: Digital gamepad.
 /// Full state is only two bytes since we only need one bit per
 /// button.
-struct DigitalProfile(u16);
+pub struct DigitalProfile(u16);
 
 impl DigitalProfile {
     pub fn new() -> DigitalProfile {

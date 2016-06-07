@@ -74,8 +74,8 @@ impl PadMemCard {
             dsr_it: false,
             response: 0xff,
             rx_not_empty: false,
-            pad1: GamePad::new(gamepad::Type::Digital),
-            pad2: GamePad::new(gamepad::Type::Disconnected),
+            pad1: GamePad::disconnected(),
+            pad2: GamePad::disconnected(),
             bus: BusState::Idle,
         }
     }
@@ -223,8 +223,8 @@ impl PadMemCard {
     }
 
     /// Return a mutable reference to the gamepad profiles being used.
-    pub fn pad_profiles(&mut self) -> [&mut gamepad::Profile; 2] {
-        [ self.pad1.profile(), self.pad2.profile() ]
+    pub fn gamepads_mut(&mut self) -> [&mut GamePad; 2] {
+        [ &mut self.pad1, &mut self.pad2 ]
     }
 
     fn send_command(&mut self, shared: &mut SharedState, cmd: u8) {
