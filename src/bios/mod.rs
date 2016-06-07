@@ -43,6 +43,7 @@ impl Bios {
         r
     }
 
+    /// Return a static pointer to the BIOS's Metadata
     pub fn metadata(&self) -> &'static Metadata {
         self.metadata
     }
@@ -95,9 +96,10 @@ impl Decodable for Bios {
                 };
 
 
-            // Store `0xbadb105` in the BIOS for troubleshooting
+            // Store `0x7badb105` (an invalid instruction) in the BIOS
+            // for troubleshooting.
             for (i, b) in bios.data.iter_mut().enumerate() {
-                *b = (0xbadb105 >> ((i % 4) * 2)) as u8;
+                *b = (0x7badb105 >> ((i % 4) * 2)) as u8;
             }
 
             Ok(bios)

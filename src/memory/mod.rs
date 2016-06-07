@@ -93,6 +93,17 @@ impl Interconnect {
         &self.gpu
     }
 
+    /// Return a reference to the BIOS instance
+    pub fn bios(&self) -> &Bios {
+        &self.bios
+    }
+
+    /// Replace the BIOS with a different instance. Used when loading
+    /// savestates.
+    pub fn set_bios(&mut self, bios: Bios) {
+        self.bios = bios
+    }
+
     /// Return a mutable reference to the PadMemCard instance
     pub fn pad_memcard_mut(&mut self) -> &mut PadMemCard {
         &mut self.pad_memcard

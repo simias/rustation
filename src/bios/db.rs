@@ -1,9 +1,11 @@
 //! BIOS database, lifted from mednafen
 
-use cdrom::disc::Region;
+use std::fmt;
 
 use shaman::digest::Digest;
 use shaman::sha2::Sha256;
+
+use cdrom::disc::Region;
 
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Metadata {
@@ -13,6 +15,19 @@ pub struct Metadata {
     pub region: Region,
     /// True if this dump is known to be bad
     pub known_bad: bool,
+}
+
+impl fmt::Debug for Metadata {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "{:?}/v{}.{}",
+                    self.region, self.version_major, self.version_minor));
+
+        if self.known_bad {
+            try!(write!(f, "[BAD]"))
+        }
+
+        Ok(())
+    }
 }
 
 pub fn lookup(binary: &[u8]) -> Option<&'static Metadata> {
