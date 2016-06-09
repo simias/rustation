@@ -94,9 +94,9 @@ impl Cpu {
                                 debugger: &mut Debugger,
                                 shared: &mut SharedState,
                                 renderer: &mut Renderer) {
-        let frame = shared.frame();
+        let frame = shared.counters().frame.get();
 
-        while frame == shared.frame() {
+        while frame == shared.counters().frame.get() {
             self.run_next_instruction(debugger, shared, renderer);
         }
     }
@@ -143,6 +143,8 @@ impl Cpu {
 
         // Check for pending interrupts
         if self.cop0.irq_active(*shared.irq_state()) {
+            shared.counters_mut().cpu_interrupt.increment();
+
             if instruction.is_gte_op() {
                 // GTE instructions get executed even if an interrupt
                 // occurs

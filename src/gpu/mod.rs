@@ -290,7 +290,7 @@ impl Gpu {
 
         if self.vblank_interrupt && !vblank_interrupt {
             // End of vertical blanking, we're starting a new frame
-            shared.new_frame();
+            shared.counters_mut().frame.increment();
         }
 
         self.vblank_interrupt = vblank_interrupt;
@@ -1245,7 +1245,12 @@ impl Gpu {
             0x02 => self.gp1_acknowledge_irq(),
             0x03 => self.gp1_display_enable(val),
             0x04 => self.gp1_dma_direction(val),
-            0x05 => self.gp1_display_vram_start(val),
+            0x05 => {
+                // Changing the VRAM start coordinates usually means
+                // that the game is done rendering the previous frame.
+                shared.counters_mut().framebuffer_swap.increment();
+                self.gp1_display_vram_start(val);
+            }
             0x06 => self.gp1_display_horizontal_range(val),
             0x07 => self.gp1_display_vertical_range(shared,val),
             0x08 => {
