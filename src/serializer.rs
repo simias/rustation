@@ -7,13 +7,21 @@
 /// the methods that can be stored it in, otherwise the
 /// encoding/decoding will fail for unknown functions:
 ///
-/// ```rust
+/// ```
+/// # #[macro_use] extern crate rustation;
+/// # #[macro_use] extern crate rustc_serialize;
+/// # fn main() {
 /// callback!(
 ///    struct MyHandler(fn(u32) -> bool) {
 ///        foo,
 ///        bar,
 ///        baz,
 ///    });
+///
+///  fn foo(_: u32) -> bool { true }
+///  fn bar(_: u32) -> bool { false }
+///  fn baz(v: u32) -> bool { v == 0 }
+/// # }
 /// ```
 #[macro_export]
 macro_rules! callback {
@@ -91,7 +99,20 @@ macro_rules! callback {
 /// Create a wrapper type around an array in order to be able to
 /// serialize it. The new type implements Deref an DerefMut for
 /// convenience. The element type must implement
-/// `std::default::Default`.
+/// `std::default::Default`:
+///
+/// ```
+/// # #[macro_use] extern crate rustation;
+/// # #[macro_use] extern crate rustc_serialize;
+/// # fn main() {
+/// buffer!(struct MyBuffer([u8; 1024]));
+///
+/// let mut buf = MyBuffer::new();
+/// assert!(buf[55] == 0);
+/// buf[55] += 1;
+/// assert!(buf[55] == 1);
+/// # }
+/// ```
 #[macro_export]
 macro_rules! buffer {
     (struct $st:ident ([$elem: ty; $len: expr])) => (

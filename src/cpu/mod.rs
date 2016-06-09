@@ -1836,5 +1836,5 @@ impl Default for ICacheLine {
 /// Serializable container for the cachelines
 buffer!(struct ICacheLines([ICacheLine; 0x100]));
 
-/// PlayStation CPU clock in MHz
+/// PlayStation CPU clock in Hz
 pub const CPU_FREQ_HZ: u32 = 33_868_500;
