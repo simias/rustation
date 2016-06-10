@@ -18,6 +18,7 @@ pub mod cpu;
 pub mod shared;
 pub mod padmemcard;
 pub mod debugger;
+pub mod assembler;
 
 mod interrupt;
 mod timekeeper;
