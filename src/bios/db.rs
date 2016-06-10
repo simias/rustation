@@ -7,6 +7,8 @@ use shaman::sha2::Sha256;
 
 use cdrom::disc::Region;
 
+use super::BIOS_SIZE;
+
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Metadata {
     pub sha256: [u8; 32],
@@ -15,6 +17,15 @@ pub struct Metadata {
     pub region: Region,
     /// True if this dump is known to be bad
     pub known_bad: bool,
+    /// ROM offset where the jump to the bootup logo animation code
+    /// can be found. Replacing the word there with `0` (NOP). That's
+    /// also where we can hook ourselves up to run extension code
+    /// after the BIOS init code and before the CD gets loaded (this
+    /// is what mednafen does).
+    ///
+    /// This value can be set to `None` if the correct address has not
+    /// been determined for this particular BIOS.
+    pub animation_jump_hook: Option<u32>,
 }
 
 impl fmt::Debug for Metadata {
@@ -30,7 +41,9 @@ impl fmt::Debug for Metadata {
     }
 }
 
-pub fn lookup(binary: &[u8]) -> Option<&'static Metadata> {
+/// Attempt to find the metadata for the given BIOS binary blob.
+/// Returns None if this BIOS is not part of the database.
+pub fn lookup_blob(binary: &[u8; BIOS_SIZE]) -> Option<&'static Metadata> {
 
     let mut hasher = Sha256::new();
 
@@ -43,6 +56,8 @@ pub fn lookup(binary: &[u8]) -> Option<&'static Metadata> {
     lookup_sha256(&sha256)
 }
 
+/// Attempt to find the metadata for the given BIOS SHA-256
+/// hash. Returns None if this BIOS is not part of the database.
 pub fn lookup_sha256(sha256: &[u8; 32]) -> Option<&'static Metadata> {
     for md in &DATABASE {
         if md.sha256 == *sha256 {
@@ -64,6 +79,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 0,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x5e, 0xb3, 0xae, 0xe4, 0x95, 0x93, 0x75, 0x58,
@@ -74,6 +90,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 1,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x42, 0xe4, 0x12, 0x4b, 0xe7, 0x62, 0x3e, 0x2e,
@@ -84,6 +101,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 0,
         region: Region::NorthAmerica,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x0a, 0xf2, 0xbe, 0x34, 0x68, 0xd3, 0x0b, 0x60,
@@ -94,6 +112,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 0,
         region: Region::Europe,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x6f, 0x71, 0xca, 0x1e, 0x71, 0x6d, 0xa7, 0x61,
@@ -104,6 +123,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 1,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x6a, 0xd5, 0x52, 0x1d, 0x10, 0x5a, 0x6b, 0x86,
@@ -114,6 +134,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 1,
         region: Region::NorthAmerica,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x1e, 0xfb, 0x0c, 0xfc, 0x5d, 0xb8, 0xa8, 0x75,
@@ -124,6 +145,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 1,
         region: Region::Europe,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x0c, 0x83, 0x59, 0x87, 0x0c, 0xba, 0xc0, 0xea,
@@ -134,6 +156,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 2,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x8e, 0x03, 0x83, 0x17, 0x1e, 0x67, 0xb3, 0x3e,
@@ -144,6 +167,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 2,
         region: Region::Japan,
         known_bad: true,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x71, 0xaf, 0x94, 0xd1, 0xe4, 0x7a, 0x68, 0xc1,
@@ -154,6 +178,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 2,
         region: Region::NorthAmerica,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x3d, 0x06, 0xd2, 0xc4, 0x69, 0x31, 0x3c, 0x2a,
@@ -164,6 +189,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 2,
         region: Region::Europe,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x40, 0x18, 0x74, 0x9b, 0x36, 0x98, 0xb8, 0x69,
@@ -174,6 +200,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 2,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x9c, 0x04, 0x21, 0x85, 0x8e, 0x21, 0x78, 0x05,
@@ -184,6 +211,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 0,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x11, 0x05, 0x2b, 0x64, 0x99, 0xe4, 0x66, 0xbb,
@@ -194,6 +222,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 0,
         region: Region::NorthAmerica,
         known_bad: false,
+        animation_jump_hook: Some(0x6990),
     },
     Metadata {
         sha256: [0x1f, 0xaa, 0xa1, 0x8f, 0xa8, 0x20, 0xa0, 0x22,
@@ -204,6 +233,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 0,
         region: Region::Europe,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x9e, 0x1f, 0x8f, 0xb4, 0xfa, 0x35, 0x6a, 0x5a,
@@ -214,6 +244,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 0,
         region: Region::Europe,
         known_bad: true,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0xe9, 0x00, 0x50, 0x4d, 0x17, 0x55, 0xf0, 0x21,
@@ -224,6 +255,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 0,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0xb3, 0xaa, 0x63, 0xcf, 0x30, 0xc8, 0x1e, 0x0a,
@@ -234,6 +266,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 1,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x39, 0xdc, 0xc1, 0xa0, 0x71, 0x70, 0x36, 0xc9,
@@ -244,6 +277,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 1,
         region: Region::NorthAmerica,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x5e, 0x84, 0xa9, 0x48, 0x18, 0xcf, 0x52, 0x82,
@@ -254,6 +288,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 1,
         region: Region::Europe,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0xb2, 0x9b, 0x4b, 0x5f, 0xcd, 0xde, 0xf3, 0x69,
@@ -264,6 +299,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 3,
         region: Region::Japan,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x5c, 0x01, 0x66, 0xda, 0x24, 0xe2, 0x7d, 0xea,
@@ -274,6 +310,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 4,
         region: Region::Europe,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0xac, 0xa9, 0xcb, 0xfa, 0x97, 0x4b, 0x93, 0x36,
@@ -284,6 +321,7 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 5,
         region: Region::NorthAmerica,
         known_bad: false,
+        animation_jump_hook: None,
     },
     Metadata {
         sha256: [0x42, 0x24, 0x4b, 0x0c, 0x65, 0x08, 0x21, 0x51,
@@ -294,5 +332,6 @@ pub static DATABASE: [Metadata; 24] = [
         version_minor: 5,
         region: Region::Europe,
         known_bad: false,
+        animation_jump_hook: None,
     },
 ];

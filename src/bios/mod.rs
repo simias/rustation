@@ -21,12 +21,42 @@ impl Bios {
     /// an entry in the database. If no match can be found return
     /// `None`.
     pub fn new(binary: Box<[u8; BIOS_SIZE]>) -> Option<Bios> {
-        match db::lookup(&*binary) {
+        match db::lookup_blob(&*binary) {
             Some(metadata) => Some(Bios {
                 data: binary,
                 metadata: metadata,
             }),
             None => None,
+        }
+    }
+
+    /// Attempt to modify the BIOS ROM to remove the call to the code
+    /// responsible for the boot logo animations (SCEx/PS) and
+    /// directly boot the game. This can break some games!  Returns
+    /// `Ok(())` if the code was patched, `Err(())` if we don't know
+    /// how to hack this particular BIOS.
+    pub fn patch_boot_animation(&mut self) -> Result<(), ()> {
+        // Set the logo jump to `0` (NOP)
+        self.patch_animation_jump_hook(0)
+    }
+
+    /// Attempt to modify the BIOS ROM to replace the call to the code
+    /// responsible for the boot logo animations by the provided
+    /// instruction.
+    pub fn patch_animation_jump_hook(&mut self,
+                                     instruction: u32) -> Result<(), ()> {
+        match self.metadata.animation_jump_hook {
+            Some(h) => {
+                let h = h as usize;
+
+                self.data[h]     = instruction as u8;
+                self.data[h + 1] = (instruction >> 8) as u8;
+                self.data[h + 2] = (instruction >> 16) as u8;
+                self.data[h + 3] = (instruction >> 24) as u8;
+
+                Ok(())
+            }
+            None => Err(())
         }
     }
 
