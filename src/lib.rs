@@ -19,6 +19,7 @@ pub mod shared;
 pub mod padmemcard;
 pub mod debugger;
 pub mod assembler;
+pub mod parallel_io;
 
 mod interrupt;
 mod timekeeper;

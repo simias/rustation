@@ -16,6 +16,7 @@ use cdrom::CdRom;
 use cdrom::disc::Disc;
 use padmemcard::PadMemCard;
 use mdec::MDec;
+use parallel_io::ParallelIo;
 
 /// Global interconnect
 #[derive(RustcDecodable, RustcEncodable)]
@@ -47,10 +48,14 @@ pub struct Interconnect {
     ram_size: u32,
     /// Memory control registers
     mem_control: [u32; 9],
+    /// Parallel I/O
+    parallel_io: ParallelIo,
 }
 
 impl Interconnect {
-    pub fn new(bios: Bios, gpu: Gpu, disc: Option<Disc>) -> Interconnect {
+    pub fn new(bios: Bios,
+               gpu: Gpu,
+               disc: Option<Disc>) -> Interconnect {
         Interconnect {
             bios: bios,
             ram: Ram::new(),
@@ -65,6 +70,7 @@ impl Interconnect {
             mdec: MDec::new(),
             ram_size: 0,
             mem_control: [0; 9],
+            parallel_io: ParallelIo::disconnected(),
         }
     }
 
@@ -195,10 +201,8 @@ impl Interconnect {
             return self.pad_memcard.load::<T>(shared, offset);
         }
 
-        if let Some(_) = map::EXPANSION_1.contains(abs_addr) {
-            // No expansion implemented. Returns full ones when no
-            // expansion is present
-            return !0;
+        if let Some(offset) = map::EXPANSION_1.contains(abs_addr) {
+            return self.parallel_io.load::<T>(shared, offset);
         }
 
         if let Some(_) = map::RAM_SIZE.contains(abs_addr) {
