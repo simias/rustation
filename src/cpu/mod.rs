@@ -47,6 +47,9 @@ pub struct Cpu {
     branch: bool,
     /// Set if the current instruction executes in the delay slot
     delay_slot: bool,
+    /// If `true` break instructions will trigger the debugger instead
+    /// of generating an exception.
+    debug_on_break: bool,
 }
 
 impl Cpu {
@@ -63,20 +66,25 @@ impl Cpu {
         let pc = 0xbfc00000;
 
         Cpu {
-            pc:         pc,
-            next_pc:    pc.wrapping_add(4),
-            current_pc: 0,
-            regs:       regs,
-            hi:         0xdeadbeef,
-            lo:         0xdeadbeef,
-            icache:     ICacheLines::new(),
-            inter:      inter,
-            cop0:       Cop0::new(),
-            gte:        Gte::new(),
-            load:       (RegisterIndex(0), 0),
-            branch:     false,
-            delay_slot: false,
+            pc:             pc,
+            next_pc:        pc.wrapping_add(4),
+            current_pc:     0,
+            regs:           regs,
+            hi:             0xdeadbeef,
+            lo:             0xdeadbeef,
+            icache:         ICacheLines::new(),
+            inter:          inter,
+            cop0:           Cop0::new(),
+            gte:            Gte::new(),
+            load:           (RegisterIndex(0), 0),
+            branch:         false,
+            delay_slot:     false,
+            debug_on_break: false,
         }
+    }
+
+    pub fn set_debug_on_break(&mut self, enabled: bool) {
+        self.debug_on_break = enabled
     }
 
     /// Return a reference to the interconnect
@@ -420,7 +428,7 @@ impl Cpu {
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
                 0b001100 => self.op_syscall(instruction),
-                0b001101 => self.op_break(instruction),
+                0b001101 => self.op_break(instruction, debugger),
                 0b010000 => self.op_mfhi(instruction),
                 0b010001 => self.op_mthi(instruction),
                 0b010010 => self.op_mflo(instruction),
@@ -488,7 +496,9 @@ impl Cpu {
     fn op_illegal(&mut self, instruction: Instruction) {
         self.delayed_load();
 
-        warn!("Illegal instruction {}!", instruction);
+        warn!("Illegal instruction {} at PC 0x{:08x}!",
+              instruction,
+              self.current_pc);
 
         self.exception(Exception::IllegalInstruction);
     }
@@ -645,13 +655,17 @@ impl Cpu {
     }
 
     /// Break
-    fn op_break(&mut self, _: Instruction) {
+    fn op_break(&mut self,
+                _: Instruction,
+                debugger: &mut Debugger,) {
         self.delayed_load();
 
-        // Should I do something special with the debugger here? Might
-        // be convenient if somebody wants to debug with the BREAK
-        // instruction in custom code.
-        self.exception(Exception::Break);
+        if self.debug_on_break {
+            info!("BREAK instruction while debug_on_break is active");
+            debugger.trigger_break();
+        } else {
+            self.exception(Exception::Break);
+        }
     }
 
     /// Move From HI
