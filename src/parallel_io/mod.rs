@@ -6,6 +6,8 @@ use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
 use memory::Addressable;
 use shared::SharedState;
 
+pub mod exe_loader;
+
 pub struct ParallelIo {
     module: Box<ParallelIoModule>,
 }
@@ -16,6 +18,10 @@ impl ParallelIo {
         ParallelIo {
             module: Box::new(Disconnected),
         }
+    }
+
+    pub fn set_module(&mut self, module: Box<ParallelIoModule>) {
+        self.module = module;
     }
 
     pub fn load<T: Addressable>(&mut self,

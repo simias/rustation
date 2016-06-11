@@ -120,10 +120,17 @@ impl Interconnect {
         &mut self.cdrom
     }
 
+    /// Return a mutable reference to the Parallel I/O interface
+    pub fn parallel_io_mut(&mut self) -> &mut ParallelIo {
+        &mut self.parallel_io
+    }
+
     /// Interconnect: load instruction at `PC`. Only the RAM and BIOS
     /// are supported, would it make sense to fetch instructions from
     /// anything else?
-    pub fn load_instruction(&self, pc: u32) -> u32 {
+    pub fn load_instruction(&mut self,
+                            shared: &mut SharedState,
+                            pc: u32) -> u32 {
         let abs_addr = map::mask_region(pc);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
@@ -132,6 +139,10 @@ impl Interconnect {
 
         if let Some(offset) = map::BIOS.contains(abs_addr) {
             return self.bios.load::<Word>(offset);
+        }
+
+        if let Some(offset) = map::EXPANSION_1.contains(abs_addr) {
+            return self.parallel_io.load::<Word>(shared, offset);
         }
 
         panic!("unhandled instruction load at address {:08x}", pc);
@@ -218,6 +229,14 @@ impl Interconnect {
             let index = (offset >> 2) as usize;
 
             return self.mem_control[index];
+        }
+
+        if let Some(_) = map::CACHE_CONTROL.contains(abs_addr) {
+            if T::size() != 4 {
+                panic!("Unhandled cache control access ({})", T::size());
+            }
+
+            return self.cache_control.0;
         }
 
         panic!("unhandled load at address {:08x}", addr);
@@ -628,8 +647,8 @@ impl Addressable for Word {
     }
 }
 
-mod map {
-    pub struct Range(u32, u32);
+pub mod map {
+    pub struct Range(pub u32, pub u32);
 
     impl Range {
         /// Return `Some(offset)` if addr is contained in `self`

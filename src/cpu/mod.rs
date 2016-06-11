@@ -210,7 +210,7 @@ impl Cpu {
                     shared.tk().tick(1);
 
                     let instruction =
-                        Instruction(self.inter.load_instruction(cpc));
+                        Instruction(self.inter.load_instruction(shared, cpc));
 
                     line.set_instruction(i, instruction);
                     cpc += 4;
@@ -234,7 +234,7 @@ impl Cpu {
             // cycles on average.
             shared.tk().tick(4);
 
-            Instruction(self.inter.load_instruction(pc))
+            Instruction(self.inter.load_instruction(shared, pc))
         }
     }
 
