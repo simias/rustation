@@ -1119,6 +1119,7 @@ impl Cpu {
             12 => self.cop0.sr(),
             13 => self.cop0.cause(*shared.irq_state()),
             14 => self.cop0.epc(),
+            15 => PROCESSOR_ID,
             _  => panic!("Unhandled read from cop0r{}", cop_r),
         };
 
@@ -1835,6 +1836,10 @@ impl Default for ICacheLine {
 
 /// Serializable container for the cachelines
 buffer!(struct ICacheLines([ICacheLine; 0x100]));
+
+/// Value of the "Processor ID" register (Cop0r15). This is the value
+/// returned by my SCPH-7502.
+pub const PROCESSOR_ID: u32 = 0x00000002;
 
 /// PlayStation CPU clock in Hz
 pub const CPU_FREQ_HZ: u32 = 33_868_500;
