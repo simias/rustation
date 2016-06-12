@@ -1130,6 +1130,28 @@ impl Cpu {
         let cop_r = instruction.d().0;
 
         let v = match cop_r {
+            6 => {
+                // No$ says this register "randomly" memorizes a jump
+                // target after certain exceptions occur. Doesn't seem
+                // very useful and would require a lot more testing to
+                // implement accurately.
+                warn!("Unhandled read from JUMP_DEST (cop0r6)");
+                0
+            }
+            7 => {
+                // DCIC: breakpoint control
+                warn!("Unhandled read from DCIC (cop0r7)");
+                0
+            }
+            8 => {
+                // This register should be mostly useless on the
+                // PlayStation since it doesn't have virtual memory,
+                // however some exceptions do write to this register
+                // so maybe we'll have to implement this correctly
+                // some day.
+                warn!("Unhandled read from BAD_VADDR (cop0r8)");
+                0
+            }
             12 => self.cop0.sr(),
             13 => self.cop0.cause(*shared.irq_state()),
             14 => self.cop0.epc(),
