@@ -1157,10 +1157,7 @@ impl Cpu {
                     panic!("Unhandled write to cop0r{}: {:08x}", cop_r, v)
                 },
             12 => self.cop0.set_sr(v),
-            13 => // Cause register
-                if v != 0 {
-                    panic!("Unhandled write to CAUSE register: {:08x}", v)
-                },
+            13 => self.cop0.set_cause(v),
             _  => panic!("Unhandled cop0 register {}", cop_r),
         }
     }

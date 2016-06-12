@@ -29,6 +29,13 @@ impl Cop0 {
         self.sr = sr;
     }
 
+    pub fn set_cause(&mut self, v: u32) {
+        // Bits [9:8] are writeable and can be used to trigger a
+        // software interrupt
+        self.cause &= !0x300;
+        self.cause |= v & 0x300;
+    }
+
     /// Retreive the value of the CAUSE register. We need the
     /// InterruptState because bit 10 is wired to the current external
     /// interrupt (no latch, ack'ing the interrupt in the external
