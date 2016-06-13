@@ -1,6 +1,9 @@
 mod cop0;
 mod gte;
 
+#[cfg(test)]
+mod tests;
+
 use std::fmt::{Display, Formatter, Error};
 use std::default::Default;
 
@@ -171,6 +174,12 @@ impl Cpu {
         }
     }
 
+    /// Force the value of the PC
+    pub fn set_pc(&mut self, pc: u32) {
+        self.pc = pc;
+        self.next_pc = pc.wrapping_add(4);
+    }
+
     /// Fetch the instruction at `current_pc` through the instruction
     /// cache
     fn fetch_instruction(&mut self, shared: &mut SharedState) -> Instruction {
@@ -336,6 +345,7 @@ impl Cpu {
 
     /// Trigger an exception
     fn exception(&mut self, cause: Exception) {
+
         // Update the status register
         let handler_addr =
             self.cop0.enter_exception(cause,
@@ -1827,7 +1837,8 @@ impl ICacheLine {
             // Tag is 0, all line valid
             tag_valid: 0x0,
             // BREAK opcode
-            line: [Instruction(0xbadc0de5); 4],
+            //line: [Instruction(0xbadc0de5); 4],
+            line: [Instruction(0); 4],
         }
     }
 

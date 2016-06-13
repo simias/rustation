@@ -129,7 +129,7 @@ impl Cop0 {
 }
 
 /// Exception types (as stored in the `CAUSE` register)
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Exception {
     /// Interrupt Request
     Interrupt = 0x0,

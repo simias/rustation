@@ -1,6 +1,7 @@
 use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
 
 use memory::Addressable;
+use cdrom::disc::Region;
 
 use self::db::Metadata;
 
@@ -28,6 +29,24 @@ impl Bios {
             }),
             None => None,
         }
+    }
+
+    /// Generate a dummy BIOS that won't work, used for
+    /// deserialization and running unit tests
+    pub fn dummy() -> Bios {
+        let mut bios =
+            Bios {
+                data: box_array![0; BIOS_SIZE],
+                metadata: &DUMMY_METADATA,
+            };
+
+        // Store `0x7badb105` (an invalid instruction) in the BIOS
+        // for troubleshooting.
+        for (i, b) in bios.data.iter_mut().enumerate() {
+            *b = (0x7badb105 >> ((i % 4) * 2)) as u8;
+        }
+
+        bios
     }
 
     /// Attempt to modify the BIOS ROM to remove the call to the code
@@ -119,23 +138,25 @@ impl Decodable for Bios {
 
             // Create an "empty" BIOS instance, only referencing the
             // metadata. It's up to the caller to fill the blanks.
-            let mut bios =
-                Bios {
-                    data: box_array![0; BIOS_SIZE],
-                    metadata: meta,
-                };
+            let mut bios = Bios::dummy();
 
-
-            // Store `0x7badb105` (an invalid instruction) in the BIOS
-            // for troubleshooting.
-            for (i, b) in bios.data.iter_mut().enumerate() {
-                *b = (0x7badb105 >> ((i % 4) * 2)) as u8;
-            }
+            bios.metadata = meta;
 
             Ok(bios)
         })
     }
 }
+
+/// Dummy metadata used as a placeholder for dummy BIOS instances
+static DUMMY_METADATA: Metadata =
+    Metadata {
+        sha256: [0xff; 32],
+        version_major: 0,
+        version_minor: 0,
+        region: Region::NorthAmerica,
+        known_bad: true,
+        animation_jump_hook: None,
+    };
 
 /// BIOS images are always 512KB in length
 pub const BIOS_SIZE: usize = 512 * 1024;
