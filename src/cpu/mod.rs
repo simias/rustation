@@ -13,7 +13,8 @@ use debugger::Debugger;
 use self::cop0::{Cop0, Exception};
 use self::gte::Gte;
 
-/// CPU state
+/// This struct contains the CPU state, including the `Interconnect`
+/// instance which owns most of the peripherals.
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Cpu {
     /// The program counter register: points to the next instruction
@@ -1707,8 +1708,9 @@ impl Cpu {
     }
 }
 
+/// Simple wrapper around an instruction word to provide type-safety.
 #[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
-pub struct Instruction(u32);
+struct Instruction(u32);
 
 impl Instruction {
     /// Return bits [31:26] of the instruction
