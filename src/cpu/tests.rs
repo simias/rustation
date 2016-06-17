@@ -79,7 +79,12 @@ fn test_dummy() {
     let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
     cpu.set_reg(RegisterIndex(1), 0xffffffff);
+
     load_blob(&mut cpu, 0x80100000,
               &[0x3401002a,
                 0x0bab6fb8,
@@ -101,7 +106,6 @@ fn test_dummy() {
 }
 
 #[test]
-#[should_panic]
 fn test_beq() {
     let bios = Bios::dummy();
     let gpu = Gpu::new(VideoClock::Ntsc);
@@ -111,10 +115,15 @@ fn test_beq() {
     let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
     cpu.set_reg(RegisterIndex(1), 0x1);
     cpu.set_reg(RegisterIndex(2), 0x2);
     cpu.set_reg(RegisterIndex(3), -1i32 as u32);
     cpu.set_reg(RegisterIndex(4), 0xffffffff);
+
     load_blob(&mut cpu, 0x80100000,
               &[0x10220005,
                 0x00000000,
@@ -145,7 +154,6 @@ fn test_beq() {
 }
 
 #[test]
-#[should_panic]
 fn test_branch_in_branch_delay() {
     let bios = Bios::dummy();
     let gpu = Gpu::new(VideoClock::Ntsc);
@@ -154,6 +162,11 @@ fn test_branch_in_branch_delay() {
     let mut shared = SharedState::new();
     let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
+
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
 
     load_blob(&mut cpu, 0x80100000,
               &[0x10000002,
@@ -194,8 +207,13 @@ fn test_add_1() {
     let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
     cpu.set_reg(RegisterIndex(1), 0xa);
     cpu.set_reg(RegisterIndex(2), -15i32 as u32);
+
     load_blob(&mut cpu, 0x80100000,
               &[0x00201820,
                 0x00222020,
@@ -225,7 +243,6 @@ fn test_add_1() {
 }
 
 #[test]
-#[should_panic]
 fn test_arithmetic_branching_test() {
     let bios = Bios::dummy();
     let gpu = Gpu::new(VideoClock::Ntsc);
@@ -235,9 +252,14 @@ fn test_arithmetic_branching_test() {
     let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
     cpu.set_reg(RegisterIndex(2), 0xdead);
     cpu.set_reg(RegisterIndex(3), 0);
     cpu.set_reg(RegisterIndex(5), 0x1);
+
     load_blob(&mut cpu, 0x80100000,
               &[0x00451023,
                 0x24630001,
@@ -264,7 +286,6 @@ fn test_arithmetic_branching_test() {
 }
 
 #[test]
-#[should_panic]
 fn test_unaligned_loads() {
     let bios = Bios::dummy();
     let gpu = Gpu::new(VideoClock::Ntsc);
@@ -274,8 +295,13 @@ fn test_unaligned_loads() {
     let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
-    load::<memory::Word>(&mut cpu, 48864, 0xdeadbeef);
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
+    load::<memory::Word>(&mut cpu, 0xbee0, 0xdeadbeef);
     cpu.set_reg(RegisterIndex(30), 0xbee1);
+
     load_blob(&mut cpu, 0x80100000,
               &[0x83c10000,
                 0x93c20000,
@@ -310,8 +336,13 @@ fn test_load_delay_for_cop() {
     let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
     cpu.set_reg(RegisterIndex(2), 0x80110000);
-    load::<memory::Word>(&mut cpu, 2148597760, 0xdeadbeef);
+    load::<memory::Word>(&mut cpu, 0x80110000, 0xdeadbeef);
+
     load_blob(&mut cpu, 0x80100000,
               &[0x8c430000,
                 0x4803c800,
@@ -343,5 +374,5 @@ fn test_load_delay_for_cop() {
 
 /// Number of CPU cycles after which we consider the test to be a
 /// failure
-const TIMEOUT: usize = 100;
+const TIMEOUT: usize = 1_000_000;
 
