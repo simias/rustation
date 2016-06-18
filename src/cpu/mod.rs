@@ -371,9 +371,9 @@ impl Cpu {
         self.regs[0] = 0;
     }
 
-    /// Execute any pending delayed load. Should be called in every
-    /// instruction *after* the input registers are read but *before*
-    /// the output registers are written
+    /// Execute any pending delayed load. Should be called *after* the
+    /// input registers are read but *before* the output registers are
+    /// written
     fn delayed_load(&mut self) {
         let (reg, val) = self.load;
 
@@ -382,6 +382,23 @@ impl Cpu {
         // We reset the load to target register 0 for the next
         // instruction
         self.load = (RegisterIndex(0), 0);
+    }
+
+    /// Execute the pending delayed and setup the next one. If the new
+    /// load targets the same register as the current one then the
+    /// older one is cancelled (i.e. it never makes it to the
+    /// register).
+    ///
+    /// This method should be used instead of `delayed_load` for
+    /// instructions that setup a delayed load.
+    fn delayed_load_chain(&mut self, reg: RegisterIndex, val: u32) {
+        let (pending_reg, pending_val) = self.load;
+
+        if pending_reg != reg {
+            self.set_reg(pending_reg, pending_val);
+        }
+
+        self.load = (reg, val);
     }
 
     /// Get the value of all general purpose registers
@@ -1175,9 +1192,7 @@ impl Cpu {
             _  => panic!("Unhandled read from cop0r{}", cop_r),
         };
 
-        self.delayed_load();
-
-        self.load = (cpu_r, v)
+        self.delayed_load_chain(cpu_r, v);
     }
 
     /// Move To Coprocessor 0
@@ -1254,9 +1269,7 @@ impl Cpu {
 
         let v = self.gte.data(cop_r);
 
-        self.delayed_load();
-
-        self.load = (cpu_r, v)
+        self.delayed_load_chain(cpu_r, v);
     }
 
     /// Move From Coprocessor 2 Control register
@@ -1266,9 +1279,7 @@ impl Cpu {
 
         let v = self.gte.control(cop_r);
 
-        self.delayed_load();
-
-        self.load = (cpu_r, v)
+        self.delayed_load_chain(cpu_r, v);
     }
 
     /// Move To Coprocessor 2 Data register
@@ -1318,10 +1329,7 @@ impl Cpu {
         // Cast as i8 to force sign extension
         let v = self.load::<Byte, D>(debugger, shared, addr) as i8;
 
-        self.delayed_load();
-
-        // Put the load in the delay slot
-        self.load = (t, v as u32);
+        self.delayed_load_chain(t, v as u32);
     }
 
     /// Load Halfword (signed)
@@ -1336,13 +1344,21 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
+        // Address must be 16bit aligned
+        if addr % 2 == 0 {
+            let v = self.load::<HalfWord, D>(debugger, shared, addr);
+
+            // Put the load in the delay slot
+            self.delayed_load_chain(t, v);
+        } else {
+            self.delayed_load();
+            self.exception(Exception::LoadAddressError);
+        }
+
         // Cast as i16 to force sign extension
         let v = self.load::<HalfWord, D>(debugger, shared, addr) as i16;
 
-        self.delayed_load();
-
-        // Put the load in the delay slot
-        self.load = (t, v as u32);
+        self.delayed_load_chain(t, v as u32);
     }
 
     /// Load Word Left (little-endian only implementation)
@@ -1360,9 +1376,14 @@ impl Cpu {
         // This instruction bypasses the load delay restriction: this
         // instruction will merge the new contents with the value
         // currently being loaded if need be.
-        self.delayed_load();
+        let (pending_reg, pending_value) = self.load;
 
-        let cur_v = self.reg(t);
+        let cur_v =
+            if pending_reg == t {
+                pending_value
+            } else {
+                self.reg(t)
+            };
 
         // Next we load the *aligned* word containing the first
         // addressed byte
@@ -1380,8 +1401,7 @@ impl Cpu {
             _ => unreachable!(),
         };
 
-        // Put the load in the delay slot
-        self.load = (t, v);
+        self.delayed_load_chain(t, v);
     }
 
     /// Load Word
@@ -1396,15 +1416,13 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
-        self.delayed_load();
-
         // Address must be 32bit aligned
         if addr % 4 == 0 {
             let v = self.load::<Word, D>(debugger, shared, addr);
 
-            // Put the load in the delay slot
-            self.load = (t, v);
+            self.delayed_load_chain(t, v);
         } else {
+            self.delayed_load();
             self.exception(Exception::LoadAddressError);
         }
     }
@@ -1423,10 +1441,7 @@ impl Cpu {
 
         let v = self.load::<Byte, D>(debugger, shared, addr);
 
-        self.delayed_load();
-
-        // Put the load in the delay slot
-        self.load = (t, v as u32);
+        self.delayed_load_chain(t, v as u32);
     }
 
     /// Load Halfword Unsigned
@@ -1441,15 +1456,13 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
-        self.delayed_load();
-
         // Address must be 16bit aligned
         if addr % 2 == 0 {
             let v = self.load::<HalfWord, D>(debugger, shared, addr);
 
-            // Put the load in the delay slot
-            self.load = (t, v as u32);
+            self.delayed_load_chain(t, v as u32);
         } else {
+            self.delayed_load();
             self.exception(Exception::LoadAddressError);
         }
     }
@@ -1469,9 +1482,14 @@ impl Cpu {
         // This instruction bypasses the load delay restriction: this
         // instruction will merge the new contents with the value
         // currently being loaded if need be.
-        self.delayed_load();
+        let (pending_reg, pending_value) = self.load;
 
-        let cur_v = self.reg(t);
+        let cur_v =
+            if pending_reg == t {
+                pending_value
+            } else {
+                self.reg(t)
+            };
 
         // Next we load the *aligned* word containing the first
         // addressed byte
@@ -1490,7 +1508,7 @@ impl Cpu {
         };
 
         // Put the load in the delay slot
-        self.load = (t, v);
+        self.delayed_load_chain(t, v);
     }
 
     /// Store Byte
@@ -1816,7 +1834,7 @@ impl Display for Instruction {
     }
 }
 
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, RustcDecodable, RustcEncodable, PartialEq, Eq)]
 struct RegisterIndex(u32);
 
 /// Instruction cache line

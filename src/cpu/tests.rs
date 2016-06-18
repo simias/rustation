@@ -345,14 +345,15 @@ fn test_load_delay_for_cop() {
 
     load_blob(&mut cpu, 0x80100000,
               &[0x8c430000,
+                0x00000000,
                 0x4803c800,
                 0x10600004,
                 0x00000000,
                 0x20010001,
-                0x08040009,
+                0x0804000a,
                 0x00000000,
                 0x20010002,
-                0x08040009,
+                0x0804000a,
                 0x0bab6fb8,
                 0x00000000]);
 
@@ -370,6 +371,49 @@ fn test_load_delay_for_cop() {
 
     assert!(cpu.regs[3] == 0);
     assert!(cpu.regs[1] == 0x1);
+}
+
+#[test]
+fn test_multiple_load_cancelling() {
+    let bios = Bios::dummy();
+    let gpu = Gpu::new(VideoClock::Ntsc);
+    let inter = Interconnect::new(bios, gpu, None);
+    let mut cpu = Cpu::new(inter);
+    let mut shared = SharedState::new();
+    let mut debugger = DummyDebugger;
+    let mut renderer = DummyRenderer;
+
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
+    load::<memory::Word>(&mut cpu, 0, 0x7001a7e);
+    cpu.set_reg(RegisterIndex(1), 0x600dc0de);
+
+    load_blob(&mut cpu, 0x80100000,
+              &[0x40016000,
+                0x8c010000,
+                0x40017800,
+                0x8c010000,
+                0x8c010000,
+                0x00201021,
+                0x0bab6fb8,
+                0x00000000]);
+
+    cpu.set_pc(0x80100000);
+
+    let mut timeout = true;
+    for _ in 0..TIMEOUT {
+        if (cpu.pc & 0x0fffffff) == 0xeadbee0 {
+            timeout = false;
+            break;
+        }
+        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+    }
+    assert!(timeout == false);
+
+    assert!(cpu.regs[1] == 0x7001a7e);
+    assert!(cpu.regs[2] == 0x600dc0de);
 }
 
 /// Number of CPU cycles after which we consider the test to be a
