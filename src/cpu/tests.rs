@@ -416,6 +416,49 @@ fn test_multiple_load_cancelling() {
     assert!(cpu.regs[2] == 0x600dc0de);
 }
 
+#[test]
+fn test_lh_and_lb_sign_extension() {
+    let bios = Bios::dummy();
+    let gpu = Gpu::new(VideoClock::Ntsc);
+    let inter = Interconnect::new(bios, gpu, None);
+    let mut cpu = Cpu::new(inter);
+    let mut shared = SharedState::new();
+    let mut debugger = DummyDebugger;
+    let mut renderer = DummyRenderer;
+
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
+    load::<memory::Word>(&mut cpu, 0, 0x8080);
+
+    load_blob(&mut cpu, 0x80100000,
+              &[0x84010000,
+                0x94020000,
+                0x80030000,
+                0x90040000,
+                0x00000000,
+                0x0bab6fb8,
+                0x00000000]);
+
+    cpu.set_pc(0x80100000);
+
+    let mut timeout = true;
+    for _ in 0..TIMEOUT {
+        if (cpu.pc & 0x0fffffff) == 0xeadbee0 {
+            timeout = false;
+            break;
+        }
+        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+    }
+    assert!(timeout == false);
+
+    assert!(cpu.regs[1] == 0xffff8080);
+    assert!(cpu.regs[2] == 0x8080);
+    assert!(cpu.regs[3] == 0xffffff80);
+    assert!(cpu.regs[4] == 0x80);
+}
+
 /// Number of CPU cycles after which we consider the test to be a
 /// failure
 const TIMEOUT: usize = 1_000_000;

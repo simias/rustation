@@ -1346,19 +1346,14 @@ impl Cpu {
 
         // Address must be 16bit aligned
         if addr % 2 == 0 {
-            let v = self.load::<HalfWord, D>(debugger, shared, addr);
+            // Cast as i16 to force sign extension
+            let v = self.load::<HalfWord, D>(debugger, shared, addr) as i16;
 
-            // Put the load in the delay slot
-            self.delayed_load_chain(t, v);
+            self.delayed_load_chain(t, v as u32);
         } else {
             self.delayed_load();
             self.exception(Exception::LoadAddressError);
         }
-
-        // Cast as i16 to force sign extension
-        let v = self.load::<HalfWord, D>(debugger, shared, addr) as i16;
-
-        self.delayed_load_chain(t, v as u32);
     }
 
     /// Load Word Left (little-endian only implementation)
@@ -1460,7 +1455,7 @@ impl Cpu {
         if addr % 2 == 0 {
             let v = self.load::<HalfWord, D>(debugger, shared, addr);
 
-            self.delayed_load_chain(t, v as u32);
+            self.delayed_load_chain(t, v);
         } else {
             self.delayed_load();
             self.exception(Exception::LoadAddressError);
