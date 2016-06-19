@@ -17,6 +17,7 @@ use cdrom::disc::Disc;
 use padmemcard::PadMemCard;
 use mdec::MDec;
 use parallel_io::ParallelIo;
+use debug_uart::DebugUart;
 
 /// Global interconnect
 #[derive(RustcDecodable, RustcEncodable)]
@@ -50,6 +51,8 @@ pub struct Interconnect {
     mem_control: [u32; 9],
     /// Parallel I/O
     parallel_io: ParallelIo,
+    /// Debug UART
+    debug_uart: DebugUart,
 }
 
 impl Interconnect {
@@ -71,6 +74,7 @@ impl Interconnect {
             ram_size: 0,
             mem_control: [0; 9],
             parallel_io: ParallelIo::disconnected(),
+            debug_uart: DebugUart::new(),
         }
     }
 
@@ -102,6 +106,11 @@ impl Interconnect {
     /// Return a reference to the BIOS instance
     pub fn bios(&self) -> &Bios {
         &self.bios
+    }
+
+    /// Return a reference to the BIOS instance
+    pub fn bios_mut(&mut self) -> &mut Bios {
+        &mut self.bios
     }
 
     /// Replace the BIOS with a different instance. Used when loading
@@ -244,6 +253,10 @@ impl Interconnect {
             return self.cache_control.0;
         }
 
+        if let Some(offset) = map::EXPANSION_2.contains(abs_addr) {
+            return self.debug_uart.load::<T>(shared, offset);
+        }
+
         panic!("unhandled load at address {:08x}", addr);
     }
 
@@ -369,7 +382,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::EXPANSION_2.contains(abs_addr) {
-            warn!("Unhandled write to expansion 2 register {:x}", offset);
+            self.debug_uart.store::<T>(shared, offset, val);
             return;
         }
 

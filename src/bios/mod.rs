@@ -79,7 +79,19 @@ impl Bios {
         }
     }
 
-    /// Fetch the little endian value at `offset`
+    /// Attempt to modify the BIOS ROM to enable the debug UART
+    /// output. Returns `Err(())` if we couldn't patch the BIOS.
+    pub fn enable_debug_uart(&mut self) -> Result<(), ()> {
+        match self.metadata.patch_debug_uart {
+            Some(patch) => {
+                patch(self);
+                Ok(())
+            },
+            None => Err(()),
+        }
+    }
+
+    /// fetch the little endian value at `offset`
     pub fn load<T: Addressable>(&self, offset: u32) -> u32 {
         let offset = offset as usize;
 
@@ -156,6 +168,7 @@ static DUMMY_METADATA: Metadata =
         region: Region::NorthAmerica,
         known_bad: true,
         animation_jump_hook: None,
+        patch_debug_uart: None,
     };
 
 /// BIOS images are always 512KB in length
