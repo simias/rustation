@@ -119,6 +119,11 @@ impl Interconnect {
         self.bios = bios
     }
 
+    /// Return a reference to the Ram instance
+    pub fn ram(&self) -> &Ram {
+        &self.ram
+    }
+
     /// Return a mutable reference to the Ram instance
     pub fn ram_mut(&mut self) -> &mut Ram {
         &mut self.ram

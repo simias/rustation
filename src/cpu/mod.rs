@@ -1579,7 +1579,7 @@ impl Cpu {
 
         self.delayed_load();
 
-        self.store::<Word, D>(debugger, shared, renderer, addr, mem);
+        self.store::<Word, D>(debugger, shared, renderer, aligned_addr, mem);
     }
 
     /// Store Word
@@ -1636,7 +1636,7 @@ impl Cpu {
 
         self.delayed_load();
 
-        self.store::<Word, D>(debugger, shared, renderer, addr, mem);
+        self.store::<Word, D>(debugger, shared, renderer, aligned_addr, mem);
     }
 
     /// Load Word in Coprocessor 0

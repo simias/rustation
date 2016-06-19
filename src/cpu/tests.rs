@@ -51,58 +51,29 @@ impl Renderer for DummyRenderer {
     }
 }
 
-fn load_blob(cpu: &mut Cpu,
-             load_address: u32,
+fn write_blob(cpu: &mut Cpu,
+             address: u32,
              blob: &[u32]) {
     let ram = cpu.interconnect_mut().ram_mut();
 
     for (i, &w) in blob.iter().enumerate() {
-        ram.store::<memory::Word>(load_address + (i * 4) as u32, w);
+        ram.store::<memory::Word>(address + (i * 4) as u32, w);
     }
 }
 
-fn load<T: Addressable>(cpu: &mut Cpu,
-                        load_address: u32,
-                        v: u32) {
+fn write<T: Addressable>(cpu: &mut Cpu,
+                         address: u32,
+                         v: u32) {
     let ram = cpu.interconnect_mut().ram_mut();
 
-    ram.store::<T>(load_address, v);
+    ram.store::<T>(address, v);
 }
 
-#[test]
-fn test_dummy() {
-    let bios = Bios::dummy();
-    let gpu = Gpu::new(VideoClock::Ntsc);
-    let inter = Interconnect::new(bios, gpu, None);
-    let mut cpu = Cpu::new(inter);
-    let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
-    let mut renderer = DummyRenderer;
+fn read<T: Addressable>(cpu: &mut Cpu, address: u32) -> u32 {
 
-    for r in 0..31 {
-        cpu.set_reg(RegisterIndex(r), 0);
-    }
+    let ram = cpu.interconnect().ram();
 
-    cpu.set_reg(RegisterIndex(1), 0xffffffff);
-
-    load_blob(&mut cpu, 0x80100000,
-              &[0x3401002a,
-                0x0bab6fb8,
-                0x00000000]);
-
-    cpu.set_pc(0x80100000);
-
-    let mut timeout = true;
-    for _ in 0..TIMEOUT {
-        if (cpu.pc & 0x0fffffff) == 0xeadbee0 {
-            timeout = false;
-            break;
-        }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
-    }
-    assert!(timeout == false);
-
-    assert!(cpu.regs[1] == 0x2a);
+    ram.load::<T>(address)
 }
 
 #[test]
@@ -124,8 +95,8 @@ fn test_beq() {
     cpu.set_reg(RegisterIndex(3), -1i32 as u32);
     cpu.set_reg(RegisterIndex(4), 0xffffffff);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x10220005,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x10220005,
                 0x00000000,
                 0x200a0001,
                 0x10640004,
@@ -168,8 +139,8 @@ fn test_branch_in_branch_delay() {
     }
 
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x10000002,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x10000002,
                 0x10000004,
                 0x20030001,
                 0x20010001,
@@ -211,11 +182,11 @@ fn test_lwr_and_lwr_load_delay() {
         cpu.set_reg(RegisterIndex(r), 0);
     }
 
-    load::<memory::Word>(&mut cpu, 0, 0x76543210);
-    load::<memory::Word>(&mut cpu, 0x4, 0xfedcba98);
+    write::<memory::Word>(&mut cpu, 0, 0x76543210);
+    write::<memory::Word>(&mut cpu, 0x4, 0xfedcba98);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x2401ffff,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x2401ffff,
                 0x98010002,
                 0x88010005,
                 0x00201021,
@@ -311,8 +282,8 @@ fn test_add_1() {
     cpu.set_reg(RegisterIndex(1), 0xa);
     cpu.set_reg(RegisterIndex(2), -15i32 as u32);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x00201820,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x00201820,
                 0x00222020,
                 0x00412820,
                 0x00423020,
@@ -357,8 +328,8 @@ fn test_arithmetic_branching_test() {
     cpu.set_reg(RegisterIndex(3), 0);
     cpu.set_reg(RegisterIndex(5), 0x1);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x00451023,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x00451023,
                 0x24630001,
                 0x1c40fffd,
                 0x00000000,
@@ -396,11 +367,11 @@ fn test_unaligned_loads() {
         cpu.set_reg(RegisterIndex(r), 0);
     }
 
-    load::<memory::Word>(&mut cpu, 0xbee0, 0xdeadbeef);
+    write::<memory::Word>(&mut cpu, 0xbee0, 0xdeadbeef);
     cpu.set_reg(RegisterIndex(30), 0xbee1);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x83c10000,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x83c10000,
                 0x93c20000,
                 0x0bab6fb8,
                 0x00000000]);
@@ -438,10 +409,10 @@ fn test_load_delay_for_cop() {
     }
 
     cpu.set_reg(RegisterIndex(2), 0x80110000);
-    load::<memory::Word>(&mut cpu, 0x80110000, 0xdeadbeef);
+    write::<memory::Word>(&mut cpu, 0x80110000, 0xdeadbeef);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x8c430000,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x8c430000,
                 0x00000000,
                 0x4803c800,
                 0x10600004,
@@ -471,6 +442,73 @@ fn test_load_delay_for_cop() {
 }
 
 #[test]
+fn test_swl_and_swr() {
+    let bios = Bios::dummy();
+    let gpu = Gpu::new(VideoClock::Ntsc);
+    let inter = Interconnect::new(bios, gpu, None);
+    let mut cpu = Cpu::new(inter);
+    let mut shared = SharedState::new();
+    let mut debugger = DummyDebugger;
+    let mut renderer = DummyRenderer;
+
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
+    cpu.set_reg(RegisterIndex(1), 0);
+    cpu.set_reg(RegisterIndex(2), 0x76543210);
+    cpu.set_reg(RegisterIndex(3), 0xfedcba98);
+
+    write_blob(&mut cpu, 0x80100000,
+               &[0xac220000,
+                0xa8230000,
+                0x24210004,
+                0xac220000,
+                0xa8230001,
+                0x24210004,
+                0xac220000,
+                0xa8230002,
+                0x24210004,
+                0xac220000,
+                0xa8230003,
+                0x24210004,
+                0xac220000,
+                0xb8230000,
+                0x24210004,
+                0xac220000,
+                0xb8230001,
+                0x24210004,
+                0xac220000,
+                0xb8230002,
+                0x24210004,
+                0xac220000,
+                0xb8230003,
+                0x0bab6fb8,
+                0x00000000]);
+
+    cpu.set_pc(0x80100000);
+
+    let mut timeout = true;
+    for _ in 0..TIMEOUT {
+        if (cpu.pc & 0x0fffffff) == 0xeadbee0 {
+            timeout = false;
+            break;
+        }
+        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+    }
+    assert!(timeout == false);
+
+    assert!(read::<memory::Word>(&mut cpu, 0) == 0x765432fe);
+    assert!(read::<memory::Word>(&mut cpu, 0x4) == 0x7654fedc);
+    assert!(read::<memory::Word>(&mut cpu, 0x8) == 0x76fedcba);
+    assert!(read::<memory::Word>(&mut cpu, 0xc) == 0xfedcba98);
+    assert!(read::<memory::Word>(&mut cpu, 0x10) == 0xfedcba98);
+    assert!(read::<memory::Word>(&mut cpu, 0x14) == 0xdcba9810);
+    assert!(read::<memory::Word>(&mut cpu, 0x18) == 0xba983210);
+    assert!(read::<memory::Word>(&mut cpu, 0x1c) == 0x98543210);
+}
+
+#[test]
 fn test_multiple_load_cancelling() {
     let bios = Bios::dummy();
     let gpu = Gpu::new(VideoClock::Ntsc);
@@ -484,11 +522,11 @@ fn test_multiple_load_cancelling() {
         cpu.set_reg(RegisterIndex(r), 0);
     }
 
-    load::<memory::Word>(&mut cpu, 0, 0x7001a7e);
+    write::<memory::Word>(&mut cpu, 0, 0x7001a7e);
     cpu.set_reg(RegisterIndex(1), 0x600dc0de);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x40016000,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x40016000,
                 0x8c010000,
                 0x40017800,
                 0x8c010000,
@@ -514,7 +552,7 @@ fn test_multiple_load_cancelling() {
 }
 
 #[test]
-fn test_lwr_and_lwr() {
+fn test_lwl_and_lwr() {
     let bios = Bios::dummy();
     let gpu = Gpu::new(VideoClock::Ntsc);
     let inter = Interconnect::new(bios, gpu, None);
@@ -527,11 +565,11 @@ fn test_lwr_and_lwr() {
         cpu.set_reg(RegisterIndex(r), 0);
     }
 
-    load::<memory::Word>(&mut cpu, 0, 0x76543210);
-    load::<memory::Word>(&mut cpu, 0x4, 0xfedcba98);
+    write::<memory::Word>(&mut cpu, 0, 0x76543210);
+    write::<memory::Word>(&mut cpu, 0x4, 0xfedcba98);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x98010000,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x98010000,
                 0x88010003,
                 0x98020001,
                 0x88020004,
@@ -616,10 +654,10 @@ fn test_lh_and_lb_sign_extension() {
         cpu.set_reg(RegisterIndex(r), 0);
     }
 
-    load::<memory::Word>(&mut cpu, 0, 0x8080);
+    write::<memory::Word>(&mut cpu, 0, 0x8080);
 
-    load_blob(&mut cpu, 0x80100000,
-              &[0x84010000,
+    write_blob(&mut cpu, 0x80100000,
+               &[0x84010000,
                 0x94020000,
                 0x80030000,
                 0x90040000,
