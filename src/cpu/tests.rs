@@ -198,6 +198,103 @@ fn test_branch_in_branch_delay() {
 }
 
 #[test]
+fn test_lwr_and_lwr_load_delay() {
+    let bios = Bios::dummy();
+    let gpu = Gpu::new(VideoClock::Ntsc);
+    let inter = Interconnect::new(bios, gpu, None);
+    let mut cpu = Cpu::new(inter);
+    let mut shared = SharedState::new();
+    let mut debugger = DummyDebugger;
+    let mut renderer = DummyRenderer;
+
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
+    load::<memory::Word>(&mut cpu, 0, 0x76543210);
+    load::<memory::Word>(&mut cpu, 0x4, 0xfedcba98);
+
+    load_blob(&mut cpu, 0x80100000,
+              &[0x2401ffff,
+                0x98010002,
+                0x88010005,
+                0x00201021,
+                0x2403ffff,
+                0x98030002,
+                0x00000000,
+                0x88030005,
+                0x00602021,
+                0x2405ffff,
+                0x88050005,
+                0x00000000,
+                0x98050002,
+                0x00a03021,
+                0x2407ffff,
+                0x8c070004,
+                0x88070002,
+                0x00e04021,
+                0x2409ffff,
+                0x8c090004,
+                0x00000000,
+                0x88090002,
+                0x01205021,
+                0x240bffff,
+                0x8c0b0004,
+                0x980b0002,
+                0x01606021,
+                0x240dffff,
+                0x8c0d0004,
+                0x00000000,
+                0x980d0002,
+                0x01a07021,
+                0x3c0f067e,
+                0x35ef067e,
+                0x488fc800,
+                0x240fffff,
+                0x480fc800,
+                0x880f0001,
+                0x01e08021,
+                0x2411ffff,
+                0x4811c800,
+                0x00000000,
+                0x98110001,
+                0x02209021,
+                0x0bab6fb8,
+                0x00000000]);
+
+    cpu.set_pc(0x80100000);
+
+    let mut timeout = true;
+    for _ in 0..TIMEOUT {
+        if (cpu.pc & 0x0fffffff) == 0xeadbee0 {
+            timeout = false;
+            break;
+        }
+        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+    }
+    assert!(timeout == false);
+
+    assert!(cpu.regs[1] == 0xba987654);
+    assert!(cpu.regs[2] == 0xffffffff);
+    assert!(cpu.regs[3] == 0xba987654);
+    assert!(cpu.regs[4] == 0xffff7654);
+    assert!(cpu.regs[5] == 0xba987654);
+    assert!(cpu.regs[6] == 0xba98ffff);
+    assert!(cpu.regs[7] == 0x54321098);
+    assert!(cpu.regs[8] == 0xffffffff);
+    assert!(cpu.regs[9] == 0x54321098);
+    assert!(cpu.regs[10] == 0xfedcba98);
+    assert!(cpu.regs[11] == 0xfedc7654);
+    assert!(cpu.regs[12] == 0xffffffff);
+    assert!(cpu.regs[13] == 0xfedc7654);
+    assert!(cpu.regs[14] == 0xfedcba98);
+    assert!(cpu.regs[15] == 0x3210067e);
+    assert!(cpu.regs[16] == 0xffffffff);
+    assert!(cpu.regs[17] == 0x6765432);
+    assert!(cpu.regs[18] == 0x67e067e);
+}
+
+#[test]
 fn test_add_1() {
     let bios = Bios::dummy();
     let gpu = Gpu::new(VideoClock::Ntsc);
@@ -414,6 +511,95 @@ fn test_multiple_load_cancelling() {
 
     assert!(cpu.regs[1] == 0x7001a7e);
     assert!(cpu.regs[2] == 0x600dc0de);
+}
+
+#[test]
+fn test_lwr_and_lwr() {
+    let bios = Bios::dummy();
+    let gpu = Gpu::new(VideoClock::Ntsc);
+    let inter = Interconnect::new(bios, gpu, None);
+    let mut cpu = Cpu::new(inter);
+    let mut shared = SharedState::new();
+    let mut debugger = DummyDebugger;
+    let mut renderer = DummyRenderer;
+
+    for r in 0..31 {
+        cpu.set_reg(RegisterIndex(r), 0);
+    }
+
+    load::<memory::Word>(&mut cpu, 0, 0x76543210);
+    load::<memory::Word>(&mut cpu, 0x4, 0xfedcba98);
+
+    load_blob(&mut cpu, 0x80100000,
+              &[0x98010000,
+                0x88010003,
+                0x98020001,
+                0x88020004,
+                0x98030002,
+                0x88030005,
+                0x98040003,
+                0x88040006,
+                0x98050004,
+                0x88050007,
+                0x88060003,
+                0x98060000,
+                0x88070004,
+                0x98070001,
+                0x88080005,
+                0x98080002,
+                0x88090006,
+                0x98090003,
+                0x880a0007,
+                0x980a0004,
+                0x240bffff,
+                0x880b0000,
+                0x240cffff,
+                0x980c0000,
+                0x240dffff,
+                0x880d0001,
+                0x240effff,
+                0x980e0001,
+                0x240fffff,
+                0x880f0002,
+                0x2410ffff,
+                0x98100002,
+                0x2411ffff,
+                0x88110003,
+                0x2412ffff,
+                0x98120003,
+                0x0bab6fb8,
+                0x00000000]);
+
+    cpu.set_pc(0x80100000);
+
+    let mut timeout = true;
+    for _ in 0..TIMEOUT {
+        if (cpu.pc & 0x0fffffff) == 0xeadbee0 {
+            timeout = false;
+            break;
+        }
+        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+    }
+    assert!(timeout == false);
+
+    assert!(cpu.regs[1] == 0x76543210);
+    assert!(cpu.regs[2] == 0x98765432);
+    assert!(cpu.regs[3] == 0xba987654);
+    assert!(cpu.regs[4] == 0xdcba9876);
+    assert!(cpu.regs[5] == 0xfedcba98);
+    assert!(cpu.regs[6] == 0x76543210);
+    assert!(cpu.regs[7] == 0x98765432);
+    assert!(cpu.regs[8] == 0xba987654);
+    assert!(cpu.regs[9] == 0xdcba9876);
+    assert!(cpu.regs[10] == 0xfedcba98);
+    assert!(cpu.regs[11] == 0x10ffffff);
+    assert!(cpu.regs[12] == 0x76543210);
+    assert!(cpu.regs[13] == 0x3210ffff);
+    assert!(cpu.regs[14] == 0xff765432);
+    assert!(cpu.regs[15] == 0x543210ff);
+    assert!(cpu.regs[16] == 0xffff7654);
+    assert!(cpu.regs[17] == 0x76543210);
+    assert!(cpu.regs[18] == 0xffffff76);
 }
 
 #[test]
