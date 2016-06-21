@@ -640,14 +640,14 @@ impl Cpu {
 
         self.delayed_load();
 
+        if is_link {
+            let ra = self.next_pc;
+
+            // Store return address in R31
+            self.set_reg(RegisterIndex(31), ra);
+        }
+
         if test != 0 {
-            if is_link {
-                let ra = self.next_pc;
-
-                // Store return address in R31
-                self.set_reg(RegisterIndex(31), ra);
-            }
-
             self.branch(i);
         }
     }
