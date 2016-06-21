@@ -618,7 +618,7 @@ impl Cpu {
     }
 
     /// Various branch instructions: BGEZ, BLTZ, BGEZAL, BLTZAL. Bits
-    /// 16 and 20 are used to figure out which one to use
+    /// [20:16] are used to figure out which one to use
     fn op_bxx(&mut self, instruction: Instruction) {
         let i = instruction.imm_se();
         let s = instruction.s();
@@ -626,7 +626,10 @@ impl Cpu {
         let instruction = instruction.0;
 
         let is_bgez = (instruction >> 16) & 1;
-        let is_link = (instruction >> 20) & 1 != 0;
+        // It's not enough to test for bit 20 to see if we're supposed
+        // to link, if any bit in the range [19:17] is set the link
+        // doesn't take place and RA is left untouched.
+        let is_link = (instruction >> 17) & 0xf == 0x8;
 
         let v = self.reg(s) as i32;
 
@@ -640,6 +643,8 @@ impl Cpu {
 
         self.delayed_load();
 
+        // If linking is requested it occurs unconditionally, even if
+        // the branch is not taken
         if is_link {
             let ra = self.next_pc;
 
