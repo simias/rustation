@@ -611,6 +611,16 @@ impl Gte {
             25 => self.mac[1] = val as i32,
             26 => self.mac[2] = val as i32,
             27 => self.mac[3] = val as i32,
+            28 => {
+                let to_ir = |v: u32| -> i16 {
+                    ((v & 0x1f) << 7) as i16
+                };
+
+                self.ir[0] = to_ir(val);
+                self.ir[1] = to_ir(val >> 5);
+                self.ir[2] = to_ir(val >> 10);
+            }
+            29 => (),
             30 => {
                 self.lzcs = val;
 
