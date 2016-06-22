@@ -27,6 +27,7 @@ use self::disc::{Disc, Region};
 use self::simple_rand::SimpleRand;
 
 pub mod disc;
+pub mod iso9660;
 
 mod simple_rand;
 
