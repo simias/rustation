@@ -115,6 +115,7 @@ impl Gte {
             0x16 => self.cmd_ncdt(config),
             0x1b => self.cmd_nccs(config),
             0x1c => self.cmd_cc(config),
+            0x1e => self.cmd_ncs(config),
             0x28 => self.cmd_sqr(config),
             0x29 => self.cmd_dcpl(config),
             0x2a => self.cmd_dpct(config),
@@ -878,6 +879,11 @@ impl Gte {
         self.mac_to_rgb_fifo();
     }
 
+    /// Normal Color Single
+    fn cmd_ncs(&mut self, config: CommandConfig) {
+        self.do_nc(config, 0);
+    }
+
     /// Square vector
     fn cmd_sqr(&mut self, config: CommandConfig) {
         for i in 1..4 {
@@ -1021,6 +1027,24 @@ impl Gte {
         }
 
         self.mac_to_ir(config);
+        self.mac_to_rgb_fifo();
+    }
+
+    fn do_nc(&mut self, config: CommandConfig, vector_index: u8) {
+        self.multiply_matrix_by_vector(config,
+                                       Matrix::Light,
+                                       vector_index,
+                                       ControlVector::Zero);
+
+        self.v[3][0] = self.ir[1];
+        self.v[3][1] = self.ir[2];
+        self.v[3][2] = self.ir[3];
+
+        self.multiply_matrix_by_vector(config,
+                                       Matrix::Color,
+                                       3,
+                                       ControlVector::BackgroundColor);
+
         self.mac_to_rgb_fifo();
     }
 
