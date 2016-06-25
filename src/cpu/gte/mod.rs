@@ -116,6 +116,7 @@ impl Gte {
             0x1b => self.cmd_nccs(config),
             0x1c => self.cmd_cc(config),
             0x1e => self.cmd_ncs(config),
+            0x20 => self.cmd_nct(config),
             0x28 => self.cmd_sqr(config),
             0x29 => self.cmd_dcpl(config),
             0x2a => self.cmd_dpct(config),
@@ -882,6 +883,13 @@ impl Gte {
     /// Normal Color Single
     fn cmd_ncs(&mut self, config: CommandConfig) {
         self.do_nc(config, 0);
+    }
+
+    /// Normal Color Triple
+    fn cmd_nct(&mut self, config: CommandConfig) {
+        self.do_nc(config, 0);
+        self.do_nc(config, 1);
+        self.do_nc(config, 2);
     }
 
     /// Square vector
