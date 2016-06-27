@@ -171,10 +171,11 @@ impl Interconnect {
     pub fn load<T: Addressable>(&mut self,
                                 shared: &mut SharedState,
                                 addr: u32) -> u32 {
-        // XXX Average RAM load delay, needs to do per-device tests
-        // XXX This does not take the CPU pipelining into account so
-        // it might be a little too slow in some cases actually.
-        shared.tk().tick(5);
+        // XXX Since I don't implement CPU pipelining correctly for
+        // now I just pretend the memory is pretty fast. In reality it
+        // will depend on the device being accessed and then it could
+        // be pipelined in the CPU to reduce stalling.
+        shared.tk().tick(2);
 
         let abs_addr = map::mask_region(addr);
 

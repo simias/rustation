@@ -214,8 +214,10 @@ impl Cpu {
                 // words are going to remain invalid in the cacheline.
                 let mut cpc = pc;
 
-                // Fetching takes 3 cycles + 1 per instruction on
-                // average.
+                // XXX Fetch timings from mednafen, on my console it
+                // seems a bit faster than that, need to review those
+                // timings when I decide to implement CPU pipelining
+                // and whatnot
                 shared.tk().tick(3);
 
                 for i in index..4 {
@@ -242,8 +244,8 @@ impl Cpu {
             // nowhere to put code in KSEG2, only a bunch of
             // registers.
 
-            // Cache disabled, fetch directly from memory. Takes 4
-            // cycles on average.
+            // Cache disabled, fetch directly from memory. Takes 4 to
+            // 5 cycles on average.
             shared.tk().tick(4);
 
             Instruction(self.inter.load_instruction(shared, pc))
@@ -1876,7 +1878,7 @@ impl ICacheLine {
     /// Set the cacheline's tag and valid bits. `pc` is the first
     /// valid PC in the cacheline.
     fn set_tag_valid(&mut self, pc: u32) {
-        self.tag_valid =  pc & 0xfffff00c;
+        self.tag_valid =  pc & 0x7ffff00c;
     }
 
     /// Invalidate the entire cacheline by pushing the index out of
