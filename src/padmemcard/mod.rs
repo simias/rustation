@@ -194,7 +194,7 @@ impl PadMemCard {
                         // cycles.
 
                         // XXX Because of timing inaccuracies
-                        // throrough the emulator I can't use the
+                        // throughout the emulator I can't use the
                         // proper timing otherwise the BIOS attempts
                         // to ack the interrupt while DSR is still
                         // active.
