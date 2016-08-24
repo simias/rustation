@@ -221,7 +221,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
-            panic!("Unhandled load from MDEC register {:x}", offset);
+            return self.mdec.load::<T>(shared, offset);
         }
 
         if let Some(offset) = map::SPU.contains(abs_addr) {

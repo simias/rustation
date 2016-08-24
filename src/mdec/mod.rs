@@ -44,6 +44,21 @@ impl MDec {
         }
     }
 
+    pub fn load<T: Addressable>(&mut self,
+                                 _: &mut SharedState,
+                                 offset: u32) -> u32 {
+
+        if T::size() != 4 {
+            panic!("Unhandled MDEC load ({})", T::size());
+        }
+
+        match offset {
+            4 => self.status(),
+            _ => panic!("Unhandled MDEC load: {:08x}", offset),
+        }
+    }
+
+
     pub fn store<T: Addressable>(&mut self,
                                  _: &mut SharedState,
                                  offset: u32,
@@ -58,6 +73,38 @@ impl MDec {
             4 => self.set_control(val),
             _ => panic!("Unhandled MDEC store: {:08x} {:08x}", offset, val),
         }
+    }
+
+    /// Status register
+    pub fn status(&self) -> u32 {
+        let mut r = 0;
+
+        // Bits [15:0] contain the number of remaining parameter words
+        // minus 1, or 0xffff if no parameter is expected.
+        r |= self.command_remaining.wrapping_sub(1) as u32;
+
+        // XXX Implement bits [18:16]: current block
+
+        r |= (self.output_bit15 as u32) << 23;
+        r |= (self.output_signed as u32) << 24;
+        r |= (self.output_depth as u32) << 25;
+
+        // XXX Implement bits 27 and 28: DMA data in/out request
+
+        // Command busy flag. XXX Probably set for a little while
+        // after the last parameter is received whilet he command is
+        // being processed?
+        let command_pending =
+            *self.command_handler as usize != MDec::handle_command as usize;
+
+        r |= (command_pending as u32) << 29;
+
+        // XXX Implement bit 30: data in FIFO full
+        r |= 0 << 30;
+        // XXX Implement bit 31: data out FIFO empty
+        r |= 1 << 31;
+
+        r
     }
 
     /// Handle writes to the command register
@@ -75,6 +122,10 @@ impl MDec {
     fn handle_command(&mut self, cmd: u32) {
         let opcode = cmd >> 29;
 
+        // Those internal variables (accessible through the status
+        // register) are updated no matter the opcode. They're
+        // probably meaningless for table loading opcodes though (most
+        // likely full 0s).
         self.output_depth =
             match (cmd >> 27) & 3 {
                 0 => OutputDepth::D4Bpp,
