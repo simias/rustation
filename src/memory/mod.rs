@@ -573,6 +573,10 @@ impl Interconnect {
             None    => panic!("Couldn't figure out DMA block transfer size"),
         };
 
+        if channel.direction() == Direction::FromRam {
+            debug!("DMA block {:08x}->{:?} {}", addr, port, remsz)
+        }
+
         while remsz > 0 {
             // Not sure what happens if address is
             // bogus... Mednafen just masks addr this way, maybe
