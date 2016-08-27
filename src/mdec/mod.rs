@@ -145,7 +145,7 @@ impl MDec {
 
     /// Parse a single RLE-encoded macroblock halfword
     fn parse_block_data(&mut self, v: u16) {
-        debug!("BLOCK DATA {:04x}", v);
+        println!("Block data: {:04x}", v);
 
         self.rle_block_data(v);
 
@@ -155,6 +155,15 @@ impl MDec {
                 // XXX Should be easy, only one Y block at a time
                 panic!("Handle monochrome block");
             } else {
+                println!("Decoded block:");
+
+                for y in 0..8 {
+                    for x in 0..8 {
+                        print!("{}, ", self.macroblock[y * 8 + x]);
+                    }
+                    println!("");
+                }
+
                 let next_type =
                     match self.block_type {
                         BlockType::CrMono => {
