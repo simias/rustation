@@ -1,5 +1,6 @@
 use memory::Addressable;
 use shared::SharedState;
+use tracer::module_tracer;
 
 /// Motion Decoder (sometimes called macroblock or movie decoder).
 #[derive(RustcDecodable, RustcEncodable)]
@@ -44,12 +45,12 @@ impl MDec {
         }
     }
 
-    pub fn load<T: Addressable>(&mut self,
+    pub fn load<A: Addressable>(&mut self,
                                  _: &mut SharedState,
                                  offset: u32) -> u32 {
 
-        if T::size() != 4 {
-            panic!("Unhandled MDEC load ({})", T::size());
+        if A::size() != 4 {
+            panic!("Unhandled MDEC load ({})", A::size());
         }
 
         match offset {
@@ -59,17 +60,17 @@ impl MDec {
     }
 
 
-    pub fn store<T: Addressable>(&mut self,
-                                 _: &mut SharedState,
+    pub fn store<A: Addressable>(&mut self,
+                                 shared: &mut SharedState,
                                  offset: u32,
                                  val: u32) {
 
-        if T::size() != 4 {
-            panic!("Unhandled MDEC store ({})", T::size());
+        if A::size() != 4 {
+            panic!("Unhandled MDEC store ({})", A::size());
         }
 
         match offset {
-            0 => self.command(val),
+            0 => self.command(shared, val),
             4 => self.set_control(val),
             _ => panic!("Unhandled MDEC store: {:08x} {:08x}", offset, val),
         }
@@ -108,7 +109,14 @@ impl MDec {
     }
 
     /// Handle writes to the command register
-    pub fn command(&mut self, cmd: u32) {
+    pub fn command(&mut self, shared: &mut SharedState, cmd: u32) {
+
+        module_tracer("MDEC", |m| {
+            m.trace(shared.tk().now(),
+                    "command_word",
+                    cmd);
+        });
+
         self.command_remaining -= 1;
 
         (self.command_handler)(self, cmd);
@@ -146,7 +154,10 @@ impl MDec {
                     false => (16, MDec::handle_monochrome_quant_matrix),
                 },
                 3 => (32, MDec::handle_idct_matrix),
-                n => panic!("Unsupported MDEC opcode {} ({:08x})", n, cmd),
+                n => {
+                    warn!("Unsupported MDEC opcode {} ({:08x})", n, cmd);
+                    (1, MDec::handle_command)
+                }
             };
 
         self.command_remaining = len;
@@ -209,7 +220,7 @@ impl MDec {
     }
 }
 
-callback!(struct CommandHandler(fn (&mut MDec, u32)) {
+callback!(struct CommandHandler (fn(&mut MDec, u32)) {
     MDec::handle_command,
     MDec::handle_color_quant_matrices,
     MDec::handle_monochrome_quant_matrix,

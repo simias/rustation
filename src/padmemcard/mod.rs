@@ -4,6 +4,7 @@ use memory::Addressable;
 use interrupt::Interrupt;
 use timekeeper::{Peripheral, Cycles};
 use shared::SharedState;
+use tracer::module_tracer;
 
 use self::gamepad::GamePad;
 
@@ -84,6 +85,15 @@ impl PadMemCard {
                                  shared: &mut SharedState,
                                  offset: u32,
                                  val: u32) {
+
+        module_tracer("PAD_MEMCARD", |m| {
+            let now = shared.tk().now();
+
+            m.trace(now, "w_offset", offset as u8);
+            m.trace(now, "w_size", T::size());
+            m.trace(now, "w_value", val);
+        });
+
         self.sync(shared);
 
         match offset {
@@ -113,6 +123,13 @@ impl PadMemCard {
                                 shared: &mut SharedState,
                                 offset: u32) -> u32 {
 
+        module_tracer("PAD_MEMCARD", |m| {
+            let now = shared.tk().now();
+
+            m.trace(now, "r_offset", offset as u8);
+            m.trace(now, "r_size", T::size());
+        });
+
         self.sync(shared);
 
         match offset {
@@ -132,6 +149,7 @@ impl PadMemCard {
             4 => {
                 self.stat()
             }
+            8  => self.mode as u32,
             10 => self.control() as u32,
             14 => self.baud_div as u32,
             _ => panic!("Unhandled gamepad read {:?} 0x{:x}",
@@ -175,7 +193,7 @@ impl PadMemCard {
                         if self.dsr_it {
                             if !self.interrupt {
                                 // Rising edge of the interrupt
-                                let irq_state = shared.irq_state();
+                                let irq_state = shared.irq_state_mut();
 
                                 irq_state.assert(Interrupt::PadMemCard);
                             }
@@ -333,7 +351,7 @@ impl PadMemCard {
                     warn!("Gamepad interrupt acknowledge while DSR is active");
 
                     self.interrupt = true;
-                    shared.irq_state().assert(Interrupt::PadMemCard);
+                    shared.irq_state_mut().assert(Interrupt::PadMemCard);
                 }
             }
 

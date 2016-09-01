@@ -289,7 +289,7 @@ impl Timer {
                 panic!("Unhandled negate IRQ!");
             } else {
                 // Pulse interrupt
-                shared.irq_state().assert(interrupt);
+                shared.irq_state_mut().assert(interrupt);
                 self.interrupt = true;
             }
         } else if !self.negate_irq {

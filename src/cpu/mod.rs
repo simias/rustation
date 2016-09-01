@@ -12,6 +12,7 @@ use shared::SharedState;
 use gpu::renderer::Renderer;
 use interrupt::InterruptState;
 use debugger::Debugger;
+use tracer::module_tracer;
 
 use self::cop0::{Cop0, Exception};
 use self::gte::Gte;
@@ -57,7 +58,6 @@ pub struct Cpu {
 }
 
 impl Cpu {
-
     /// Create a new CPU instance
     pub fn new(inter: Interconnect) -> Cpu {
         // Not sure what the reset values are...
@@ -159,6 +159,17 @@ impl Cpu {
         if self.cop0.irq_active(*shared.irq_state()) {
             shared.counters_mut().cpu_interrupt.increment();
 
+            module_tracer("CPU", |m| {
+                let now = shared.tk().now();
+
+                m.trace(now,
+                        "irq_count",
+                        shared.counters_mut().cpu_interrupt.get());
+                m.trace(now,
+                        "irq_pc",
+                        self.current_pc);
+            });
+
             if instruction.is_gte_op() {
                 // GTE instructions get executed even if an interrupt
                 // occurs
@@ -167,6 +178,11 @@ impl Cpu {
                                         shared,
                                         renderer);
             }
+
+            // XXX No idea how long the interrupt switch takes on the
+            // real hardware?
+            shared.tk().tick(1);
+
             self.exception(Exception::Interrupt);
         } else {
             // No interrupt pending, run the current instruction
@@ -297,7 +313,7 @@ impl Cpu {
     }
 
     /// Handle writes when the cache is isolated
-    pub fn cache_maintenance<T: Addressable>(&mut self, addr: u32, val: u32) {
+    pub fn cache_maintenance<A: Addressable>(&mut self, addr: u32, val: u32) {
         // Implementing full cache emulation requires handling many
         // corner cases. For now I'm just going to add support for
         // cache invalidation which is the only use case for cache
@@ -309,7 +325,7 @@ impl Cpu {
             panic!("Cache maintenance while instruction cache is disabled");
         }
 
-        if T::size() != 4 || val != 0 {
+        if A::size() != 4 || val != 0 {
             panic!("Unsupported write while cache is isolated: {:08x}",
                    val);
         }

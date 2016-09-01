@@ -21,9 +21,7 @@ pub trait Debugger {
 
 /// Dummy debugger implementation that does nothing. Can be used when
 /// debugging is disabled.
-pub struct DummyDebugger;
-
-impl Debugger for DummyDebugger {
+impl Debugger for () {
     fn trigger_break(&mut self) {
     }
 

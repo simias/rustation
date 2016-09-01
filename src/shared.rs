@@ -22,7 +22,11 @@ impl SharedState {
         &mut self.tk
     }
 
-    pub fn irq_state(&mut self) -> &mut InterruptState {
+    pub fn irq_state(&mut self) -> &InterruptState {
+        &self.irq_state
+    }
+
+    pub fn irq_state_mut(&mut self) -> &mut InterruptState {
         &mut self.irq_state
     }
 

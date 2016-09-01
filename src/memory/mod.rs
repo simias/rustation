@@ -18,6 +18,7 @@ use padmemcard::PadMemCard;
 use mdec::MDec;
 use parallel_io::ParallelIo;
 use debug_uart::DebugUart;
+use tracer::module_tracer;
 
 /// Global interconnect
 #[derive(RustcDecodable, RustcEncodable)]
@@ -168,7 +169,7 @@ impl Interconnect {
     }
 
     /// Interconnect: load value at `addr`
-    pub fn load<T: Addressable>(&mut self,
+    pub fn load<A: Addressable>(&mut self,
                                 shared: &mut SharedState,
                                 addr: u32) -> u32 {
         // XXX Since I don't implement CPU pipelining correctly for
@@ -180,7 +181,7 @@ impl Interconnect {
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
-            return self.ram.load::<T>(offset);
+            return self.ram.load::<A>(offset);
         }
 
         if let Some(offset) = map::SCRATCH_PAD.contains(abs_addr) {
@@ -188,11 +189,11 @@ impl Interconnect {
                 panic!("ScratchPad access through uncached memory");
             }
 
-            return self.scratch_pad.load::<T>(offset);
+            return self.scratch_pad.load::<A>(offset);
         }
 
         if let Some(offset) = map::BIOS.contains(abs_addr) {
-            return self.bios.load::<T>(offset);
+            return self.bios.load::<A>(offset);
         }
 
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
@@ -205,35 +206,35 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::DMA.contains(abs_addr) {
-            return self.dma_reg::<T>(offset);
+            return self.dma_reg::<A>(offset);
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            return self.gpu.load::<T>(shared, offset);
+            return self.gpu.load::<A>(shared, offset);
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            return self.timers.load::<T>(shared, offset);
+            return self.timers.load::<A>(shared, offset);
         }
 
         if let Some(offset) = map::CDROM.contains(abs_addr) {
-            return self.cdrom.load::<T>(shared, offset);
+            return self.cdrom.load::<A>(shared, offset);
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
-            return self.mdec.load::<T>(shared, offset);
+            return self.mdec.load::<A>(shared, offset);
         }
 
         if let Some(offset) = map::SPU.contains(abs_addr) {
-            return self.spu.load::<T>(offset);
+            return self.spu.load::<A>(offset);
         }
 
         if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
-            return self.pad_memcard.load::<T>(shared, offset);
+            return self.pad_memcard.load::<A>(shared, offset);
         }
 
         if let Some(offset) = map::EXPANSION_1.contains(abs_addr) {
-            return self.parallel_io.load::<T>(shared, offset);
+            return self.parallel_io.load::<A>(shared, offset);
         }
 
         if let Some(_) = map::RAM_SIZE.contains(abs_addr) {
@@ -242,8 +243,8 @@ impl Interconnect {
 
         if let Some(offset) = map::MEM_CONTROL.contains(abs_addr) {
 
-            if T::size() != 4 {
-                panic!("Unhandled MEM_CONTROL access ({})", T::size());
+            if A::size() != 4 {
+                panic!("Unhandled MEM_CONTROL access ({})", A::size());
             }
 
             let index = (offset >> 2) as usize;
@@ -252,22 +253,22 @@ impl Interconnect {
         }
 
         if let Some(_) = map::CACHE_CONTROL.contains(abs_addr) {
-            if T::size() != 4 {
-                panic!("Unhandled cache control access ({})", T::size());
+            if A::size() != 4 {
+                panic!("Unhandled cache control access ({})", A::size());
             }
 
             return self.cache_control.0;
         }
 
         if let Some(offset) = map::EXPANSION_2.contains(abs_addr) {
-            return self.debug_uart.load::<T>(shared, offset);
+            return self.debug_uart.load::<A>(shared, offset);
         }
 
         panic!("unhandled load at address {:08x}", addr);
     }
 
     /// Interconnect: store `val` into `addr`
-    pub fn store<T: Addressable>(&mut self,
+    pub fn store<A: Addressable>(&mut self,
                                  shared: &mut SharedState,
                                  renderer: &mut Renderer,
                                  addr: u32,
@@ -276,7 +277,7 @@ impl Interconnect {
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
-            self.ram.store::<T>(offset, val);
+            self.ram.store::<A>(offset, val);
             return;
         }
 
@@ -285,25 +286,25 @@ impl Interconnect {
                 panic!("ScratchPad access through uncached memory");
             }
 
-            return self.scratch_pad.store::<T>(offset, val);
+            return self.scratch_pad.store::<A>(offset, val);
         }
 
         if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
             match offset {
-                0 => shared.irq_state().ack(val as u16),
-                4 => shared.irq_state().set_mask(val as u16),
+                0 => shared.irq_state_mut().ack(val as u16),
+                4 => shared.irq_state_mut().set_mask(val as u16),
                 _ => panic!("Unhandled IRQ store at address {:08x}"),
             }
             return;
         }
 
         if let Some(offset) = map::DMA.contains(abs_addr) {
-            self.set_dma_reg::<T>(shared, renderer, offset, val);
+            self.set_dma_reg::<A>(shared, renderer, offset, val);
             return;
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            self.gpu.store::<T>(shared,
+            self.gpu.store::<A>(shared,
                                 renderer,
                                 &mut self.timers,
                                 offset,
@@ -312,7 +313,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
-            self.timers.store::<T>(shared,
+            self.timers.store::<A>(shared,
                                    &mut self.gpu,
                                    offset,
                                    val);
@@ -320,25 +321,25 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::CDROM.contains(abs_addr) {
-            return self.cdrom.store::<T>(shared, offset, val);
+            return self.cdrom.store::<A>(shared, offset, val);
         }
 
         if let Some(offset) = map::MDEC.contains(abs_addr) {
-            return self.mdec.store::<T>(shared, offset, val);
+            return self.mdec.store::<A>(shared, offset, val);
         }
 
         if let Some(offset) = map::SPU.contains(abs_addr) {
-            self.spu.store::<T>(offset, val);
+            self.spu.store::<A>(offset, val);
             return;
         }
 
         if let Some(offset) = map::PAD_MEMCARD.contains(abs_addr) {
-            self.pad_memcard.store::<T>(shared, offset, val);
+            self.pad_memcard.store::<A>(shared, offset, val);
             return;
         }
 
         if let Some(_) = map::CACHE_CONTROL.contains(abs_addr) {
-            if T::size() != 4 {
+            if A::size() != 4 {
                 panic!("Unhandled cache control access");
             }
 
@@ -349,8 +350,8 @@ impl Interconnect {
 
         if let Some(offset) = map::MEM_CONTROL.contains(abs_addr) {
 
-            if T::size() != 4 {
-                panic!("Unhandled MEM_CONTROL access ({})", T::size());
+            if A::size() != 4 {
+                panic!("Unhandled MEM_CONTROL access ({})", A::size());
             }
 
             let val = val;
@@ -379,7 +380,7 @@ impl Interconnect {
 
         if let Some(_) = map::RAM_SIZE.contains(abs_addr) {
 
-            if T::size() != 4 {
+            if A::size() != 4 {
                 panic!("Unhandled RAM_SIZE access");
             }
 
@@ -388,7 +389,7 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::EXPANSION_2.contains(abs_addr) {
-            self.debug_uart.store::<T>(shared, offset, val);
+            self.debug_uart.store::<A>(shared, offset, val);
             return;
         }
 
@@ -397,7 +398,7 @@ impl Interconnect {
     }
 
     /// DMA register read
-    fn dma_reg<T: Addressable>(&self, offset: u32) -> u32 {
+    fn dma_reg<A: Addressable>(&self, offset: u32) -> u32 {
 
         // The DMA uses 32bit registers
         let align = offset & 3;
@@ -433,7 +434,7 @@ impl Interconnect {
     }
 
     /// DMA register write
-    fn set_dma_reg<T: Addressable>(&mut self,
+    fn set_dma_reg<A: Addressable>(&mut self,
                                    shared: &mut SharedState,
                                    renderer: &mut Renderer,
                                    offset: u32,
@@ -497,9 +498,29 @@ impl Interconnect {
         // process everything in one pass (i.e. no
         // chopping or priority handling)
 
-        match self.dma.channel(port).sync() {
+        let sync = self.dma.channel(port).sync();
+
+        module_tracer("DMA", |m| {
+            let now = shared.tk().now();
+            let channel = self.dma.channel_mut(port);
+
+            m.trace(now, "sync", sync);
+            m.trace(now, "port", port);
+            m.trace(now, "base", channel.base());
+            m.trace(now, "to_ram",
+                    channel.direction() == Direction::ToRam);
+
+            let size =
+                match channel.transfer_size() {
+                    Some(v) => v,
+                    None => 0xffffffff,
+                };
+            m.trace(now, "size", size);
+        });
+
+        match sync {
                 Sync::LinkedList => self.do_dma_linked_list(renderer, port),
-                _                => self.do_dma_block(renderer, port),
+                _                => self.do_dma_block(shared, renderer, port),
         }
 
         self.dma.done(shared, port);
@@ -555,7 +576,10 @@ impl Interconnect {
 
     /// Emulate DMA transfer for Manual and Request synchronization
     /// modes.
-    fn do_dma_block(&mut self, renderer: &mut Renderer, port: Port) {
+    fn do_dma_block(&mut self,
+                    shared: &mut SharedState,
+                    renderer: &mut Renderer,
+                    port: Port) {
         let channel = self.dma.channel_mut(port);
 
         let increment = match channel.step() {
@@ -587,7 +611,7 @@ impl Interconnect {
 
                     match port {
                         Port::Gpu => self.gpu.gp0(renderer, src_word),
-                        Port::MDecIn => self.mdec.command(src_word),
+                        Port::MDecIn => self.mdec.command(shared, src_word),
                         // XXX ignre transfers to the SPU for now
                         Port::Spu => (),
                         _ => panic!("Unhandled DMA destination port {:?}",
@@ -610,6 +634,7 @@ impl Interconnect {
                             0
                         }
                         Port::CdRom => self.cdrom.dma_read_word(),
+                        Port::MDecOut => 0,
                         _ => panic!("Unhandled DMA source port {:?}", port),
                     };
 
@@ -619,6 +644,8 @@ impl Interconnect {
 
             addr = addr.wrapping_add(increment);
             remsz -= 1;
+            // XXX Probably completely inaccurate
+            shared.tk().tick(1);
         }
     }
 }

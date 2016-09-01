@@ -116,6 +116,9 @@ impl ExeLoader {
             loader: Vec::new(),
         };
 
+        info!("Loaded PS-EXE: BASE=0x{:08x} ENTRY=0x{:08x} LEN={}",
+              base, entry, text_len);
+
         loader.assemble_loader();
 
         Ok(loader)

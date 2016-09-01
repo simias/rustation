@@ -7,7 +7,6 @@ use gpu::{Gpu, VideoClock};
 use gpu::renderer::{Renderer, PrimitiveAttributes, Vertex};
 use memory::{Interconnect, Addressable};
 use memory;
-use debugger::DummyDebugger;
 use shared::SharedState;
 use bios::Bios;
 
@@ -83,7 +82,6 @@ fn test_beq() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -116,7 +114,7 @@ fn test_beq() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -131,7 +129,6 @@ fn test_branch_in_branch_delay() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -159,7 +156,7 @@ fn test_branch_in_branch_delay() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -175,7 +172,6 @@ fn test_lwr_and_lwr_load_delay() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -241,7 +237,7 @@ fn test_lwr_and_lwr_load_delay() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -272,7 +268,6 @@ fn test_add_1() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -298,7 +293,7 @@ fn test_add_1() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -317,7 +312,6 @@ fn test_arithmetic_branching_test() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -344,7 +338,7 @@ fn test_arithmetic_branching_test() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -360,7 +354,6 @@ fn test_bltzal_and_bgezal() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -408,7 +401,7 @@ fn test_bltzal_and_bgezal() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -429,7 +422,6 @@ fn test_unaligned_loads() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -453,7 +445,7 @@ fn test_unaligned_loads() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -470,7 +462,6 @@ fn test_load_delay_for_cop() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -502,7 +493,7 @@ fn test_load_delay_for_cop() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -517,7 +508,6 @@ fn test_swl_and_swr() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -563,7 +553,7 @@ fn test_swl_and_swr() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -584,7 +574,6 @@ fn test_multiple_load_cancelling() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -612,7 +601,7 @@ fn test_multiple_load_cancelling() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -627,7 +616,6 @@ fn test_lwl_and_lwr() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -685,7 +673,7 @@ fn test_lwl_and_lwr() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 
@@ -716,7 +704,6 @@ fn test_lh_and_lb_sign_extension() {
     let inter = Interconnect::new(bios, gpu, None);
     let mut cpu = Cpu::new(inter);
     let mut shared = SharedState::new();
-    let mut debugger = DummyDebugger;
     let mut renderer = DummyRenderer;
 
     for r in 0..31 {
@@ -742,7 +729,7 @@ fn test_lh_and_lb_sign_extension() {
             timeout = false;
             break;
         }
-        cpu.run_next_instruction(&mut debugger, &mut shared, &mut renderer);
+        cpu.run_next_instruction(&mut (), &mut shared, &mut renderer);
     }
     assert!(timeout == false);
 

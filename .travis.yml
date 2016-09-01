@@ -6,4 +6,5 @@ before_script:
   - cargo -V
 script:
   - cargo build -v
+  - cargo build -v --features trace
   - cargo test

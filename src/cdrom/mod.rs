@@ -653,7 +653,7 @@ impl CdRom {
 
         if self.irq() {
             // Interrupt rising edge
-            shared.irq_state().assert(Interrupt::CdRom);
+            shared.irq_state_mut().assert(Interrupt::CdRom);
         }
     }
 
