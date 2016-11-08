@@ -4,7 +4,7 @@ name = "rustation"
 
 # Should match the latest git tag! This version info is used to set
 # the internal `VERSION` string if "git describe" is unavailable.
-version = "0.0.2"
+version = "0.0.3"
 
 authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
 description = "A PlayStation emulator"
