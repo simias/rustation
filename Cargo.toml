@@ -6,7 +6,7 @@ name = "rustation"
 # the internal `VERSION` string if "git describe" is unavailable.
 version = "0.0.3"
 
-authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
+authors = ["Lionel Flandrin <lionel@svkt.org>"]
 description = "A PlayStation emulator"
 homepage = "https://github.com/simias/rustation"
 repository = "https://github.com/simias/rustation"
@@ -14,6 +14,7 @@ documentation = "https://github.com/simias/rustation/wiki"
 readme = "README.md"
 license = "GPL-2.0+"
 keywords = ["emulator", "playstation"]
+
 build = "build.rs"
 
 [features]
