@@ -1,10 +1,12 @@
 [package]
 
 name = "rustation"
-# Exported as VERSION and VERSION_CSTR in the library
-version = "0.0.2"
-authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
 
+# Should match the latest git tag! This version info is used to set
+# the internal `VERSION` string if "git describe" is unavailable.
+version = "0.0.2"
+
+authors = ["Lionel Flandrin <lionel.flandrin@gmail.com>"]
 description = "A PlayStation emulator"
 homepage = "https://github.com/simias/rustation"
 repository = "https://github.com/simias/rustation"
@@ -12,6 +14,7 @@ documentation = "https://github.com/simias/rustation/wiki"
 readme = "README.md"
 license = "GPL-2.0+"
 keywords = ["emulator", "playstation"]
+build = "build.rs"
 
 [features]
 trace = [ "lazy_static" ]
