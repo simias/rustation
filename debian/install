@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "*target/release/*.so usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)/libretro"

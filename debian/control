@@ -1,0 +1,23 @@
+Source: libretro-rustation
+Section: games
+Priority: optional
+Maintainer: Maintainer <maintainer@mail.com>
+Build-Depends: debhelper (>= 9),
+ rustc,
+ cargo,
+ git
+Standards-Version: 3.9.6
+Homepage: https://github.com/libretro/rustation-libretro
+
+Package: libretro-rustation
+Architecture: any
+Multi-Arch: same
+Depends: retroarch | libretro-frontend, ${misc:Depends}, ${shlibs:Depends}
+Description: Libretro wrapper for Rustation
+ This wrapper makes Rustation compatible with libretro, thus allowing its use
+ with libretro frontends, such as RetroArch.
+ .
+ PlayStation emulator in the Rust programing language.
+ .
+ The focus of this emulator is to write code that's clean, accurate and hopefully easy to understand.
+ There's no plugin infrastructure, the emulator is monolithic.
