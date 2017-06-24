@@ -1,5 +1,4 @@
-[![Build Status](https://travis-ci.org/simias/rustation.svg)]
-(https://travis-ci.org/simias/rustation)
+[![Build Status](https://travis-ci.org/simias/rustation.svg)](https://travis-ci.org/simias/rustation)
 
 # Rustation PlayStation emulator
 
@@ -33,8 +32,7 @@ PlayStation. We'll see if this turns out to be a good idea...
 
 ## Currently implemented (even partially)
 
-![Crash Bandicoot (Japan)]
-(https://raw.githubusercontent.com/wiki/simias/rustation/images/crash_bandicoot-level1.png)
+![Crash Bandicoot (Japan)](https://raw.githubusercontent.com/wiki/simias/rustation/images/crash_bandicoot-level1.png)
 
 * CPU
 * Basic GTE support (ported from mednafen PSX)
@@ -59,8 +57,7 @@ PlayStation. We'll see if this turns out to be a good idea...
 
 ## Build
 
-You'll need [Rust and its package manager Cargo]
-(https://www.rust-lang.org/),
+You'll need [Rust and its package manager Cargo](https://www.rust-lang.org/),
 [SDL2](https://www.libsdl.org/download-2.0.php) and a PlayStation
 BIOS. The emulator is mainly tested with BIOS version `SCPH1001` whose
 SHA-1 is `10155d8d6e6e832d6ea66db9bc098321fb5e8ebf`.
@@ -97,9 +94,8 @@ using (at the gdb command prompt):
 
 GDB might complain about not finding symbols or the boundaries of the
 current function but you can ignore that. From then you should be able
-to use the familiar [GDB commands]
-(https://sourceware.org/gdb/onlinedocs/gdb/) to debug the live
-emulator.
+to use the familiar [GDB commands](https://sourceware.org/gdb/onlinedocs/gdb/)
+to debug the live emulator.
 
 A few examples:
 
@@ -140,5 +136,4 @@ specifications](http://problemkaputt.de/psx-spx.htm) as well as
 cheating.
 
 I also run tests on the real hardware and store them in the
-[psx-hardware-tests repository]
-(https://github.com/simias/psx-hardware-tests/tree/master/tests).
+[psx-hardware-tests repository](https://github.com/simias/psx-hardware-tests/tree/master/tests).
