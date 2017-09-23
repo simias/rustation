@@ -21,12 +21,11 @@ build = "build.rs"
 trace = [ "lazy_static" ]
 
 [dependencies]
-
-shaman = "0.1.0"
-log = "0.3.4"
-arrayvec = "0.3.15"
-rustc-serialize = "0.3.19"
-lazy_static = { version = "0.2.1", optional = true }
+shaman = "0.1"
+log = "0.3"
+arrayvec = "0.4"
+rustc-serialize = "0.3"
+lazy_static = { version = "0.2", optional = true }
 
 [lib]
 name = "rustation"
