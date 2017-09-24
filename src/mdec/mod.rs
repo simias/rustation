@@ -12,7 +12,6 @@ pub struct MDec {
     /// When the output depth is set to 15bpp this variable is used to
     /// fill the 16th bit
     output_bit15: bool,
-    current_block: BlockType,
     /// Quantization matrices: 8x8 bytes, first one is for luma, 2nd
     /// is for chroma.
     quant_matrices: [QuantMatrix; 2],
@@ -26,6 +25,18 @@ pub struct MDec {
     command_handler: CommandHandler,
     /// Remaining words expected for this command
     command_remaining: u16,
+    /// Buffer for the currently decoded macroblock. At most we need 3
+    /// 8x8 values for a color block with Y, U and V
+    blocks: [Macroblock; 3],
+    /// 16bit coefficients during macroblock decoding
+    block_coeffs: MacroblockCoeffs,
+    /// Current block type
+    current_block: BlockType,
+    /// Index in the current macroblock
+    block_index: u8,
+    /// Quantization factor for the current macroblock, used for the
+    /// AC values only.
+    qscale: u8,
 }
 
 impl MDec {
@@ -36,12 +47,20 @@ impl MDec {
             output_depth: OutputDepth::D4Bpp,
             output_signed: false,
             output_bit15: false,
-            current_block: BlockType::CrLuma,
+            current_block: BlockType::CrMono,
             quant_matrices: [QuantMatrix::new(),
                              QuantMatrix::new()],
             idct_matrix: IdctMatrix::new(),
             command_handler: CommandHandler(MDec::handle_command),
             command_remaining: 1,
+            blocks: [
+                Macroblock::new(),
+                Macroblock::new(),
+                Macroblock::new(),
+            ],
+            block_coeffs: MacroblockCoeffs::new(),
+            block_index: 0,
+            qscale: 0,
         }
     }
 
@@ -127,6 +146,15 @@ impl MDec {
         }
     }
 
+    /// Return true if we're currently configured to decode luma-only
+    /// blocks (i.e. 4 or 8bpp blocks)
+    pub fn luma_only(&self) -> bool {
+        match self.output_depth {
+            OutputDepth::D4Bpp | OutputDepth::D8Bpp => true,
+            _ => false
+        }
+    }
+
     fn handle_command(&mut self, cmd: u32) {
         let opcode = cmd >> 29;
 
@@ -147,6 +175,14 @@ impl MDec {
 
         let (len, handler): (u16, fn(&mut MDec, u32)) =
             match opcode {
+                1 => {
+                    let block_len = cmd & 0xffff;
+
+                    self.current_block = BlockType::CrMono;
+                    self.block_index = 0;
+
+                    (block_len as u16, MDec::handle_encoded_word)
+                }
                 // Set quantization matrices. Bit 0 tells us whether we're
                 // setting only the luma table or luma + chroma.
                 2 => match cmd & 1 != 0 {
@@ -154,14 +190,90 @@ impl MDec {
                     false => (16, MDec::handle_monochrome_quant_matrix),
                 },
                 3 => (32, MDec::handle_idct_matrix),
-                n => {
-                    warn!("Unsupported MDEC opcode {} ({:08x})", n, cmd);
-                    (1, MDec::handle_command)
-                }
+                n => panic!("Unsupported MDEC opcode {} ({:08x})", n, cmd),
             };
 
         self.command_remaining = len;
         *self.command_handler = handler;
+    }
+
+    fn handle_encoded_word(&mut self, cmd: u32) {
+        self.decode_rle(cmd as u16);
+        self.decode_rle((cmd >> 16) as u16);
+    }
+
+    fn decode_rle(&mut self, rle: u16) {
+        if self.block_index == 0 {
+            if rle == 0xfe00 {
+                // This is normally the end-of-block marker but if it
+                // occurs before the start of a block it's just padding
+                // and we should ignore it.
+                return;
+            }
+
+            // The first value in the block is the DC value (low 10
+            // bits) and the AC quantization scaling factor (high 6
+            // bits)
+            self.qscale = (rle >> 10) as u8;
+            let dc = rle & 0x3ff;
+
+            let dc = quantize(dc, self.quantization(), None);
+            self.next_block_coeff(dc);
+            self.block_index = 1;
+        } else {
+            if rle == 0xfe00 {
+                // End-of-block marker
+                while self.block_index < 8 * 8 {
+                    self.next_block_coeff(0);
+                }
+            } else {
+                // Decode RLE encoded block
+                let zeroes = rle >> 10;
+                let ac = rle & 0x3ff;
+
+                // Fill the zeroes
+                for _ in 0..zeroes {
+                    self.next_block_coeff(0);
+                }
+
+                // Compute the value of the AC coefficient
+                let ac = quantize(ac, self.quantization(), Some(self.qscale));
+                self.next_block_coeff(ac);
+            }
+
+            if self.block_index == 8 * 8 {
+                // Block full, moving on
+                self.next_block();
+            }
+        }
+    }
+
+    /// Return the quantization factor for the current block_index
+    fn quantization(&self) -> u8 {
+        let index = self.block_index as usize;
+
+        let matrix =
+            if self.luma_only() {
+                0
+            } else {
+                match self.current_block {
+                    BlockType::CrMono | BlockType::Cb => 1,
+                    _ => 0,
+                }
+            };
+
+        self.quant_matrices[matrix][index]
+    }
+
+    fn next_block(&mut self) {
+        unimplemented!()
+    }
+
+    /// Set the value of the current block coeff pointed to by
+    /// `block_index` and increment `block_index`.
+    fn next_block_coeff(&mut self, coeff: i16) {
+        self.block_coeffs.set_zigzag(self.block_index, coeff);
+        self.block_index += 1;
     }
 
     fn handle_color_quant_matrices(&mut self, cmd: u32) {
@@ -213,7 +325,7 @@ impl MDec {
             self.output_depth = OutputDepth::D4Bpp;
             self.output_signed = false;
             self.output_bit15 = false;
-            self.current_block = BlockType::CrLuma;
+            self.current_block = BlockType::CrMono;
             *self.command_handler = MDec::handle_command;
             self.command_remaining = 1;
         }
@@ -232,6 +344,41 @@ buffer!(struct QuantMatrix([u8; 64]));
 /// Serializable container for the IDCT matrix
 buffer!(struct IdctMatrix([i16; 64]));
 
+/// Serializable container for a macroblock
+buffer!(struct Macroblock([u8; 8 * 8]));
+
+/// Coefficients during macroblock decoding
+buffer!(struct MacroblockCoeffs([i16; 8 * 8]));
+
+impl MacroblockCoeffs {
+    /// RLE-encoded values are encoded using a "zigzag" pattern in
+    /// order to maximise the number of consecutive zeroes.
+    fn set_zigzag(&mut self, pos: u8, coeff: i16) {
+        // Zigzag LUT
+        let zigzag: [u8; 64] = [
+            0x00, 0x01, 0x08, 0x10, 0x09, 0x02, 0x03, 0x0a,
+            0x11, 0x18, 0x20, 0x19, 0x12, 0x0b, 0x04, 0x05,
+            0x0c, 0x13, 0x1a, 0x21, 0x28, 0x30, 0x29, 0x22,
+            0x1b, 0x14, 0x0d, 0x06, 0x07, 0x0e, 0x15, 0x1c,
+            0x23, 0x2a, 0x31, 0x38, 0x39, 0x32, 0x2b, 0x24,
+            0x1d, 0x16, 0x0f, 0x17, 0x1e, 0x25, 0x2c, 0x33,
+            0x3a, 0x3b, 0x34, 0x2d, 0x26, 0x1f, 0x27, 0x2e,
+            0x35, 0x3c, 0x3d, 0x36, 0x2f, 0x37, 0x3e, 0x3f ];
+
+        if pos >= 64 {
+            // XXX Not sure how the MDEC deals with index
+            // overflows. Does it wrap around somehow? Does it move to
+            // the next block?
+            panic!("Block index overflow!");
+        }
+
+        let index = zigzag[pos as usize];
+
+        self[index as usize] = coeff
+    }
+}
+
+
 /// Pixel color depths supported by the MDEC
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RustcDecodable, RustcEncodable)]
 enum OutputDepth {
@@ -242,13 +389,115 @@ enum OutputDepth {
 }
 
 #[allow(dead_code)]
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RustcDecodable, RustcEncodable)]
 enum BlockType {
     Y1 = 0,
     Y2 = 1,
     Y3 = 2,
     Y4 = 3,
     /// Luma (Y) for monochrome, Cr otherwise
-    CrLuma = 4,
+    CrMono = 4,
     Cb = 5,
+}
+
+/// Convert `val` into a signed 10 bit value
+fn to_10bit_signed(val: u16) -> i16 {
+    ((val << 6) as i16) >> 6
+}
+
+/// Quantization function for the macroblock coefficients. For the DC
+/// coeffs qscale should be None.
+fn quantize(coef: u16, quantization: u8, qscale: Option<u8>) -> i16 {
+    if coef == 0 {
+        0
+    } else {
+        let c = to_10bit_signed(coef);
+        let (qscale, qshift) =
+            match qscale {
+                Some(qs) => (qs, 3),
+                // DC doesn't use the qscale value and does not
+                // require right shifting after the multiplication.
+                _ => (1, 0)
+            };
+
+        let q = quantization as i32 * qscale as i32;
+
+        let c =
+            if q == 0 {
+                (c << 5) as i32
+            } else {
+                let c = c as i32;
+                let c = (c * q) >> qshift;
+                let c = c << 4;
+
+                // This is from mednafen, not sure why this is
+                // needed.
+                if c < 0 {
+                    c + 8
+                } else {
+                    c - 8
+                }
+            };
+
+        // Saturate
+        if c > 0x3fff {
+            0x3fff
+        } else if c < -0x4000 {
+            -0x4000
+        } else {
+            c as i16
+        }
+    }
+}
+
+#[test]
+fn test_quantize_dc() {
+    // XXX These values are taken from Mednafen at the moment, it
+    // would be better to validate against the real hardware.
+    assert_eq!(quantize(0, 0, None), 0);
+    assert_eq!(quantize(0, 255, None), 0);
+    assert_eq!(quantize(1, 0, None), 32);
+    assert_eq!(quantize(1, 1, None), 8);
+    assert_eq!(quantize(1, 2, None), 24);
+    assert_eq!(quantize(1, 255, None), 4072);
+    assert_eq!(quantize(2, 0, None), 64);
+    assert_eq!(quantize(5, 204, None), 16312);
+    assert_eq!(quantize(5, 205, None), 16383);
+    assert_eq!(quantize(5, 206, None), 16383);
+    assert_eq!(quantize(5, 255, None), 16383);
+    assert_eq!(quantize(512, 0, None), -16384);
+    assert_eq!(quantize(512, 1, None), -8184);
+    assert_eq!(quantize(512, 2, None), -16376);
+    assert_eq!(quantize(589, 0, None), -13920);
+    assert_eq!(quantize(589, 1, None), -6952);
+    assert_eq!(quantize(589, 2, None), -13912);
+    assert_eq!(quantize(1023, 255, None), -4072);
+    assert_eq!(quantize(1023, 0, None), -32);
+}
+
+#[test]
+fn test_quantize_ac() {
+    // XXX These values are taken from Mednafen at the moment, it
+    // would be better to validate against the real hardware.
+    assert_eq!(quantize(0, 0, Some(0)), 0);
+    assert_eq!(quantize(0, 0, Some(63)), 0);
+    assert_eq!(quantize(0, 1, Some(1)), 0);
+    assert_eq!(quantize(0, 255, Some(63)), 0);
+    assert_eq!(quantize(1, 0, Some(0)), 32);
+    assert_eq!(quantize(1, 1, Some(0)), 32);
+    assert_eq!(quantize(1, 1, Some(1)), -8);
+    assert_eq!(quantize(1, 1, Some(7)), -8);
+    assert_eq!(quantize(1, 1, Some(8)), 8);
+    assert_eq!(quantize(1, 1, Some(15)), 8);
+    assert_eq!(quantize(1, 1, Some(16)), 24);
+    assert_eq!(quantize(1, 39, Some(62)), 4824);
+    assert_eq!(quantize(1, 255, Some(63)), 16383);
+    assert_eq!(quantize(1, 255, Some(32)), 16312);
+    assert_eq!(quantize(2, 0, Some(0)), 64);
+    assert_eq!(quantize(511, 255, Some(63)), 16383);
+    assert_eq!(quantize(512, 0, Some(0)), -16384);
+    assert_eq!(quantize(1000, 0, Some(0)), -768);
+    assert_eq!(quantize(1000, 2, Some(57)), -5464);
+    assert_eq!(quantize(1000, 220, Some(27)), -16384);
+    assert_eq!(quantize(1003, 80, Some(3)), -10072);
 }
