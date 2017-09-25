@@ -25,9 +25,12 @@ pub struct MDec {
     command_handler: CommandHandler,
     /// Remaining words expected for this command
     command_remaining: u16,
-    /// Buffer for the currently decoded macroblock. At most we need 3
-    /// 8x8 values for a color block with Y, U and V
-    blocks: [Macroblock; 3],
+    /// Buffer for the currently decoded luma macroblock.
+    block_y: Macroblock,
+    /// Buffer for the currently decoded Cb macroblock.
+    block_u: Macroblock,
+    /// Buffer for the currently decoded Cr macroblock.
+    block_v: Macroblock,
     /// 16bit coefficients during macroblock decoding
     block_coeffs: MacroblockCoeffs,
     /// Current block type
@@ -53,11 +56,9 @@ impl MDec {
             idct_matrix: IdctMatrix::new(),
             command_handler: CommandHandler(MDec::handle_command),
             command_remaining: 1,
-            blocks: [
-                Macroblock::new(),
-                Macroblock::new(),
-                Macroblock::new(),
-            ],
+            block_y: Macroblock::new(),
+            block_u: Macroblock::new(),
+            block_v: Macroblock::new(),
             block_coeffs: MacroblockCoeffs::new(),
             block_index: 0,
             qscale: 0,
@@ -148,7 +149,7 @@ impl MDec {
 
     /// Return true if we're currently configured to decode luma-only
     /// blocks (i.e. 4 or 8bpp blocks)
-    pub fn luma_only(&self) -> bool {
+    pub fn is_monochrome(&self) -> bool {
         match self.output_depth {
             OutputDepth::D4Bpp | OutputDepth::D8Bpp => true,
             _ => false
@@ -203,6 +204,8 @@ impl MDec {
     }
 
     fn decode_rle(&mut self, rle: u16) {
+        println!("rle: {:04x}", rle);
+
         if self.block_index == 0 {
             if rle == 0xfe00 {
                 // This is normally the end-of-block marker but if it
@@ -253,7 +256,7 @@ impl MDec {
         let index = self.block_index as usize;
 
         let matrix =
-            if self.luma_only() {
+            if self.is_monochrome() {
                 0
             } else {
                 match self.current_block {
@@ -266,7 +269,49 @@ impl MDec {
     }
 
     fn next_block(&mut self) {
-        unimplemented!()
+        if self.is_monochrome() {
+            self.idct_matrix.idct(&self.block_coeffs, &mut self.block_y);
+
+            panic!();
+        } else {
+            let (idct_target, generate_pixels, next_block) =
+                match self.current_block {
+                    BlockType::Y1 =>
+                        (&mut self.block_y, true, BlockType::Y2),
+                    BlockType::Y2 =>
+                        (&mut self.block_y, true, BlockType::Y3),
+                    BlockType::Y3 =>
+                        (&mut self.block_y, true, BlockType::Y4),
+                    BlockType::Y4 =>
+                        (&mut self.block_y, true, BlockType::CrMono),
+                    BlockType::CrMono =>
+                        (&mut self.block_v, false, BlockType::Cb),
+                    BlockType::Cb =>
+                        (&mut self.block_u, false, BlockType::Y1),
+                };
+
+            self.idct_matrix.idct(&self.block_coeffs, idct_target);
+
+            println!("{:?}", self.current_block);
+
+            for y in 0..8 {
+                for x in 0..8 {
+                    print!(" {:02x}", idct_target[y * 8 + x]);
+                }
+                println!("");
+            }
+
+            if generate_pixels {
+                // We have Y, U and V macroblocks, we can convert the
+                // value and generate RGB pixels
+                //unimplemented!();
+            }
+
+            self.current_block = next_block;
+        }
+
+        // We're ready for the next block's coefficients
+        self.block_index = 0;
     }
 
     /// Set the value of the current block coeff pointed to by
@@ -341,11 +386,8 @@ callback!(struct CommandHandler (fn(&mut MDec, u32)) {
 /// Serializable container for the quantization matrices
 buffer!(struct QuantMatrix([u8; 64]));
 
-/// Serializable container for the IDCT matrix
-buffer!(struct IdctMatrix([i16; 64]));
-
 /// Serializable container for a macroblock
-buffer!(struct Macroblock([u8; 8 * 8]));
+buffer!(struct Macroblock([i8; 8 * 8]));
 
 /// Coefficients during macroblock decoding
 buffer!(struct MacroblockCoeffs([i16; 8 * 8]));
@@ -378,6 +420,71 @@ impl MacroblockCoeffs {
     }
 }
 
+/// Serializable container for the IDCT matrix
+buffer!(struct IdctMatrix([i16; 64]));
+
+impl IdctMatrix {
+    /// Compute the Inverse Discrete Cosine Transform of `coeffs` and
+    /// store the result in `block`
+    fn idct(&self, coeffs: &MacroblockCoeffs, block: &mut Macroblock) {
+        // XXX This function could greatly benefit from SIMD code when
+        // Rust supports it. The full IDCT takes 1024 multiplications.
+        let mut block_tmp = [0i16; 8 * 8];
+
+        // First pass, store intermediate results in `block_tmp`
+        for y in 0..8 {
+            for x in 0..8 {
+                let mut sum = 0i32;
+
+                for c in 0..8 {
+                    let coef = coeffs[y * 8 + c] as i32;
+
+                    // XXX what happens in case of overflow? Should
+                    // test on real hardware.
+                    sum += coef * self[x * 8 + c] as i32
+                }
+
+                let v = (sum + 0x4000) >> 15;
+
+                block_tmp[y * 8 + x] = v as i16;
+            }
+        }
+
+        // 2nd pass, saturate the values into `block`
+        for y in 0..8 {
+            for x in 0..8 {
+                let mut sum = 0i32;
+
+                for c in 0..8 {
+                    let coef = block_tmp[y * 8 + c] as i32;
+
+                    // XXX what happens in case of overflow? Should
+                    // test on real hardware.
+                    sum += coef * self[x * 8 + c] as i32
+                }
+
+                let v = (sum + 0x4000) >> 15;
+
+                // Sign extend 9bit value
+                let v = v as u16;
+                let v = v << (16 - 9);
+                let v = (v as i16) >> (16 - 9);
+
+                // Saturate
+                let v =
+                    if v < -128 {
+                        -128
+                    } else if v > 127 {
+                        127
+                    } else {
+                        v as i8
+                    };
+
+                block[x * 8 + y] = v;
+            }
+        }
+    }
+}
 
 /// Pixel color depths supported by the MDEC
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RustcDecodable, RustcEncodable)]
