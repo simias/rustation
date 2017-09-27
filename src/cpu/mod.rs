@@ -1760,7 +1760,7 @@ impl Cpu {
 }
 
 /// Simple wrapper around an instruction word to provide type-safety.
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 struct Instruction(u32);
 
 impl Instruction {
@@ -1856,7 +1856,7 @@ impl Display for Instruction {
 struct RegisterIndex(u32);
 
 /// Instruction cache line
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
 struct ICacheLine {
     /// Tag: high 22bits of the address associated with this cacheline
     /// Valid bits: 3 bit index of the first valid word in line.

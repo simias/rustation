@@ -351,8 +351,14 @@ impl MDec {
 
         let index = index * 2;
 
-        self.idct_matrix[index] = cmd as i16;
-        self.idct_matrix[index + 1] = (cmd >> 16) as i16;
+        let c1 = cmd as i16;
+        let c2 = (cmd >> 16) as i16;
+
+        // The loss of precision in the bitshift looks suspicious to
+        // me but that's what mednafen does. Probably worth
+        // investigating on the real hardware.
+        self.idct_matrix[index]     = c1 >> 3;
+        self.idct_matrix[index + 1] = c2 >> 3;
     }
 
     /// Set the value of the control register
@@ -441,12 +447,12 @@ impl IdctMatrix {
 
                     // XXX what happens in case of overflow? Should
                     // test on real hardware.
-                    sum += coef * self[x * 8 + c] as i32
+                    sum += coef * self[c * 8 + x] as i32
                 }
 
                 let v = (sum + 0x4000) >> 15;
 
-                block_tmp[y * 8 + x] = v as i16;
+                block_tmp[x * 8 + y] = v as i16;
             }
         }
 
@@ -460,7 +466,7 @@ impl IdctMatrix {
 
                     // XXX what happens in case of overflow? Should
                     // test on real hardware.
-                    sum += coef * self[x * 8 + c] as i32
+                    sum += coef * self[c * 8 + x] as i32
                 }
 
                 let v = (sum + 0x4000) >> 15;
@@ -480,7 +486,7 @@ impl IdctMatrix {
                         v as i8
                     };
 
-                block[x * 8 + y] = v;
+                block[y * 8 + x] = v;
             }
         }
     }
@@ -607,4 +613,49 @@ fn test_quantize_ac() {
     assert_eq!(quantize(1000, 2, Some(57)), -5464);
     assert_eq!(quantize(1000, 220, Some(27)), -16384);
     assert_eq!(quantize(1003, 80, Some(3)), -10072);
+}
+
+#[test]
+fn test_idct() {
+    let coeffs = MacroblockCoeffs::from_array([
+        0, 257, 514, 771, 1028, 1285, 1542, 1799,
+        8, 265, 522, 779, 1036, 1293, 1550, 1807,
+        16, 273, 530, 787, 1044, 1301, 1558, 1815,
+        24, 281, 538, 795, 1052, 1309, 1566, 1823,
+        32, 289, 546, 803, 1060, 1317, 1574, 1831,
+        40, 297, 554, 811, 1068, 1325, 1582, 1839,
+        48, 305, 562, 819, 1076, 1333, 1590, 1847,
+        56, 313, 570, 827, 1084, 1341, 1598, 1855]);
+
+    // This is the "standard" IDCT table used in most PSX games
+    let mut matrix = IdctMatrix::from_array([
+        23170,  23170,  23170,  23170,  23170,  23170,  23170,  23170,
+        32138,  27245,  18204,   6392,  -6393, -18205, -27246, -32139,
+        30273,  12539, -12540, -30274, -30274, -12540,  12539,  30273,
+        27245,  -6393, -32139, -18205,  18204,  32138,   6392, -27246,
+        23170, -23171, -23171,  23170,  23170, -23171, -23171,  23170,
+        18204, -32139,   6392,  27245, -27246,  -6393,  32138, -18205,
+        12539, -30274,  30273, -12540, -12540,  30273, -30274,  12539,
+        6392,  -18205,  27245, -32139,  32138, -27246,  18204,  -6393]);
+
+    // The "weird" bitshift used by mednafen
+    for b in matrix.iter_mut() {
+        *b = *b >> 3;
+    }
+
+    let mut block = Macroblock::new();
+
+    matrix.idct(&coeffs, &mut block);
+
+    let expected = Macroblock::from_array([
+        -128, -95,  71, -27,  38, -5,  22,   9,
+         127,  96, -75,  27, -40,  4, -23, -10,
+         127, -39,  30, -11,  16, -2,   9,   4,
+        -117,  33, -26,   9, -14,  1,  -8,  -3,
+          62, -18,  14,  -5,   7, -1,   4,   2,
+         -52,  14, -11,   4,  -6,  1,  -4,  -2,
+          21,  -6,   5,  -2,   3,  0,   1,   1,
+         -14,   3,  -3,   1,  -1,  0,  -1,   0]);
+
+    assert_eq!(expected, block);
 }

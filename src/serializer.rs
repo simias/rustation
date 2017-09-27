@@ -30,7 +30,7 @@ macro_rules! callback {
     }) => (
         #[derive(Copy)]
         struct $st($proto);
-       
+
         impl Clone for $st {
             fn clone(&self) -> Self {
                 *self
@@ -99,7 +99,8 @@ macro_rules! callback {
 /// Create a wrapper type around an array in order to be able to
 /// serialize it. The new type implements Deref an DerefMut for
 /// convenience. The element type must implement
-/// `std::default::Default`:
+/// `std::default::Default`, `std::cmp::{PartialEq, Eq}` and
+/// `std::fmt::Debug`.
 ///
 /// ```
 /// # #[macro_use] extern crate rustation;
@@ -122,6 +123,11 @@ macro_rules! buffer {
             /// Build a new $st using the `Default` constructor
             fn new() -> $st {
                 ::std::default::Default::default()
+            }
+
+            #[allow(dead_code)]
+            fn from_array(array: [$elem; $len]) -> $st {
+                $st(array)
             }
         }
 
@@ -146,6 +152,35 @@ macro_rules! buffer {
         impl ::std::ops::DerefMut for $st {
             fn deref_mut(&mut self) -> &mut [$elem; $len] {
                 &mut self.0
+            }
+        }
+
+        impl ::std::cmp::PartialEq for $st {
+            fn eq(&self, other: &$st) -> bool {
+                self.0.iter().eq(other.0.iter())
+            }
+        }
+
+        impl ::std::cmp::Eq for $st {
+        }
+
+        impl ::std::fmt::Debug for $st {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                try!(write!(f, "[ "));
+
+                let mut first = true;
+
+                for e in self.0.iter() {
+                    if !first {
+                        try!(write!(f, ", "));
+                    }
+
+                    first = false;
+
+                    try!(write!(f, "{:?}", e));
+                }
+
+                write!(f, " ]")
             }
         }
 
