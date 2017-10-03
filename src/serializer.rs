@@ -124,11 +124,6 @@ macro_rules! buffer {
             fn new() -> $st {
                 ::std::default::Default::default()
             }
-
-            #[allow(dead_code)]
-            fn from_array(array: [$elem; $len]) -> $st {
-                $st(array)
-            }
         }
 
         impl ::std::default::Default for $st {

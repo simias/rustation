@@ -40,6 +40,7 @@ pub struct MDec {
     /// Quantization factor for the current macroblock, used for the
     /// AC values only.
     qscale: u8,
+    pixel_fifo: PixelFifo,
 }
 
 impl MDec {
@@ -62,6 +63,7 @@ impl MDec {
             block_coeffs: MacroblockCoeffs::new(),
             block_index: 0,
             qscale: 0,
+            pixel_fifo: PixelFifo::new(),
         }
     }
 
@@ -147,9 +149,18 @@ impl MDec {
         }
     }
 
+    pub fn dma_read_word(&mut self) -> u32 {
+        let b0 = self.pixel_fifo.pop_byte() as u32;
+        let b1 = self.pixel_fifo.pop_byte() as u32;
+        let b2 = self.pixel_fifo.pop_byte() as u32;
+        let b3 = self.pixel_fifo.pop_byte() as u32;
+
+        b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    }
+
     /// Return true if we're currently configured to decode luma-only
     /// blocks (i.e. 4 or 8bpp blocks)
-    pub fn is_monochrome(&self) -> bool {
+    fn is_monochrome(&self) -> bool {
         match self.output_depth {
             OutputDepth::D4Bpp | OutputDepth::D8Bpp => true,
             _ => false
@@ -199,13 +210,12 @@ impl MDec {
     }
 
     fn handle_encoded_word(&mut self, cmd: u32) {
+        println!("encoded: 0x{:08x}", cmd);
         self.decode_rle(cmd as u16);
         self.decode_rle((cmd >> 16) as u16);
     }
 
     fn decode_rle(&mut self, rle: u16) {
-        println!("rle: {:04x}", rle);
-
         if self.block_index == 0 {
             if rle == 0xfe00 {
                 // This is normally the end-of-block marker but if it
@@ -269,49 +279,70 @@ impl MDec {
     }
 
     fn next_block(&mut self) {
+        println!("{:?} done", self.current_block);
+
         if self.is_monochrome() {
             self.idct_matrix.idct(&self.block_coeffs, &mut self.block_y);
 
-            panic!();
+            unimplemented!();
         } else {
-            let (idct_target, generate_pixels, next_block) =
-                match self.current_block {
-                    BlockType::Y1 =>
-                        (&mut self.block_y, true, BlockType::Y2),
-                    BlockType::Y2 =>
-                        (&mut self.block_y, true, BlockType::Y3),
-                    BlockType::Y3 =>
-                        (&mut self.block_y, true, BlockType::Y4),
-                    BlockType::Y4 =>
-                        (&mut self.block_y, true, BlockType::CrMono),
-                    BlockType::CrMono =>
-                        (&mut self.block_v, false, BlockType::Cb),
-                    BlockType::Cb =>
-                        (&mut self.block_u, false, BlockType::Y1),
-                };
+            let generate_pixels = {
+                let (idct_target, generate_pixels, next_block) =
+                    match self.current_block {
+                        BlockType::Y1 =>
+                            (&mut self.block_y, true, BlockType::Y2),
+                        BlockType::Y2 =>
+                            (&mut self.block_y, true, BlockType::Y3),
+                        BlockType::Y3 =>
+                            (&mut self.block_y, true, BlockType::Y4),
+                        BlockType::Y4 =>
+                            (&mut self.block_y, true, BlockType::CrMono),
+                        BlockType::CrMono =>
+                            (&mut self.block_v, false, BlockType::Cb),
+                        BlockType::Cb =>
+                            (&mut self.block_u, false, BlockType::Y1),
+                    };
 
-            self.idct_matrix.idct(&self.block_coeffs, idct_target);
+                self.idct_matrix.idct(&self.block_coeffs, idct_target);
 
-            println!("{:?}", self.current_block);
+                self.current_block = next_block;
 
-            for y in 0..8 {
-                for x in 0..8 {
-                    print!(" {:02x}", idct_target[y * 8 + x]);
-                }
-                println!("");
-            }
+                generate_pixels
+            };
 
             if generate_pixels {
                 // We have Y, U and V macroblocks, we can convert the
                 // value and generate RGB pixels
-                //unimplemented!();
+                if self.output_depth == OutputDepth::D15Bpp {
+                    self.generate_pixels_rgb15();
+                } else {
+                    self.generate_pixels_rgb24();
+                }
             }
-
-            self.current_block = next_block;
         }
 
         // We're ready for the next block's coefficients
         self.block_index = 0;
+    }
+
+    fn generate_pixels_rgb15(&mut self) {
+        unimplemented!()
+    }
+
+    fn generate_pixels_rgb24(&mut self) {
+        for y in 0..8 {
+            for x in 0..8 {
+                let l = self.block_y[y * 8 + x];
+                let u = self.block_u[y * 8 + x];
+                let v = self.block_v[y * 8 + x];
+
+                let (r, g, b) = yuv_to_rgb(l, u, v);
+
+                self.pixel_fifo.push_byte(r);
+                self.pixel_fifo.push_byte(g);
+                self.pixel_fifo.push_byte(b);
+            }
+        }
     }
 
     /// Set the value of the current block coeff pointed to by
@@ -322,6 +353,7 @@ impl MDec {
     }
 
     fn handle_color_quant_matrices(&mut self, cmd: u32) {
+
         let index = (31 - self.command_remaining) as usize;
 
         let matrix = index / 16;
@@ -513,6 +545,47 @@ enum BlockType {
     Cb = 5,
 }
 
+buffer!(struct PixelBuf([u8; 131072]));
+
+#[derive(RustcDecodable, RustcEncodable)]
+struct PixelFifo {
+    buffer: PixelBuf,
+    read_idx: u32,
+    write_idx: u32,
+}
+
+impl PixelFifo {
+    fn new() -> PixelFifo {
+        PixelFifo {
+            buffer: PixelBuf::new(),
+            read_idx: 0,
+            write_idx: 0,
+        }
+    }
+
+    fn push_byte(&mut self, b: u8) {
+        self.buffer[self.write_idx as usize] = b;
+
+        let next = (self.write_idx + 1) % 131072;
+
+        if next != self.read_idx {
+            self.write_idx = next;
+        }
+    }
+
+    fn pop_byte(&mut self) -> u8 {
+        if self.write_idx == self.read_idx {
+            return 0x55;
+        }
+
+        let b = self.buffer[self.read_idx as usize];
+
+        self.read_idx = (self.read_idx + 1) % 131072;
+
+        b
+    }
+}
+
 /// Convert `val` into a signed 10 bit value
 fn to_10bit_signed(val: u16) -> i16 {
     ((val << 6) as i16) >> 6
@@ -561,6 +634,37 @@ fn quantize(coef: u16, quantization: u8, qscale: Option<u8>) -> i16 {
             c as i16
         }
     }
+}
+
+fn sign_extend_9bits(v: i32) -> i8 {
+    let v = v as u16;
+    let v = v << (16 - 9);
+    let v = (v as i16) >> (16 - 9);
+
+    // Saturate
+    if v < -128 {
+        -128
+    } else if v > 127 {
+        127
+    } else {
+        v as i8
+    }
+}
+
+fn yuv_to_rgb(y: i8, u: i8, v: i8) -> (u8, u8, u8) {
+    let y = y as i32;
+    let u = u as i32;
+    let v = v as i32;
+
+    let r = y + (((359 * v) + 0x80) >> 8);
+    let g = y + ((((-88 * u) & !0x1F) + ((-183 * v) & !0x07) + 0x80) >> 8);
+    let b = y + (((454 * u) + 0x80) >> 8);
+
+    let r = sign_extend_9bits(r) as u8 ^ 0x80;
+    let g = sign_extend_9bits(g) as u8 ^ 0x80;
+    let b = sign_extend_9bits(b) as u8 ^ 0x80;
+
+    (r, g, b)
 }
 
 #[test]
@@ -617,7 +721,7 @@ fn test_quantize_ac() {
 
 #[test]
 fn test_idct() {
-    let coeffs = MacroblockCoeffs::from_array([
+    let coeffs = MacroblockCoeffs([
         0, 257, 514, 771, 1028, 1285, 1542, 1799,
         8, 265, 522, 779, 1036, 1293, 1550, 1807,
         16, 273, 530, 787, 1044, 1301, 1558, 1815,
@@ -628,7 +732,7 @@ fn test_idct() {
         56, 313, 570, 827, 1084, 1341, 1598, 1855]);
 
     // This is the "standard" IDCT table used in most PSX games
-    let mut matrix = IdctMatrix::from_array([
+    let mut matrix = IdctMatrix([
         23170,  23170,  23170,  23170,  23170,  23170,  23170,  23170,
         32138,  27245,  18204,   6392,  -6393, -18205, -27246, -32139,
         30273,  12539, -12540, -30274, -30274, -12540,  12539,  30273,

@@ -634,7 +634,7 @@ impl Interconnect {
                             0
                         }
                         Port::CdRom => self.cdrom.dma_read_word(),
-                        Port::MDecOut => 0,
+                        Port::MDecOut => self.mdec.dma_read_word(),
                         _ => panic!("Unhandled DMA source port {:?}", port),
                     };
 
