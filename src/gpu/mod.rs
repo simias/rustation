@@ -11,7 +11,7 @@ use self::renderer::{BlendMode, SemiTransparencyMode, TextureDepth};
 
 pub mod renderer;
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct Gpu {
     /// Draw mode for rectangles, dithering enable and a few other
     /// things
@@ -1459,7 +1459,7 @@ callback!(struct Gp0Handler(fn (&mut Gpu, &mut Renderer, u32)) {
 });
 
 /// Interlaced output splits each frame in two fields
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum Field {
     /// Top field (odd lines).
     Top = 1,
@@ -1468,7 +1468,7 @@ enum Field {
 }
 
 /// Video output horizontal resolution
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 struct HorizontalRes(u8);
 
 impl HorizontalRes {
@@ -1544,7 +1544,7 @@ impl HorizontalRes {
 }
 
 /// Video output vertical resolution
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum VerticalRes {
     /// 240 lines
     Y240Lines = 0,
@@ -1562,7 +1562,7 @@ impl VerticalRes {
 }
 
 /// Video Modes
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum VMode {
     /// NTSC: 480i60H
     Ntsc = 0,
@@ -1571,7 +1571,7 @@ enum VMode {
 }
 
 /// Display area color depth
-#[derive(Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum DisplayDepth {
     /// 15 bits per pixel
     D15Bits = 0,
@@ -1580,7 +1580,7 @@ enum DisplayDepth {
 }
 
 /// Requested DMA direction.
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum DmaDirection {
     Off = 0,
     Fifo = 1,
@@ -1589,7 +1589,7 @@ enum DmaDirection {
 }
 
 /// Buffer holding multi-word fixed-length GP0 command parameters
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 struct CommandBuffer {
     /// Command buffer: the longuest possible command is GP0(0x3E)
     /// which takes 12 parameters
@@ -1634,7 +1634,7 @@ impl ::std::ops::Index<usize> for CommandBuffer {
 /// Attributes of the various GP0 commands. Some attributes don't make
 /// sense for certain commands but those will just be ignored by the
 /// `parser_callback`
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 struct Gp0Attributes {
     /// Method called when all the parameters have been received.
     callback: Callback,
@@ -1929,7 +1929,7 @@ pub const VRAM_SIZE_PIXELS: usize =
 
 /// The are a few hardware differences between PAL and NTSC consoles,
 /// in particular the pixelclock runs slightly slower on PAL consoles.
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum VideoClock {
     Ntsc,
     Pal,

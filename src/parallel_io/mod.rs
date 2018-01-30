@@ -1,7 +1,8 @@
 //! Emulation of the parallel interface (the Parallel I/O connector on
 //! the back of older PlayStation models)
 
-use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+use serde::de::{Deserialize,Deserializer};
+use serde::ser::{Serialize,Serializer};
 
 use memory::Addressable;
 use shared::SharedState;
@@ -39,22 +40,20 @@ impl ParallelIo {
     }
 }
 
-impl Encodable for ParallelIo {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        // Since the parallel interface is supposed to support a whole
-        // bunch of modules (some of which potentially defined outside
-        // of this crate) it's not trivial to serialize them. For not
-        // let's ignore it and not include it in the savestate.
-        s.emit_nil()
-    }
+impl Serialize for ParallelIo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+        {
+            serializer.serialize_unit()
+        }
 }
 
-impl Decodable for ParallelIo {
-    fn decode<D: Decoder>(d: &mut D) -> Result<ParallelIo, D::Error> {
-        try!(d.read_nil());
-
-        Ok(ParallelIo::disconnected())
-    }
+impl<'de> Deserialize<'de> for ParallelIo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+        {
+            Ok(ParallelIo::disconnected())
+        }
 }
 
 /// Since there can be all sorts of hardware connected to the Parallel

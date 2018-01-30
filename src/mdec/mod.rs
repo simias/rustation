@@ -3,7 +3,7 @@ use shared::SharedState;
 use tracer::module_tracer;
 
 /// Motion Decoder (sometimes called macroblock or movie decoder).
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct MDec {
     dma_in_enable: bool,
     dma_out_enable: bool,
@@ -227,13 +227,15 @@ callback!(struct CommandHandler (fn(&mut MDec, u32)) {
 });
 
 /// Serializable container for the quantization matrices
-buffer!(struct QuantMatrix([u8; 64]));
+#[derive(Serialize, Deserialize)]
+struct QuantMatrix([u8; 64]);
 
 /// Serializable container for the IDCT matrix
-buffer!(struct IdctMatrix([i16; 64]));
+#[derive(Serialize, Deserialize)]
+struct IdctMatrix([i16; 64]);
 
 /// Pixel color depths supported by the MDEC
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RustcDecodable, RustcEncodable)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 enum OutputDepth {
     D4Bpp = 0,
     D8Bpp = 1,
@@ -242,7 +244,7 @@ enum OutputDepth {
 }
 
 #[allow(dead_code)]
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 enum BlockType {
     Y1 = 0,
     Y2 = 1,

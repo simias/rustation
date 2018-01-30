@@ -32,7 +32,7 @@ pub mod iso9660;
 mod simple_rand;
 
 /// CDROM drive, controller and decoder.
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct CdRom {
     /// The CD-ROM interface has four memory-mapped registers. The
     /// first one contains an index which defines the meaning of the
@@ -1201,7 +1201,7 @@ impl CdRom {
 }
 
 /// 16byte FIFO used to store command arguments and responses
-#[derive(Copy, Clone, Debug, RustcDecodable, RustcEncodable)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 struct Fifo {
     /// Data buffer
     buffer: [u8; 16],
@@ -1277,7 +1277,7 @@ impl Fifo {
 buffer!(struct RxBuffer([u8; 2352]));
 
 /// CDROM disc state
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 enum ReadState {
     Idle,
     /// We're expecting a sector
@@ -1294,7 +1294,7 @@ impl ReadState {
 }
 
 /// Description of the sub-CPU processing sequence
-#[derive(PartialEq, Eq, Debug, Copy, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Serialize, Deserialize)]
 enum SubCpuSequence {
     /// Sub-CPU waits for commands and async events
     Idle,
@@ -1318,7 +1318,7 @@ enum SubCpuSequence {
 }
 
 /// Sub-CPU state. This is an 8bit microcontroller in charge
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 struct SubCpu {
     /// Current sub-CPU command state
     sequence: SubCpuSequence,
@@ -1412,7 +1412,7 @@ callback!(struct AsyncResponse(fn (&mut CdRom) -> u32) {
 });
 
 /// Various IRQ codes used by the sub-CPU
-#[derive(Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 enum IrqCode {
     /// A CD sector has been read and is ready to be processed.
     SectorReady = 1,
@@ -1427,7 +1427,7 @@ enum IrqCode {
 
 /// CD-DA Audio playback mixer. The CDROM's audio stereo output can be
 /// mixed arbitrarily before reaching the SPU stereo input.
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 struct Mixer {
     cd_left_to_spu_left: u8,
     cd_left_to_spu_right: u8,

@@ -21,7 +21,7 @@ use debug_uart::DebugUart;
 use tracer::module_tracer;
 
 /// Global interconnect
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct Interconnect {
     /// Basic Input/Output memory
     bios: Bios,
@@ -650,7 +650,7 @@ impl Interconnect {
     }
 }
 
-#[derive(Clone,Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone,Copy, Serialize, Deserialize)]
 pub struct CacheControl(u32);
 
 impl CacheControl {

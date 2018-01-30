@@ -1,7 +1,7 @@
 use interrupt::InterruptState;
 
 /// Coprocessor 0: System control
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct Cop0 {
     /// Cop0 register 12: Status register
     sr: u32,

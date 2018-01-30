@@ -1,6 +1,6 @@
 /// The PlayStation supports 10 interrupts
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub enum Interrupt {
     /// Display in vertical blanking
     VBlank = 0,
@@ -18,7 +18,7 @@ pub enum Interrupt {
     PadMemCard = 7,
 }
 
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct InterruptState {
     /// Interrupt status
     status: u16,
