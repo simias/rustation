@@ -15,6 +15,11 @@
 //! based on No$'s specs, mednafen's source code and some educated
 //! guesses.
 
+use serde::de::{Deserialize, Deserializer, Error, SeqAccess, Visitor};
+use serde::ser::{Serialize, SerializeSeq, SerializeTuple, Serializer};
+use std::fmt;
+use std::marker::PhantomData;
+
 use memory::Addressable;
 use timekeeper::{Peripheral, Cycles};
 use interrupt::Interrupt;

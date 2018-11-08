@@ -149,39 +149,58 @@ macro_rules! buffer {
             }
         }
 
-        impl ::rustc_serialize::Encodable for $st {
-            fn encode<S>(&self, s: &mut S) -> Result<(), S::Error>
-                where S: ::rustc_serialize::Encoder {
-
-                s.emit_seq($len, |s| {
-                    for (i, b) in self.0.iter().enumerate() {
-                        try!(s.emit_seq_elt(i, |s| b.encode(s)));
+        impl Serialize for $st {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: Serializer,
+                {
+                    let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+                    for e in self.0.iter() {
+                        seq.serialize_element(e)?;
                     }
-                    Ok(())
-                })
-            }
+                    seq.end()
+                }
         }
 
-        impl ::rustc_serialize::Decodable for $st {
-            fn decode<D>(d: &mut D) -> Result<$st, D::Error>
-                where D: ::rustc_serialize::Decoder {
-
-                use ::rustc_serialize::Decodable;
-
-                d.read_seq(|d, len| {
-                    if len != $len {
-                        return Err(d.error("wrong buffer length"));
+        impl<'de> Deserialize<'de> for $st {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    struct CustomVisitor<T> {
+                        element: PhantomData<T>,
                     }
 
-                    let mut b = $st::new();
+                    impl<'de, T> Visitor<'de> for CustomVisitor<T>
+                        where
+                            T: Default + Copy + Deserialize<'de>,
+                        {
+                            type Value = $st;
 
-                    for (i, b) in b.0.iter_mut().enumerate() {
-                        *b = try!(d.read_seq_elt(i, Decodable::decode))
-                    }
+                            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                                formatter.write_str(concat!("an array of length ", $len))
+                            }
 
-                    Ok(b)
-                })
-            }
+                            fn visit_seq<A>(self, mut seq: A) -> Result<$st, A::Error>
+                                where
+                                    A: SeqAccess<'de>,
+                                {
+                                    let mut arr = $st([Default::default(); $len]);
+                                    for i in 0..$len {
+                                        arr.0[i] = seq
+                                            .next_element()?
+                                            .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
+                                    }
+                                    Ok(arr)
+                                }
+                        }
+
+                    let visitor: CustomVisitor<$elem> = CustomVisitor {
+                        element: PhantomData,
+                    };
+                    deserializer.deserialize_seq(visitor)
+                }
         }
+
     );
 }
