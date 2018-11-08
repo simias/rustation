@@ -15,6 +15,7 @@ use super::iso9660;
 pub struct Disc {
     /// Image file
     #[serde(skip)]
+    #[serde(default = "default_image")]
     image: Box<Image>,
     /// Disc serial number
     serial: SerialNumber,
