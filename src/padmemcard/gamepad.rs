@@ -1,7 +1,11 @@
-use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use rustc_serialize::{Decoder, Encoder};
 
+#[derive(Serialize, Deserialize)]
 pub struct GamePad {
     /// Gamepad profile. *Not* stored in the savestate.
+    #[serde(skip)]
+    #[serde(default = "default_profile")]
     profile: Box<Profile>,
     /// Counter keeping track of the current position in the reply
     /// sequence
@@ -58,40 +62,6 @@ impl GamePad {
     }
 }
 
-impl Encodable for GamePad {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-
-        // We don't store the Profile in the serialized data, we'll
-        // let the frontend reset it
-        s.emit_struct("GamePad", 2, |s| {
-
-            try!(s.emit_struct_field("seq", 0,
-                                     |s| self.seq.encode(s)));
-            try!(s.emit_struct_field("active", 1,
-                                     |s| self.active.encode(s)));
-            
-            Ok(())
-        })
-    }
-}
-
-impl Decodable for GamePad {
-    fn decode<D: Decoder>(d: &mut D) -> Result<GamePad, D::Error> {
-
-        d.read_struct("GamePad", 2, |d| {
-            let mut pad = GamePad::disconnected();
-
-            pad.seq =
-                try!(d.read_struct_field("seq", 0, Decodable::decode));
-
-            pad.active =
-                try!(d.read_struct_field("active", 1, Decodable::decode));
-
-            Ok(pad)
-        })
-    }
-}
-
 /// Digital buttons on a PlayStation controller. The value assigned to
 /// each button is the bit position in the 16bit word returned in the
 /// serial protocol
@@ -139,6 +109,10 @@ pub trait Profile {
 
 /// Dummy profile emulating an empty pad slot
 pub struct DisconnectedProfile;
+
+fn default_profile() -> Box<Profile> {
+    Box::new(DisconnectedProfile)
+}
 
 impl Profile for DisconnectedProfile {
     fn handle_command(&mut self, _: u8, _: u8) -> (u8, bool) {
