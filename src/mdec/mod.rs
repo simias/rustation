@@ -1,3 +1,9 @@
+use std::fmt;
+use std::marker::PhantomData;
+use serde::de::{Visitor, SeqAccess};
+use serde::ser::SerializeSeq;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use memory::Addressable;
 use shared::SharedState;
 use tracer::module_tracer;
@@ -227,12 +233,10 @@ callback!(struct CommandHandler (fn(&mut MDec, u32)) {
 });
 
 /// Serializable container for the quantization matrices
-#[derive(Serialize, Deserialize)]
-struct QuantMatrix([u8; 64]);
+buffer!(struct QuantMatrix([u8; 64]));
 
 /// Serializable container for the IDCT matrix
-#[derive(Serialize, Deserialize)]
-struct IdctMatrix([i16; 64]);
+buffer!(struct IdctMatrix([i16; 64]));
 
 /// Pixel color depths supported by the MDEC
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
