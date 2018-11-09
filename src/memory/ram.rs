@@ -1,8 +1,4 @@
-use serde::de::{Deserialize,Deserializer};
-use serde::ser::{Serialize,Serializer};
-use serde::ser::SerializeSeq;
-
-use bigarray::{BigArray,BigArrayBox};
+use bigarray::{BigArrayBox, BigArray};
 
 use super::Addressable;
 
