@@ -7,7 +7,6 @@ mod tests;
 use std::fmt::{Display, Formatter, Error, self};
 use std::default::Default;
 
-use bigarray::BigArray;
 use std::marker::PhantomData;
 use serde::de::{Visitor, SeqAccess};
 use serde::ser::SerializeSeq;

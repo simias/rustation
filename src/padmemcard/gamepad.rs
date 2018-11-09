@@ -1,5 +1,3 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use rustc_serialize::{Decoder, Encoder};
 
 #[derive(Serialize, Deserialize)]
 pub struct GamePad {

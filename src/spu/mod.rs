@@ -1,6 +1,3 @@
-use serde::de::{Deserialize,Deserializer};
-use serde::ser::{Serialize,Serializer};
-
 use memory::Addressable;
 
 /// Sound Processing Unit
