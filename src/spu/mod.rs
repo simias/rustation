@@ -1,19 +1,33 @@
-use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+use serde::de::{Deserialize,Deserializer};
+use serde::ser::{Serialize,Serializer};
 
 use memory::Addressable;
 
 /// Sound Processing Unit
+#[derive(Serialize, Deserialize)]
 pub struct Spu {
     /// Most of the SPU registers are not updated by the hardware,
     /// their value is just moved to the internal registers when
     /// needed. Therefore we can emulate those registers like a RAM of
     /// sorts.
+    #[serde(skip)]
+    #[serde(default = "default_shadow_register")]
     shadow_registers: [u16; 0x100],
 
     /// SPU RAM: 256k 16bit samples
+    #[serde(skip)]
+    #[serde(default = "default_ram")]
     ram: Box<[u16; 256 * 1024]>,
     /// Write pointer in the SPU RAM
     ram_index: u32,
+}
+
+fn default_shadow_register() -> [u16; 0x100] {
+    [0u16; 0x100]
+}
+
+fn default_ram() -> Box<[u16; 256 * 1024]> {
+    Box::new([0u16; 256 * 1024])
 }
 
 impl Spu {
@@ -219,97 +233,6 @@ impl Spu {
 
         self.ram[index as usize] = val;
         self.ram_index = (index + 1) & 0x3ffff;
-    }
-}
-
-impl Encodable for Spu {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_struct("Spu", 3, |s| {
-            try!(s.emit_struct_field(
-                "shadow_registers", 0,
-                |s| s.emit_seq(
-                    0x100,
-                    |s| {
-                        for i in 0..0x100 {
-                            try!(s.emit_seq_elt(
-                                i,
-                                |s| self.shadow_registers[i].encode(s)));
-                        }
-
-                        Ok(())
-                    })));
-
-            try!(s.emit_struct_field(
-                "ram", 1,
-                |s| s.emit_seq(
-                    256 * 1024,
-                    |s| {
-                        for i in 0..(256 * 1024) {
-                            try!(s.emit_seq_elt(
-                                i,
-                                |s| self.ram[i].encode(s)));
-                        }
-
-                        Ok(())
-                    })));
-
-            try!(s.emit_struct_field("ram_index", 2,
-                                     |s| self.ram_index.encode(s)));
-
-            Ok(())
-        })
-    }
-}
-
-impl Decodable for Spu {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Spu, D::Error> {
-        d.read_struct("Spu", 3, |d| {
-            let mut spu = Spu::new();
-
-            try!(d.read_struct_field(
-                "shadow_registers", 0,
-                |d| {
-                    d.read_seq(|d, len| {
-                        if len != 0x100 {
-                            return Err(
-                                d.error("wrong SPU shadow registers length"));
-                        }
-
-                        for i in 0..len {
-                            spu.shadow_registers[i] =
-                                try!(d.read_seq_elt(i, Decodable::decode));
-                        }
-
-                        Ok(())
-                    })
-                }));
-
-
-            try!(d.read_struct_field(
-                "ram", 1,
-                |d| {
-                    d.read_seq(|d, len| {
-                        if len != 256 * 1024 {
-                            return Err(
-                                d.error("wrong SPU RAM length"));
-                        }
-
-                        for i in 0..len {
-                            spu.ram[i] =
-                                try!(d.read_seq_elt(i, Decodable::decode));
-                        }
-
-                        Ok(())
-                    })
-                }));
-
-            spu.ram_index =
-                try!(d.read_struct_field("ram_index",
-                                         2,
-                                         Decodable::decode));
-
-            Ok(spu)
-        })
     }
 }
 
