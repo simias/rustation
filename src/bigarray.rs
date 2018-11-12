@@ -131,5 +131,6 @@ macro_rules! big_array_box {
 }
 
 big_array_box! {
-    2097152,
+    2097152, // RAM_SIZE
+    524288,  // VRAM_SIZE_PIXELS
 }

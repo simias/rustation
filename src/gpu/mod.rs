@@ -1,4 +1,4 @@
-use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+use bigarray::BigArrayBox;
 
 use memory::Addressable;
 use memory::timers::Timers;
@@ -1784,6 +1784,7 @@ fn is_polyline_end_marker(val: u32) -> bool {
 }
 
 /// Buffer holding a portion of the VRAM while it's being transfered
+#[derive(Serialize, Deserialize)]
 struct ImageBuffer {
     /// Coordinates of the top-left corner in VRAM
     top_left: (u16, u16),
@@ -1792,6 +1793,7 @@ struct ImageBuffer {
     /// Current write position in the buffer
     index: u32,
     /// Pixel buffer. The maximum size is the entire VRAM resolution.
+    #[serde(with = "BigArrayBox")]
     buffer: Box<[u16; VRAM_SIZE_PIXELS]>,
 }
 
@@ -1843,78 +1845,6 @@ impl ImageBuffer {
         self.index += 1;
         self.buffer[self.index as usize] = (word >> 16) as u16;
         self.index += 1;
-    }
-}
-
-impl Encodable for ImageBuffer {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-
-        s.emit_struct("ImageBuffer", 3, |s| {
-            try!(s.emit_struct_field("top_left", 0,
-                                     |s| self.top_left.encode(s)));
-            try!(s.emit_struct_field("resolution", 1,
-                                     |s| self.resolution.encode(s)));
-
-            // Lastly we only store the part of `buffer` that's
-            // actually used, i.e. up to `index`. That also means we
-            // don't have to store `index` itself.
-            let len = self.index as usize;
-
-            try!(s.emit_struct_field(
-                "buffer", 2,
-                |s| s.emit_seq(
-                    len,
-                    |s| {
-                        for i in 0..len {
-                            try!(s.emit_seq_elt(
-                                i,
-                                |s| self.buffer[i].encode(s)))
-                        }
-
-                        Ok(())
-                    })));
-
-            Ok(())
-        })
-    }
-}
-
-impl Decodable for ImageBuffer {
-    fn decode<D: Decoder>(d: &mut D) -> Result<ImageBuffer, D::Error> {
-        d.read_struct("ImageBuffer", 3, |d| {
-            let mut ib = ImageBuffer::new();
-
-            ib.top_left =
-                try!(d.read_struct_field("top_left", 0,
-                                         Decodable::decode));
-
-            ib.resolution =
-                try!(d.read_struct_field("resolution", 1,
-                                         Decodable::decode));
-            let index =
-                try!(d.read_struct_field(
-                    "buffer",
-                    2,
-                    |d| {
-                        d.read_seq(|d, len| {
-                            if len >= VRAM_SIZE_PIXELS {
-                                return Err(
-                                    d.error("wrong image buffer length"));
-                            }
-
-                            for i in 0..len {
-                                ib.buffer[i] =
-                                    try!(d.read_seq_elt(i, Decodable::decode));
-                            }
-
-                            Ok(len)
-                        })
-                    }));
-
-            ib.index = index as u32;
-
-            Ok(ib)
-        })
     }
 }
 
