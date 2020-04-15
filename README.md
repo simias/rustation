@@ -1,5 +1,19 @@
 [![Build Status](https://travis-ci.org/simias/rustation.svg)](https://travis-ci.org/simias/rustation)
 
+# This project is no longer being developed.
+
+I decided to restart from scratch to fix some architectural flaws in Rustation.
+Some of the code has been imported from this project, other bits have been
+thoroughly rewritten. The new repository is
+[rustation-ng](https://gitlab.com/flio/rustation-ng/). It's now more advanced
+than this project, with proper sound support and generally more accurate
+emulation.
+
+One significant difference between the two projects is than rustation-ng dropped
+the GL renderer in favor of a threaded software one. The GL renderer of
+Rustation has been ported to C++ and has been integrated in the Beetle PSX
+emulator however, so it's not completely dead.
+
 # Rustation PlayStation emulator
 
 ![Rustation logo](https://raw.githubusercontent.com/wiki/simias/rustation/images/logo.png)
