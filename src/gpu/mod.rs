@@ -1,4 +1,4 @@
-use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+use bigarray::BigArrayBox;
 
 use memory::Addressable;
 use memory::timers::Timers;
@@ -11,7 +11,7 @@ use self::renderer::{BlendMode, SemiTransparencyMode, TextureDepth};
 
 pub mod renderer;
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct Gpu {
     /// Draw mode for rectangles, dithering enable and a few other
     /// things
@@ -1459,7 +1459,7 @@ callback!(struct Gp0Handler(fn (&mut Gpu, &mut Renderer, u32)) {
 });
 
 /// Interlaced output splits each frame in two fields
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum Field {
     /// Top field (odd lines).
     Top = 1,
@@ -1468,7 +1468,7 @@ enum Field {
 }
 
 /// Video output horizontal resolution
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 struct HorizontalRes(u8);
 
 impl HorizontalRes {
@@ -1544,7 +1544,7 @@ impl HorizontalRes {
 }
 
 /// Video output vertical resolution
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum VerticalRes {
     /// 240 lines
     Y240Lines = 0,
@@ -1562,7 +1562,7 @@ impl VerticalRes {
 }
 
 /// Video Modes
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum VMode {
     /// NTSC: 480i60H
     Ntsc = 0,
@@ -1571,7 +1571,7 @@ enum VMode {
 }
 
 /// Display area color depth
-#[derive(Clone, Copy, PartialEq, Eq, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum DisplayDepth {
     /// 15 bits per pixel
     D15Bits = 0,
@@ -1580,7 +1580,7 @@ enum DisplayDepth {
 }
 
 /// Requested DMA direction.
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum DmaDirection {
     Off = 0,
     Fifo = 1,
@@ -1589,7 +1589,7 @@ enum DmaDirection {
 }
 
 /// Buffer holding multi-word fixed-length GP0 command parameters
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 struct CommandBuffer {
     /// Command buffer: the longuest possible command is GP0(0x3E)
     /// which takes 12 parameters
@@ -1634,7 +1634,7 @@ impl ::std::ops::Index<usize> for CommandBuffer {
 /// Attributes of the various GP0 commands. Some attributes don't make
 /// sense for certain commands but those will just be ignored by the
 /// `parser_callback`
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 struct Gp0Attributes {
     /// Method called when all the parameters have been received.
     callback: Callback,
@@ -1784,6 +1784,7 @@ fn is_polyline_end_marker(val: u32) -> bool {
 }
 
 /// Buffer holding a portion of the VRAM while it's being transfered
+#[derive(Serialize, Deserialize)]
 struct ImageBuffer {
     /// Coordinates of the top-left corner in VRAM
     top_left: (u16, u16),
@@ -1792,6 +1793,7 @@ struct ImageBuffer {
     /// Current write position in the buffer
     index: u32,
     /// Pixel buffer. The maximum size is the entire VRAM resolution.
+    #[serde(with = "BigArrayBox")]
     buffer: Box<[u16; VRAM_SIZE_PIXELS]>,
 }
 
@@ -1846,78 +1848,6 @@ impl ImageBuffer {
     }
 }
 
-impl Encodable for ImageBuffer {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-
-        s.emit_struct("ImageBuffer", 3, |s| {
-            try!(s.emit_struct_field("top_left", 0,
-                                     |s| self.top_left.encode(s)));
-            try!(s.emit_struct_field("resolution", 1,
-                                     |s| self.resolution.encode(s)));
-
-            // Lastly we only store the part of `buffer` that's
-            // actually used, i.e. up to `index`. That also means we
-            // don't have to store `index` itself.
-            let len = self.index as usize;
-
-            try!(s.emit_struct_field(
-                "buffer", 2,
-                |s| s.emit_seq(
-                    len,
-                    |s| {
-                        for i in 0..len {
-                            try!(s.emit_seq_elt(
-                                i,
-                                |s| self.buffer[i].encode(s)))
-                        }
-
-                        Ok(())
-                    })));
-
-            Ok(())
-        })
-    }
-}
-
-impl Decodable for ImageBuffer {
-    fn decode<D: Decoder>(d: &mut D) -> Result<ImageBuffer, D::Error> {
-        d.read_struct("ImageBuffer", 3, |d| {
-            let mut ib = ImageBuffer::new();
-
-            ib.top_left =
-                try!(d.read_struct_field("top_left", 0,
-                                         Decodable::decode));
-
-            ib.resolution =
-                try!(d.read_struct_field("resolution", 1,
-                                         Decodable::decode));
-            let index =
-                try!(d.read_struct_field(
-                    "buffer",
-                    2,
-                    |d| {
-                        d.read_seq(|d, len| {
-                            if len >= VRAM_SIZE_PIXELS {
-                                return Err(
-                                    d.error("wrong image buffer length"));
-                            }
-
-                            for i in 0..len {
-                                ib.buffer[i] =
-                                    try!(d.read_seq_elt(i, Decodable::decode));
-                            }
-
-                            Ok(len)
-                        })
-                    }));
-
-            ib.index = index as u32;
-
-            Ok(ib)
-        })
-    }
-}
-
 // Width of the VRAM in 16bit pixels
 pub const VRAM_WIDTH_PIXELS: u16 = 1024;
 // Height of the VRAM in lines
@@ -1929,7 +1859,7 @@ pub const VRAM_SIZE_PIXELS: usize =
 
 /// The are a few hardware differences between PAL and NTSC consoles,
 /// in particular the pixelclock runs slightly slower on PAL consoles.
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum VideoClock {
     Ntsc,
     Pal,

@@ -5,19 +5,25 @@ use cdimage::msf::Msf;
 use cdimage::bcd::Bcd;
 use cdimage::sector::Sector;
 
-use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
-
 use super::iso9660;
 
 /// PlayStation disc.
 ///
 /// XXX: add support for CD-DA? Not really useful but shouldn't
 /// be very hard either. We need to support audio tracks anyway...
+#[derive(Serialize, Deserialize)]
 pub struct Disc {
     /// Image file
+    #[serde(skip)]
+    #[serde(default = "default_image")]
     image: Box<Image>,
     /// Disc serial number
     serial: SerialNumber,
+}
+
+
+pub fn default_image() -> Box<Image> {
+    Box::new(MissingImage)
 }
 
 impl Disc {
@@ -58,25 +64,6 @@ impl Disc {
     }
 }
 
-impl Encodable for Disc {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        // Only encode the serial number
-        self.serial.encode(s)
-    }
-}
-
-impl Decodable for Disc {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Disc, D::Error> {
-        let serial = try!(SerialNumber::decode(d));
-
-        // Placeholder disc image
-        Ok(Disc {
-            image: Box::new(MissingImage),
-            serial: serial,
-        })
-    }
-}
-
 /// Dummy Image implemementation used when deserializing a Disc. Since
 /// we don't want to store the entire disc in the image it will be
 /// missing after a load, it's up to the frontend to make sure to
@@ -98,7 +85,7 @@ impl Image for MissingImage {
 }
 
 /// Disc region
-#[derive(Clone, Copy, Debug, PartialEq, Eq, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Region {
     /// Japan (NTSC): SCEI
     Japan,
@@ -109,7 +96,7 @@ pub enum Region {
 }
 
 /// Disc serial number
-#[derive(Copy, Clone, PartialEq, Eq, RustcDecodable, RustcEncodable)]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SerialNumber([u8; 10]);
 
 impl SerialNumber {

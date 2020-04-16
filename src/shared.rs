@@ -2,7 +2,7 @@ use timekeeper::TimeKeeper;
 use interrupt::InterruptState;
 
 /// State shared between various modules
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct SharedState {
     tk: TimeKeeper,
     irq_state: InterruptState,
@@ -40,7 +40,7 @@ impl SharedState {
 }
 
 /// Struct holding various counters for debugging and profiling
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct Counters {
     /// Increments at each frame drawn to the display. It will wrap in
     /// a little more than 2 years at 60Hz.
@@ -65,7 +65,7 @@ impl Counters {
 }
 
 /// Simple wrapper around a `u32` to implement a counter interface
-#[derive(Copy, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Copy, Clone, Deserialize, Serialize)]
 pub struct Counter(u32);
 
 impl Counter {

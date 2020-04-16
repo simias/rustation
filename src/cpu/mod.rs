@@ -4,8 +4,13 @@ mod gte;
 #[cfg(test)]
 mod tests;
 
-use std::fmt::{Display, Formatter, Error};
+use std::fmt::{Display, Formatter, Error, self};
 use std::default::Default;
+
+use std::marker::PhantomData;
+use serde::de::{Visitor, SeqAccess};
+use serde::ser::SerializeSeq;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use memory::{Interconnect, Addressable, Byte, HalfWord, Word};
 use shared::SharedState;
@@ -19,7 +24,7 @@ use self::gte::Gte;
 
 /// This struct contains the CPU state, including the `Interconnect`
 /// instance which owns most of the peripherals.
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct Cpu {
     /// The program counter register: points to the next instruction
     pc: u32,
@@ -1760,7 +1765,7 @@ impl Cpu {
 }
 
 /// Simple wrapper around an instruction word to provide type-safety.
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 struct Instruction(u32);
 
 impl Instruction {
@@ -1852,11 +1857,11 @@ impl Display for Instruction {
     }
 }
 
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable, PartialEq, Eq)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 struct RegisterIndex(u32);
 
 /// Instruction cache line
-#[derive(Clone, Copy, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 struct ICacheLine {
     /// Tag: high 22bits of the address associated with this cacheline
     /// Valid bits: 3 bit index of the first valid word in line.

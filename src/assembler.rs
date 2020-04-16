@@ -672,7 +672,7 @@ impl Assembler {
                                .cop_r(cop_r))
             }
 
-            /// Alignment padding
+            // Alignment padding
             Align(o) =>
                 for _ in 0..pad_to_order(self.location(), o) {
                     self.emit_byte(0);

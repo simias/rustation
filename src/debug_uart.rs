@@ -7,7 +7,7 @@
 use memory::Addressable;
 use shared::SharedState;
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct DebugUart {
     /// We don't want to display the TX data one character at a time
     /// so we attempt to line buffer it.

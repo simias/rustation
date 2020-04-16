@@ -1,4 +1,7 @@
-use rustc_serialize::{Decodable, Encodable, Decoder, Encoder};
+use std::fmt;
+
+use serde::ser::{Serializer, Serialize, SerializeSeq};
+use serde::de::{Deserialize, Deserializer, Visitor, SeqAccess, Error};
 
 use memory::Addressable;
 use cdrom::disc::Region;
@@ -110,43 +113,55 @@ impl Bios {
     }
 }
 
-impl Encodable for Bios {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        // We don't store the full BIOS image in the savestate, mainly
-        // because I want to be able to share and distribute
-        // savestates without having to worry about legal
-        // implications. Let's just serialize the checksum to make
-        // sure we use the correct BIOS when loading the savestate.
 
-        let sha256 = &self.metadata.sha256;
+impl Serialize for Bios {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let sha256 = &self.metadata.sha256;
 
-        s.emit_seq(sha256.len(), |s| {
-            for (i, b) in sha256.iter().enumerate() {
-                try!(s.emit_seq_elt(i, |s| b.encode(s)));
+            let mut seq = serializer.serialize_seq(Some(sha256.len()))?;
+            for e in sha256 {
+                seq.serialize_element(e)?;
             }
-            Ok(())
-        })
-    }
+            seq.end()
+        }
 }
 
-impl Decodable for Bios {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Bios, D::Error> {
-        d.read_seq(|d, len| {
-            let mut sha256 = [0; 32];
+impl<'de> Deserialize<'de> for Bios {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de> 
+        { 
+            struct Sha256Visitor;
 
-            if len != sha256.len() {
-                return Err(d.error("wrong BIOM checksum length"));
+            impl<'de> Visitor<'de> for Sha256Visitor
+            {
+                type Value = [u8; 32];
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("an array of length 32")
+                }
+
+                fn visit_seq<A>(self, mut seq: A) -> Result<[u8; 32], A::Error>
+                    where
+                        A: SeqAccess<'de>,
+                    {
+                        let mut arr = [0u8; 32];
+                        for i in 0..32 {
+                            arr[i] = seq
+                                .next_element()?
+                                .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
+                        }
+                        Ok(arr)
+                    }
             }
 
-            for (i, b) in sha256.iter_mut().enumerate() {
-                *b = try!(d.read_seq_elt(i, |d| Decodable::decode(d)))
-            }
+            let sha256: [u8; 32] = deserializer.deserialize_seq(Sha256Visitor)?;
 
-            let meta =
-                match db::lookup_sha256(&sha256) {
-                    Some(m) => m,
-                    None => return Err(d.error("unknown BIOS checksum")),
-                };
+            // try to lookup the sha256
+            let meta = db::lookup_sha256(&sha256)
+                .ok_or_else(|| Error::custom("unknown BIOS checksum"))?;
 
             // Create an "empty" BIOS instance, only referencing the
             // metadata. It's up to the caller to fill the blanks.
@@ -155,9 +170,9 @@ impl Decodable for Bios {
             bios.metadata = meta;
 
             Ok(bios)
-        })
-    }
+        } 
 }
+
 
 /// Dummy metadata used as a placeholder for dummy BIOS instances
 static DUMMY_METADATA: Metadata =

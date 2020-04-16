@@ -7,7 +7,7 @@ use std::{fmt};
 
 /// List of all peripherals requiring a TimeSheet. The value of the
 /// enum is used as the index in the timesheet table
-#[derive(Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Peripheral {
     /// Graphics Processing Unit
     Gpu,
@@ -23,7 +23,7 @@ pub enum Peripheral {
 
 
 /// Struct keeping track of the various peripheral's emulation advancement.
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct TimeKeeper {
     /// Counter keeping track of the current date. Unit is a period of
     /// the CPU clock at 33.8685MHz (~29.5ns)
@@ -128,7 +128,7 @@ impl fmt::Display for TimeKeeper {
 }
 
 
-#[derive(Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 /// Struct used to keep track of individual peripherals
 struct TimeSheet {
     /// Date of the last synchronization
@@ -178,7 +178,7 @@ pub type Cycles = u64;
 /// Fixed point representation of a cycle counter used to store
 /// non-integer cycle counts. Required because the CPU and GPU clocks
 /// have a non-integer ratio.
-#[derive(Clone, Copy, Debug, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct FracCycles(Cycles);
 
 impl FracCycles {
