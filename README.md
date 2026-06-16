@@ -5,7 +5,7 @@
 I decided to restart from scratch to fix some architectural flaws in Rustation.
 Some of the code has been imported from this project, other bits have been
 thoroughly rewritten. The new repository is
-[rustation-ng](https://gitlab.com/flio/rustation-ng/). It's now more advanced
+[rustation-ng](https://github.com/simias/rustation-ng). It's now more advanced
 than this project, with proper sound support and generally more accurate
 emulation.
 
